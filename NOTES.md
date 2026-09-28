@@ -56,6 +56,7 @@ The recipient's language is the user's language, the requester's `contact.langua
 23. **SFTP** scheduled imports need the Bun build (`ssh2-sftp-client`, optional dependency); the Workers build answers `not_implemented` for SFTP sources.
 24. **Setup code on Workers** is generated and logged on the first request when `OBX_SETUP_CODE` is not set (view it with `wrangler tail` or in the dashboard logs). On Bun a fresh code is printed at every start until setup is done.
 25. **D1 batches** larger than 500 statements are split (each part atomic). Catalog writes stay well below that; brand cascades are set-based.
+26. **Web interface files on Workers** are served by Cloudflare's asset router, not by the Worker, so they cost no Worker requests. Two consequences, both accepted: a missing file under `/assets/` gets the SPA page (the router's `single-page-application` fallback) instead of the 404 admin-ui's integration guide asks for — the browser refuses it as a script (wrong MIME type) and admin-ui reloads the tab once, which is the behaviour the 404 is for; and hashed assets keep Cloudflare's default `max-age=0, must-revalidate` (answered with 304) instead of `immutable`, because an `immutable` rule on `/assets/*` would also pin that fallback page under an old asset URL for a year and break a rollback. On Bun both follow the guide exactly (`src/adapters/bun/static.ts`). Routing `/assets/*` through the Worker (`run_worker_first`) would fix both at the cost of one Worker request per file.
 
 ## Integration (2026-09-28)
 
