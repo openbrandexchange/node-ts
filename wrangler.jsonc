@@ -1,0 +1,50 @@
+// Cloudflare Workers edition ("Portal for Cloudflare").
+// `bunx wrangler deploy` (or the Deploy to Cloudflare button) creates the D1 database and the R2 bucket
+// below automatically. Secrets: OBX_SECRET_KEY (required) and OBX_SETUP_CODE (recommended), see README.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "brand-portal",
+  "main": "src/adapters/workers/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  // The admin UI (vendored admin-ui build) is served as static assets; API paths run the Worker.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/admin/api/*", "/obx/*", "/.well-known/*", "/healthz"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "brand-portal-db",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "brand-portal-files"
+    }
+  ],
+  // Every minute: scheduled imports, background jobs (zips, exports, imports), webhooks, expiry.
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "vars": {
+    "OBX_ALLOW_PRIVATE_URLS": "false"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "limits": {
+    "cpu_ms": 300000
+  }
+  // Optional: a Queue lets long background jobs continue immediately instead of once a minute.
+  // Uncomment, then `bunx wrangler queues create brand-portal-jobs`.
+  // "queues": {
+  //   "producers": [{ "binding": "JOBS", "queue": "brand-portal-jobs" }],
+  //   "consumers": [{ "queue": "brand-portal-jobs", "max_batch_size": 1, "max_retries": 3 }]
+  // }
+}

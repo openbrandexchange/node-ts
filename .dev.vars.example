@@ -1,0 +1,5 @@
+# Secrets for the Cloudflare edition. The Deploy to Cloudflare button asks for these.
+# A long random string (at least 32 characters). Generate one with: openssl rand -base64 48
+OBX_SECRET_KEY=
+# A code you choose (6 or more characters); you type it once in the setup wizard.
+OBX_SETUP_CODE=

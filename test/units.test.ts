@@ -92,14 +92,14 @@ describe("zip", () => {
     const raw = new TextEncoder().encode("abc".repeat(1000));
     const deflated = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer());
     const got = await readZipEntry(bytesReader(new Uint8Array([...new Uint8Array(30).map((_, i) => [0x50, 0x4b, 0x03, 0x04][i] ?? 0), ...deflated])), { name: "x", method: 8, compressedSize: deflated.length, size: raw.length, crc: 0, localOffset: 0, isDir: false, isSymlink: false, encrypted: false }, 1e6);
-    expect(got).toEqual(raw);
+    expect([...got]).toEqual([...raw]);
     expect(unsafeEntryReason({ name: "../evil.jpg", isSymlink: false } as never)).toBeTruthy();
     expect(unsafeEntryReason({ name: "C:/x.jpg", isSymlink: false } as never)).toBeTruthy();
     expect(unsafeEntryReason({ name: "/etc/passwd", isSymlink: false } as never)).toBeTruthy();
     expect(unsafeEntryReason({ name: "ok/x.jpg", isSymlink: true } as never)).toBeTruthy();
     expect(unsafeEntryReason({ name: "ok/x.jpg", isSymlink: false } as never)).toBeNull();
     const streamed = new Uint8Array(await new Response(zipStream(entries)).arrayBuffer());
-    expect(streamed).toEqual(z);
+    expect([...streamed]).toEqual([...z]);
   });
 });
 

@@ -249,7 +249,7 @@ describe("scheduled pull import (https URL)", () => {
       crc32,
     );
     let auth = "";
-    const server = Bun.serve({ port: 0, fetch: (req) => ((auth = req.headers.get("authorization") ?? ""), new Response(zip, { headers: { "content-type": "application/zip" } })) });
+    const server = Bun.serve({ port: 0, fetch: (req) => ((auth = req.headers.get("authorization") ?? ""), new Response(zip as BodyInit, { headers: { "content-type": "application/zip" } })) });
     try {
       const node = new TestNode();
       const admin = await node.setup();

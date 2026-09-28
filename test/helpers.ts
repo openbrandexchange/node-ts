@@ -45,7 +45,7 @@ export class Browser {
     return this;
   }
 
-  async req(method: string, path: string, o: { json?: unknown; body?: BodyInit; headers?: Record<string, string>; noCsrf?: boolean } = {}): Promise<Res> {
+  async req(method: string, path: string, o: { json?: unknown; body?: BodyInit | Uint8Array; headers?: Record<string, string>; noCsrf?: boolean } = {}): Promise<Res> {
     const headers: Record<string, string> = { ...(o.headers ?? {}) };
     if (this.cookies.size) headers.cookie = this.cookieHeader();
     if (!o.noCsrf && !["GET", "HEAD"].includes(method) && this.csrf) headers["x-csrf-token"] = this.csrf;
@@ -83,8 +83,8 @@ export class TestNode {
     this.worker = createWorker(this.platform);
   }
 
-  async request(method: string, path: string, o: { headers?: Record<string, string>; body?: BodyInit } = {}): Promise<Res> {
-    const res = await this.app.request(path, { method, headers: o.headers, body: o.body }, {});
+  async request(method: string, path: string, o: { headers?: Record<string, string>; body?: BodyInit | Uint8Array } = {}): Promise<Res> {
+    const res = await this.app.request(path, { method, headers: o.headers, body: o.body as BodyInit }, {});
     const buf = new Uint8Array(await res.arrayBuffer());
     const text = new TextDecoder().decode(buf);
     let json: any = null;
@@ -153,7 +153,7 @@ export class TestNode {
     return r.json.access_token;
   }
 
-  api(token: string, method: string, path: string, o: { json?: unknown; headers?: Record<string, string>; body?: BodyInit } = {}) {
+  api(token: string, method: string, path: string, o: { json?: unknown; headers?: Record<string, string>; body?: BodyInit | Uint8Array } = {}) {
     const headers: Record<string, string> = { authorization: `Bearer ${token}`, ...(o.headers ?? {}) };
     let body = o.body;
     if (o.json !== undefined) {
