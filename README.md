@@ -178,7 +178,7 @@ bunx wrangler dev             # Workers runtime locally
 - `src/core` — the protocol logic: one write path for all catalog changes (`catalog.ts`), the change feed, imports, zip jobs, exports, webhooks.
 - `src/routes` — OBX Protocol (`/obx/v1`), Ingest API (`/obx/v1/ingest`), Node Admin + Portal API (`/admin/api`).
 - `migrations/*.sql` — one SQLite schema for D1 and bun:sqlite, applied automatically at start.
-- The admin screens come from [admin-ui](https://github.com/openbrandexchange/admin-ui): `scripts/vendor-admin-ui.sh` copies its build into `public/`. The admin API is plain REST + JSON (session cookie, `X-CSRF-Token` header on writes, `{items, next_cursor}` lists, problem+json errors), so any SPA stack works, for example React with TanStack Query. When developing the UI, run this node on port 8080 and let the UI's dev server proxy `/admin/api`, `/obx` and `/.well-known` to it (same origin, no CORS needed).
+- The admin screens come from [admin-ui](https://github.com/openbrandexchange/admin-ui): `scripts/update-ui.sh` (or `bun run update-ui`) copies its committed build into `public/`, including the e-mail strings in `public/locales/`. The admin API is plain REST + JSON (session cookie, `X-CSRF-Token` header on writes, `{items, next_cursor}` lists, problem+json errors), so any SPA stack works, for example React with TanStack Query. When developing the UI, run this node on port 8080 and let the UI's dev server proxy `/admin/api`, `/obx` and `/.well-known` to it (same origin, no CORS needed).
 - Contracts: [openbrandexchange/spec](https://github.com/openbrandexchange/spec). Implementation notes and deviations: [NOTES.md](NOTES.md). Fixtures are copied with `scripts/sync-fixtures.sh`.
 
 ## Licence

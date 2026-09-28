@@ -1,18 +1,20 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
+    <meta charset="UTF-8" />
+    <!-- Nodes that serve the UI under a sub-path replace "/" with that path (see README). -->
+    <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Brand portal</title>
-    <link rel="stylesheet" href="/placeholder.css" />
+    <meta name="color-scheme" content="light" />
+    <meta name="referrer" content="same-origin" />
+    <meta name="robots" content="noindex" />
+    <title>Portal</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23334155'/%3E%3Cpath d='M9 16h14M16 9v14' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <script type="module" crossorigin src="./assets/index-Dkmvlvh6.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-C6uNxTAz.css">
   </head>
   <body>
-    <main>
-      <h1>Your brand portal is running</h1>
-      <p>This is a placeholder page. The full portal (brand admin + retailer portal) is added when the
-        <code>admin-ui</code> build is vendored into <code>public/</code> (<code>scripts/vendor-admin-ui.sh</code>).</p>
-      <p>The APIs are live: <a href="/.well-known/obx">/.well-known/obx</a> · <a href="/admin/api/setup">/admin/api/setup</a></p>
-      <p class="badge">Works with Open Brand Exchange</p>
-    </main>
+    <div id="app"></div>
+    <noscript>This portal needs JavaScript.</noscript>
   </body>
 </html>

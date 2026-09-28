@@ -14,7 +14,7 @@
     "dev:workers": "wrangler dev",
     "deploy": "wrangler deploy",
     "smoke:workers": "bun scripts/workers-smoke.ts",
-    "vendor-ui": "sh scripts/vendor-admin-ui.sh",
+    "update-ui": "sh scripts/update-ui.sh",
     "sync-fixtures": "sh scripts/sync-fixtures.sh"
   },
   "dependencies": {
