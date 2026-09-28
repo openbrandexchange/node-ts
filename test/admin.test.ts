@@ -107,6 +107,8 @@ describe("files and validation (I-FILE-1, I-FILE-2, I-VAL-1)", () => {
     expect(a1.data.provenance).toMatchObject({ ai_generated: false, source: "photo", c2pa: "none" });
     expect(a1.missing_files).toEqual(["original", "web", "square", "thumb"]);
     expect("missing_files" in (await node.api(token, "GET", "/obx/v1/ingest/products/P")).json).toBe(false);
+    // Writing back what GET returned (defaults spelled out) changes nothing.
+    expect((await node.api(token, "PUT", "/obx/v1/ingest/assets/a1", { json: a1.data })).json.result).toBe("unchanged");
     const parent = await node.api(token, "PUT", "/obx/v1/ingest/variants/v3", { json: { product_external_id: "NOPE", color: { code: "A" } } });
     expect(parent.json.obx_error).toBe("unknown_parent");
     const ifm = await node.api(token, "PUT", "/obx/v1/ingest/products/P", { json: { style_number: "P", name: { en: "Q" } }, headers: { "if-match": '"stale"' } });

@@ -558,6 +558,11 @@ export class CatalogSession {
       if ("model_release" in r) rights.model_release = v.bool(r.model_release, "/rights/model_release");
       Object.assign(rights, v.extensions(r));
       if (rights.license === "custom" && !rights.license_text) v.err("/rights/license_text", "A custom licence needs its text.");
+      // Keep only what differs from the node's default rights, so a record
+      // read with defaults applied and written back is unchanged, and the
+      // asset keeps following the defaults.
+      const defaults = effectiveRights({}, this.settings) as unknown as Record<string, unknown>;
+      for (const k of Object.keys(rights)) if (k in defaults && canonicalJson(rights[k] ?? null) === canonicalJson(defaults[k] ?? null)) delete rights[k];
       rights = Object.keys(rights).length ? sortKeys(rights) : null;
     } else if (d.rights !== undefined && d.rights !== null) v.err("/rights", "Must be an object.");
     const p = isPlainObject(d.provenance) ? d.provenance : {};
