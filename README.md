@@ -160,7 +160,7 @@ The script creates a Cloud Storage bucket, secrets and a service account, builds
 |---|---|---|
 | `OBX_SECRET_KEY` | — (required on Cloudflare; generated into `data/secret.key` on Bun) | Encrypts stored credentials and signs download links. Keep it; changing it breaks stored import credentials and webhook secrets. |
 | `OBX_SETUP_CODE` | printed in the log on first start | One-time code for the setup wizard. |
-| `OBX_PUBLIC_URL` | the address of the request | Public address used in e-mails and API links. |
+| `OBX_PUBLIC_URL` | API links: the address of the request; e-mails: the address the portal was set up at | Public address used in e-mails and API links. Set it when the portal gets its own domain. |
 | `OBX_ALLOW_PRIVATE_URLS` | `false` | Development only: allow `http://` and private addresses for imports and webhooks. |
 | `OBX_MAIL_PROVIDER`, `OBX_MAIL_API_KEY`, `OBX_MAIL_FROM`, `OBX_MAIL_WEBHOOK_URL` | — | E-mail, see above. |
 | `OBX_STORAGE` | `disk` (Bun) / R2 (Cloudflare) | `s3` for S3-compatible storage: `OBX_S3_ENDPOINT`, `OBX_S3_BUCKET`, `OBX_S3_REGION`, `OBX_S3_ACCESS_KEY_ID`, `OBX_S3_SECRET_ACCESS_KEY`, `OBX_S3_PREFIX`. |
