@@ -62,7 +62,7 @@ protocol.get("/.well-known/obx", async (c) => {
   const langs = [s.portal.default_language, ...s.portal.languages.filter((l) => l !== s.portal.default_language)];
   const doc = {
     obx_version: "0.1",
-    spec_version: "0.1.0-draft",
+    spec_version: "0.1.0",
     node: { software: ctx.config.software, version: ctx.config.version },
     publisher: {
       id: "pub_" + (await ctx.nodeId()).replace(/^node_/, ""),

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { parseCsv, writeCsv, normHeader } from "../src/lib/csv";
 import { parseIngestGtin, normaliseLookupGtin } from "../src/lib/gtin";
@@ -10,6 +12,27 @@ import { imageSize, sniffType, fakeJpeg } from "../src/lib/image";
 import { nextRunAt } from "../src/core/sources";
 import { pickLanguage, PORTAL_WORD, UI_LANGUAGES } from "../src/core/mail";
 import { formData } from "./helpers";
+
+describe("image file names: the spec's shared vectors", () => {
+  // fixtures/expected/image-filenames.json from the spec, copied by scripts/sync-fixtures.sh.
+  const { cases } = JSON.parse(readFileSync(join(import.meta.dir, "fixtures/expected/image-filenames.json"), "utf8")) as {
+    cases: { name: string; error?: string; style?: string; color?: string | null; position?: number; role?: string; view?: string | null; external_id?: string }[];
+  };
+  test("at least 20 vectors", () => expect(cases.length).toBeGreaterThanOrEqual(20));
+  for (const c of cases) {
+    test(c.name, () => {
+      const p = parseImageName(c.name);
+      if (c.error) {
+        expect("error" in p).toBe(true);
+        return;
+      }
+      if ("error" in p) throw new Error(`${c.name}: ${p.error}`);
+      expect({ style: p.style, color: p.color, position: p.position, role: p.role ?? "packshot", view: p.view, external_id: `${p.style}_${p.color ?? "ALL"}_${p.position}` }).toEqual({
+        style: c.style!, color: c.color!, position: c.position!, role: c.role!, view: c.view!, external_id: c.external_id!,
+      });
+    });
+  }
+});
 
 describe("CSV", () => {
   test("delimiter detection, quoting, BOM, CRLF, empty rows", () => {
