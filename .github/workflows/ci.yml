@@ -55,34 +55,38 @@ jobs:
     env:
       OBX_READ_TOKEN: ${{ secrets.OBX_READ_TOKEN }}
     steps:
-      - name: Without the token the suite cannot be fetched
-        if: env.OBX_READ_TOKEN == ''
-        run: echo "::warning::OBX_READ_TOKEN is not set, so obx-conformance could not be checked out. Add the secret to run the conformance suite."
+      - name: Access to obx-go (the OBX_READ_TOKEN secret while it is private; none once it is public)
+        run: |
+          if [ -n "$OBX_READ_TOKEN" ] || GIT_TERMINAL_PROMPT=0 git ls-remote --heads https://github.com/openbrandexchange/obx-go >/dev/null 2>&1; then
+            echo "OBX_ACCESS=yes" >> "$GITHUB_ENV"
+          else
+            echo "::notice::openbrandexchange/obx-go is private and OBX_READ_TOKEN is not set; the conformance suite is skipped."
+          fi
       - uses: actions/checkout@v4
-        if: env.OBX_READ_TOKEN != ''
+        if: env.OBX_ACCESS == 'yes'
         with:
           path: node-ts
       - uses: actions/checkout@v4
-        if: env.OBX_READ_TOKEN != ''
+        if: env.OBX_ACCESS == 'yes'
         with:
           repository: openbrandexchange/obx-go
-          token: ${{ secrets.OBX_READ_TOKEN }}
+          token: ${{ secrets.OBX_READ_TOKEN || github.token }}
           path: obx-go
       - uses: actions/setup-go@v5
-        if: env.OBX_READ_TOKEN != ''
+        if: env.OBX_ACCESS == 'yes'
         with:
           go-version: "1.26"
           cache-dependency-path: obx-go/go.sum
       - uses: oven-sh/setup-bun@v2
-        if: env.OBX_READ_TOKEN != ''
+        if: env.OBX_ACCESS == 'yes'
         with:
           bun-version: "1.3.14"
       - name: Build obx-conformance
-        if: env.OBX_READ_TOKEN != ''
+        if: env.OBX_ACCESS == 'yes'
         working-directory: obx-go
         run: go build -o "$RUNNER_TEMP/obx-conformance" ./cmd/obx-conformance
       - name: Start a fresh node
-        if: env.OBX_READ_TOKEN != ''
+        if: env.OBX_ACCESS == 'yes'
         working-directory: node-ts
         run: |
           bun install --frozen-lockfile
@@ -101,11 +105,11 @@ jobs:
           for _ in $(seq 1 90); do curl -fs http://127.0.0.1:8080/readyz >/dev/null && break; sleep 1; done
           curl -fs http://127.0.0.1:8080/readyz
       - name: obx-conformance all
-        if: env.OBX_READ_TOKEN != ''
+        if: env.OBX_ACCESS == 'yes'
         run: |
           "$RUNNER_TEMP/obx-conformance" all --url http://127.0.0.1:8080 --setup-code CONFORMANCE-1
       - name: Node log
-        if: failure() && env.OBX_READ_TOKEN != ''
+        if: failure() && env.OBX_ACCESS == 'yes'
         run: tail -n 300 "$RUNNER_TEMP/node.log"
 
   e2e:
