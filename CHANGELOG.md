@@ -23,6 +23,11 @@ always forward-only and applied automatically.
 - `LICENSE` and `NOTICE` of the web interface are served as plain text.
 - A chosen `OBX_SETUP_CODE` is accepted in any case (`kestrel-2026` for `KESTREL-2026`), like the
   generated one.
+- An import no longer takes away what it does not state about an image (spec import rule 8): the
+  images alone, or with an assets.csv that has no row for them, keep their embargo, credit, alt text
+  and AI label, also when those were set in the admin. Before, every such import reset them to the
+  defaults, which lifted embargoes.
+- Discovery reports `spec_version` 0.1.0 instead of 0.1.0-draft.
 - Renewing the secret of an API key that was created on approval retires the secret still waiting
   for the requester's software, so that software gets "already collected" instead of a dead secret.
 

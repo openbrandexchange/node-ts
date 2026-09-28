@@ -736,10 +736,28 @@ async function applyAssets(
       files,
     };
     if (o?.status) data.status = o.status;
+    const stored = await s.load("asset", p.ext);
+    if (stored) keepImageFacts(data, stored.stored);
     const r = await s.apply("upsert", "asset", p.ext, data);
     results.push({ r, row: o?.row ?? null, file: o ? (st.assetsName ?? "assets.csv") : p.im.name });
   }
   s.positionIgnore = null;
+}
+
+/**
+ * Import rule 8 (spec import-format.md): for an image the node already has, alt text (per
+ * language), rights and provenance fields that the import does not state keep their stored
+ * values. The file name and the assets.csv row still decide the file, product, colour, position,
+ * role and view; an upsert without status keeps the stored status anyway. So a nightly import of
+ * the images alone never lifts an embargo or clears an AI label set in the admin.
+ */
+function keepImageFacts(data: Record<string, unknown>, stored: Record<string, unknown>) {
+  for (const k of ["alt_text", "rights", "provenance"] as const) {
+    const old = stored[k];
+    if (!isPlainObject(old) || !Object.keys(old).length) continue;
+    const stated = data[k];
+    data[k] = isPlainObject(stated) ? { ...old, ...stated } : { ...old };
+  }
 }
 
 async function finishSession(ctx: Ctx, st: State, input: ImportInput, s: CatalogSession, results: { r: IngestResult; row: number | null; file: string }[], sink: ErrSink) {

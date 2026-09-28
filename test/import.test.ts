@@ -41,6 +41,33 @@ describe("canonical import (I-IMP-1..4)", () => {
     expect((await node.feed(at, snap.cursor)).entries).toEqual([]);
   });
 
+  test("an import without assets.csv keeps what the images have (import rule 8, I-IMP-5)", async () => {
+    const { node, token } = await kestrelNode();
+    await importKestrel(node, token);
+    // A credit set through the Ingest API, as the admin would set it.
+    const p = await node.api(token, "PATCH", "/obx/v1/ingest/assets/KO-1001_NVY_1", { json: { rights: { credit: "Photo: Test Studio" } }, headers: { "content-type": "application/merge-patch+json" } });
+    expect(p.status).toBe(200);
+    const f = formData([
+      { name: "csv", filename: "products.csv", type: "text/csv", data: fixtureText("kestrel/products.csv") },
+      ...kestrelImages().map((i) => ({ name: "images", filename: i.name, type: "image/png", data: i.bytes })),
+    ]);
+    const r = await node.api(token, "POST", "/obx/v1/ingest/imports", { body: f.body, headers: { "content-type": f.contentType } });
+    expect(r.status).toBe(202);
+    await node.drain();
+    const job = (await node.api(token, "GET", `/obx/v1/ingest/jobs/${r.json.id}`)).json;
+    expect(job.status).toBe("succeeded");
+    const c = job.import_run.counts;
+    expect({ created: c.created, updated: c.updated, errors: c.errors }).toEqual({ created: 0, updated: 0, errors: 0 });
+    const data = async (ext: string) => (await node.api(token, "GET", `/obx/v1/ingest/assets/${ext}`)).json.data;
+    const blk = await data("KO-1002_BLK_2");
+    expect(String(blk.rights.embargo_until)).toStartWith("2030-01-01");
+    expect(blk.rights.credit).toBe("Photo: Kestrel Studio");
+    const rst = await data("KO-1003_RST_3");
+    expect(rst.provenance.ai_generated).toBe(true);
+    expect(rst.alt_text?.nl).toBeTruthy();
+    expect((await data("KO-1001_NVY_1")).rights.credit).toBe("Photo: Test Studio");
+  });
+
   test("an image named with colour ALL belongs to every colour: {style}_ALL_{position}, colour null", async () => {
     const { node, token } = await kestrelNode();
     const img = kestrelImages().find((i) => i.name === "KO-1005_COG_1_front.png")!;
