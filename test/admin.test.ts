@@ -100,6 +100,13 @@ describe("files and validation (I-FILE-1, I-FILE-2, I-VAL-1)", () => {
     const order = await node.api(token, "PUT", "/obx/v1/ingest/products/P/asset-order", { json: { color_code: "A", asset_external_ids: ["a2", "a1"] } });
     expect(order.json.map((r: any) => r.result)).toEqual(["updated", "updated"]);
     expect((await node.api(token, "GET", "/obx/v1/ingest/assets/a1")).json.data.position).toBe(2);
+    // IngestRecord.data has defaults applied (effective rights, provenance);
+    // missing_files is present for assets only.
+    const a1 = (await node.api(token, "GET", "/obx/v1/ingest/assets/a1")).json;
+    expect(a1.data.rights).toMatchObject({ license: "retailer-use", channels: ["webshop", "marketplace", "social"], expires_at: null });
+    expect(a1.data.provenance).toMatchObject({ ai_generated: false, source: "photo", c2pa: "none" });
+    expect(a1.missing_files).toEqual(["original", "web", "square", "thumb"]);
+    expect("missing_files" in (await node.api(token, "GET", "/obx/v1/ingest/products/P")).json).toBe(false);
     const parent = await node.api(token, "PUT", "/obx/v1/ingest/variants/v3", { json: { product_external_id: "NOPE", color: { code: "A" } } });
     expect(parent.json.obx_error).toBe("unknown_parent");
     const ifm = await node.api(token, "PUT", "/obx/v1/ingest/products/P", { json: { style_number: "P", name: { en: "Q" } }, headers: { "if-match": '"stale"' } });

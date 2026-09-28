@@ -320,7 +320,8 @@ export class CatalogSession {
   }
 
   async record(o: Obj): Promise<Record<string, unknown>> {
-    return {
+    const data = this.recordData(o);
+    const rec: Record<string, unknown> = {
       kind: o.kind,
       id: o.id,
       external_id: o.ext,
@@ -329,9 +330,16 @@ export class CatalogSession {
       etag: await this.etag(o),
       created_at: o.created_at,
       updated_at: o.modified_at,
-      data: this.recordData(o),
-      missing_files: this.missingFiles(o),
+      data,
     };
+    if (o.kind === "asset") {
+      // IngestRecord.data is the write model "with defaults applied": the
+      // effective rights (node defaults + the asset's own fields), as every
+      // node shows them. missing_files is for assets only.
+      data.rights = effectiveRights(o.stored, this.settings);
+      rec.missing_files = this.missingFiles(o);
+    }
+    return rec;
   }
 
   // ------------------------------------------------------------------ operations
