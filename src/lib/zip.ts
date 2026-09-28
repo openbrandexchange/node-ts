@@ -171,47 +171,53 @@ export function zipStream(entries: StreamEntry[]): ReadableStream<Uint8Array> {
   let remaining = 0;
   let finished = false;
   return new ReadableStream<Uint8Array>({
+    // Every pull must enqueue something (or close): a pull that resolves without output is not
+    // called again by some runtimes (Bun), which stalls the download after the first file.
     async pull(ctrl) {
       if (finished) return;
-      if (reader) {
-        const { done, value } = await reader.read();
-        if (done) {
-          reader = null;
-          if (remaining !== 0) {
-            ctrl.error(new Error("zip entry shorter than declared"));
-            return;
+      for (;;) {
+        if (reader) {
+          const { done, value } = await reader.read();
+          if (done) {
+            reader = null;
+            if (remaining !== 0) {
+              ctrl.error(new Error("zip entry shorter than declared"));
+              return;
+            }
+            continue;
+          }
+          if (!value.length) continue;
+          remaining -= value.length;
+          ctrl.enqueue(value);
+          return;
+        }
+        if (i < entries.length) {
+          const e = entries[i++];
+          const hdr = localHeader(e);
+          written.push({ ...e, offset });
+          offset += hdr.length + e.size;
+          ctrl.enqueue(hdr);
+          const body = await e.open();
+          if (body instanceof Uint8Array) {
+            if (body.length !== e.size) {
+              ctrl.error(new Error("zip entry size mismatch"));
+              return;
+            }
+            if (body.length) ctrl.enqueue(body);
+          } else {
+            reader = body.getReader();
+            remaining = e.size;
           }
           return;
         }
-        remaining -= value.length;
-        ctrl.enqueue(value);
+        const parts: Uint8Array[] = written.map(centralHeader);
+        const cdSize = parts.reduce((a, p) => a + p.length, 0);
+        for (const p of parts) ctrl.enqueue(p);
+        ctrl.enqueue(endRecords(written.length, offset, cdSize));
+        finished = true;
+        ctrl.close();
         return;
       }
-      if (i < entries.length) {
-        const e = entries[i++];
-        const hdr = localHeader(e);
-        written.push({ ...e, offset });
-        offset += hdr.length + e.size;
-        ctrl.enqueue(hdr);
-        const body = await e.open();
-        if (body instanceof Uint8Array) {
-          if (body.length !== e.size) {
-            ctrl.error(new Error("zip entry size mismatch"));
-            return;
-          }
-          if (body.length) ctrl.enqueue(body);
-        } else {
-          reader = body.getReader();
-          remaining = e.size;
-        }
-        return;
-      }
-      const parts: Uint8Array[] = written.map(centralHeader);
-      const cdSize = parts.reduce((a, p) => a + p.length, 0);
-      for (const p of parts) ctrl.enqueue(p);
-      ctrl.enqueue(endRecords(written.length, offset, cdSize));
-      finished = true;
-      ctrl.close();
     },
     cancel() {
       reader?.cancel().catch(() => {});
