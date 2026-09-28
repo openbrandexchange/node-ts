@@ -65,6 +65,11 @@ test("uploading a file the node already has answers at once", async () => {
   const again = await put();
   expect(again.status).toBe(200);
   expect(JSON.parse(again.text).created).toBe(false);
+  const wrong = new Uint8Array(bytes);
+  wrong[wrong.length - 1] = 1;
+  const bad = await rawPut(server.port!, `/obx/v1/ingest/blobs/${sha}`, { authorization: `Bearer ${token}`, "content-type": "image/png" }, wrong);
+  expect(bad.status).toBe(422);
+  expect(JSON.parse(bad.text).obx_error).toBe("checksum_mismatch");
 });
 
 test("the admin UI is served at every route, with the API next to it", async () => {

@@ -15,7 +15,7 @@ import { importRunOf, startImport, storeRequestBody, type ImportInputs } from ".
 import { boundaryOf, scanMultipart } from "../lib/multipart";
 import { storeReader, readText } from "../core/storeio";
 import { newId, safeJsonParse, isPlainObject } from "../lib/util";
-import { sha256Hex } from "../lib/crypto";
+import { sha256Hasher, sha256Hex } from "../lib/crypto";
 import { memLimit, limitHeaders, enforce } from "../core/ratelimit";
 
 export const MAX_IMPORT_BYTES = 2 * 1024 * 1024 * 1024;
@@ -129,13 +129,16 @@ export async function handleBlobHead(c: C, w: Writer) {
   return new Response(null, { status: 200, headers: { "content-length": "0", "obx-blob-bytes": String(b.bytes), "cache-control": "no-store" } });
 }
 
-async function drainBody(req: Request, max: number) {
-  if (!req.body) return;
+/** Reads the upload without keeping it and returns its sha256 (hex). */
+async function hashBody(req: Request, max: number): Promise<string> {
+  const h = sha256Hasher();
+  if (!req.body) return h.hex();
   const r = req.body.getReader();
   let n = 0;
   for (;;) {
     const { done, value } = await r.read();
-    if (done) return;
+    if (done) return h.hex();
+    h.update(value);
     n += value.length;
     if (n > max) {
       await r.cancel().catch(() => {});
@@ -151,8 +154,8 @@ export async function handleBlobPut(c: C, w: Writer) {
   if (!/^[a-f0-9]{64}$/.test(sha)) throw new ObxError("validation_failed", "The path must be the lowercase hex sha256 of the bytes.");
   const existing = await getBlob(ctx, sha);
   if (existing) {
-    // Read and discard the upload: cancelling a request body makes Bun hang the response.
-    await drainBody(c.req.raw, ctx.config.maxUploadBytes);
+    // Read (never cancel: that makes Bun hang the response) and still verify the bytes.
+    if ((await hashBody(c.req.raw, ctx.config.maxUploadBytes)) !== sha) throw new ObxError("checksum_mismatch", "The bytes do not match the sha256 in the path.");
     return json(c, blobJson(existing, false), 200);
   }
   const bytes = await readBody(c.req.raw, ctx.config.maxUploadBytes);
