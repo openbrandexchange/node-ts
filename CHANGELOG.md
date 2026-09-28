@@ -9,7 +9,11 @@ always forward-only and applied automatically.
 
 ### Changed
 
-- The web interface is admin-ui 0.1.1 (commit cbadb55).
+- The web interface is admin-ui main after 0.1.1 (commit fed075a): the zip dialog downloads the
+  version you picked, website fields accept an address without `https://`, and an approved API key
+  can be shown when the retailer asked on the web form.
+- The start-up log and the setup-code line name the address to open (`OBX_PUBLIC_URL`), not only the
+  port inside the container. Docker Compose derives the default public address from `OBX_PORT`.
 - The web interface is served under admin-ui's strict Content-Security-Policy: no inline styles.
 
 ### Fixed
@@ -17,6 +21,10 @@ always forward-only and applied automatically.
 - A missing file under `/assets/` or `/locales/` is a 404, also when the browser accepts HTML, so a
   tab left open during an upgrade reloads once instead of reading the start page as code.
 - `LICENSE` and `NOTICE` of the web interface are served as plain text.
+- A chosen `OBX_SETUP_CODE` is accepted in any case (`kestrel-2026` for `KESTREL-2026`), like the
+  generated one.
+- Renewing the secret of an API key that was created on approval retires the secret still waiting
+  for the requester's software, so that software gets "already collected" instead of a dead secret.
 
 ## [0.1.0] - 2026-09-28
 
