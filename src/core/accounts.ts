@@ -282,11 +282,12 @@ export async function approveAccessRequest(
     await sendEmail(ctx, {
       to: contact.email,
       lang: contact.language ?? (await ctx.settings()).portal.default_language,
-      template: "access_approved",
+      template: "accessApproved",
       name: contact.name ?? null,
       vars: {},
-      extraKeys: [...(invite ? ["email.access_approved.body_portal"] : []), ...(apiClient ? ["email.access_approved.body_api"] : [])],
-      link: `${await ctx.baseUrl()}/login`,
+      extra: apiClient ? ["apiNote"] : [],
+      // With a portal invite the retailer first chooses a password via the invite e-mail.
+      link: invite ? null : `${await ctx.baseUrl()}/login`,
     });
   const updated = (await ctx.db.first<AccessRequestRow>("SELECT * FROM access_requests WHERE id = ?", [r.id]))!;
   return {
@@ -305,10 +306,10 @@ export async function rejectAccessRequest(ctx: Ctx, r: AccessRequestRow, reason:
     await sendEmail(ctx, {
       to: contact.email,
       lang: contact.language ?? (await ctx.settings()).portal.default_language,
-      template: "access_rejected",
+      template: "accessRejected",
       name: contact.name ?? null,
       vars: { reason: reason ?? "" },
-      extraKeys: reason ? ["email.access_rejected.reason"] : [],
+      extra: reason ? ["reason"] : [],
     });
   return adminAccessRequestJson((await ctx.db.first<AccessRequestRow>("SELECT * FROM access_requests WHERE id = ?", [r.id]))!);
 }

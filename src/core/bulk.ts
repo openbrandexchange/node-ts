@@ -225,10 +225,10 @@ registerJob("download", downloadStep, async (ctx, job) => {
   await sendEmail(ctx, {
     to: input.email,
     lang: input.lang,
-    template: "zip_ready",
+    template: "zipReady",
     name: input.name,
-    vars: { files: result.files ?? 0 },
-    link: `${await ctx.baseUrl()}/`,
+    vars: { files: result.files ?? 0, expires: (job.expires_at ?? "").slice(0, 10) },
+    link: `${await ctx.baseUrl()}/downloads`,
   });
 });
 

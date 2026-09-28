@@ -125,7 +125,7 @@ portal.get("/admin/api/portal/viewer", async (c) => {
       logo_url: await logoUrl(c),
       accent_color: s.branding.accent_color,
       welcome_text: s.branding.welcome_text,
-      portal_word: s.branding.portal_word,
+      portal_name: s.branding.portal_name,
       languages: s.portal.languages,
       default_language: s.portal.default_language,
       access_requests_enabled: s.portal.access_requests_enabled,

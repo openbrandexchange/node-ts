@@ -35,111 +35,47 @@ export const PORTAL_WORD: Record<string, string> = {
 
 type Strings = Record<string, string>;
 
-const BUILTIN: Record<string, Strings> = {
-  en: {
-    "email.common.greeting": "Hello {name},",
-    "email.common.greeting_anonymous": "Hello,",
-    "email.common.footer": "You receive this e-mail because of your account at {portal}.",
-    "email.common.ignore": "If you did not expect this e-mail, you can ignore it.",
-    "email.invite.subject": "Your invitation to {portal}",
-    "email.invite.body": "You have been invited to {portal}, where you find the product images and article data of {brand}. Choose a password to get started. The link works once and is valid until {expires}.",
-    "email.invite.button": "Choose your password",
-    "email.password_reset.subject": "Reset your password for {portal}",
-    "email.password_reset.body": "Someone asked to reset the password of your account at {portal}. The link works once and is valid for one hour.",
-    "email.password_reset.button": "Choose a new password",
-    "email.access_request.subject": "{retailer} requests access to {portal}",
-    "email.access_request.body": "{contact} of {retailer} requested access to {portal}. Approve or reject the request in your admin.",
-    "email.access_request.button": "Review the request",
-    "email.access_approved.subject": "Your access to {portal} was approved",
-    "email.access_approved.body": "Good news: {brand} approved your request for access to {portal}.",
-    "email.access_approved.body_portal": "You will receive a separate e-mail to choose your password.",
-    "email.access_approved.body_api": "Your software can collect its API key once, with the request token it received when you asked for access.",
-    "email.access_approved.button": "Open {portal}",
-    "email.access_rejected.subject": "Your request for {portal}",
-    "email.access_rejected.body": "{brand} did not approve your request for access to {portal}.",
-    "email.access_rejected.reason": "Reason: {reason}",
-    "email.zip_ready.subject": "Your download from {portal} is ready",
-    "email.zip_ready.body": "Your zip file with {files} images is ready. It stays available for 7 days.",
-    "email.zip_ready.button": "Download",
-  },
-  nl: {
-    "email.common.greeting": "Hallo {name},",
-    "email.common.greeting_anonymous": "Hallo,",
-    "email.common.footer": "Je ontvangt deze e-mail vanwege je account bij {portal}.",
-    "email.common.ignore": "Had je deze e-mail niet verwacht? Dan kun je hem negeren.",
-    "email.invite.subject": "Je uitnodiging voor {portal}",
-    "email.invite.body": "Je bent uitgenodigd voor {portal}, waar je de productfoto's en artikelgegevens van {brand} vindt. Kies een wachtwoord om te beginnen. De link werkt één keer en is geldig tot {expires}.",
-    "email.invite.button": "Kies je wachtwoord",
-    "email.password_reset.subject": "Nieuw wachtwoord voor {portal}",
-    "email.password_reset.body": "Er is gevraagd om het wachtwoord van je account bij {portal} opnieuw in te stellen. De link werkt één keer en is een uur geldig.",
-    "email.password_reset.button": "Kies een nieuw wachtwoord",
-    "email.access_request.subject": "{retailer} vraagt toegang tot {portal}",
-    "email.access_request.body": "{contact} van {retailer} heeft toegang gevraagd tot {portal}. Keur de aanvraag goed of af in je beheeromgeving.",
-    "email.access_request.button": "Bekijk de aanvraag",
-    "email.access_approved.subject": "Je toegang tot {portal} is goedgekeurd",
-    "email.access_approved.body": "Goed nieuws: {brand} heeft je aanvraag voor toegang tot {portal} goedgekeurd.",
-    "email.access_approved.body_portal": "Je krijgt een aparte e-mail om je wachtwoord te kiezen.",
-    "email.access_approved.body_api": "Je software kan de API-sleutel één keer ophalen, met de aanvraagcode die hij bij je aanvraag kreeg.",
-    "email.access_approved.button": "Open {portal}",
-    "email.access_rejected.subject": "Je aanvraag voor {portal}",
-    "email.access_rejected.body": "{brand} heeft je aanvraag voor toegang tot {portal} niet goedgekeurd.",
-    "email.access_rejected.reason": "Reden: {reason}",
-    "email.zip_ready.subject": "Je download van {portal} staat klaar",
-    "email.zip_ready.body": "Je zipbestand met {files} foto's staat klaar. Het blijft 7 dagen beschikbaar.",
-    "email.zip_ready.button": "Downloaden",
-  },
-  de: {
-    "email.common.greeting": "Hallo {name},",
-    "email.common.greeting_anonymous": "Hallo,",
-    "email.common.footer": "Sie erhalten diese E-Mail wegen Ihres Kontos bei {portal}.",
-    "email.common.ignore": "Falls Sie diese E-Mail nicht erwartet haben, können Sie sie ignorieren.",
-    "email.invite.subject": "Ihre Einladung zum {portal}",
-    "email.invite.body": "Sie wurden zum {portal} eingeladen. Dort finden Sie die Produktbilder und Artikeldaten von {brand}. Wählen Sie ein Passwort, um loszulegen. Der Link funktioniert einmal und gilt bis {expires}.",
-    "email.invite.button": "Passwort wählen",
-    "email.password_reset.subject": "Neues Passwort für {portal}",
-    "email.password_reset.body": "Es wurde angefordert, das Passwort Ihres Kontos bei {portal} zurückzusetzen. Der Link funktioniert einmal und ist eine Stunde gültig.",
-    "email.password_reset.button": "Neues Passwort wählen",
-    "email.access_request.subject": "{retailer} bittet um Zugang zum {portal}",
-    "email.access_request.body": "{contact} von {retailer} hat Zugang zum {portal} angefragt. Genehmigen oder ablehnen können Sie die Anfrage in Ihrer Verwaltung.",
-    "email.access_request.button": "Anfrage ansehen",
-    "email.access_approved.subject": "Ihr Zugang zum {portal} wurde genehmigt",
-    "email.access_approved.body": "Gute Nachricht: {brand} hat Ihre Anfrage für den Zugang zum {portal} genehmigt.",
-    "email.access_approved.body_portal": "Sie erhalten eine separate E-Mail, um Ihr Passwort zu wählen.",
-    "email.access_approved.body_api": "Ihre Software kann den API-Schlüssel einmal abholen, mit dem Anfrage-Token, das sie bei der Anfrage erhalten hat.",
-    "email.access_approved.button": "{portal} öffnen",
-    "email.access_rejected.subject": "Ihre Anfrage für {portal}",
-    "email.access_rejected.body": "{brand} hat Ihre Anfrage für den Zugang zum {portal} nicht genehmigt.",
-    "email.access_rejected.reason": "Grund: {reason}",
-    "email.zip_ready.subject": "Ihr Download vom {portal} ist bereit",
-    "email.zip_ready.body": "Ihre ZIP-Datei mit {files} Bildern ist bereit. Sie bleibt 7 Tage verfügbar.",
-    "email.zip_ready.button": "Herunterladen",
-  },
-  fr: {
-    "email.common.greeting": "Bonjour {name},",
-    "email.common.greeting_anonymous": "Bonjour,",
-    "email.common.footer": "Vous recevez cet e-mail en raison de votre compte sur {portal}.",
-    "email.common.ignore": "Si vous n'attendiez pas cet e-mail, vous pouvez l'ignorer.",
-    "email.invite.subject": "Votre invitation à {portal}",
-    "email.invite.body": "Vous êtes invité(e) à {portal}, où vous trouverez les photos produits et les données articles de {brand}. Choisissez un mot de passe pour commencer. Le lien fonctionne une seule fois et reste valable jusqu'au {expires}.",
-    "email.invite.button": "Choisir mon mot de passe",
-    "email.password_reset.subject": "Réinitialiser votre mot de passe pour {portal}",
-    "email.password_reset.body": "Une demande de réinitialisation du mot de passe de votre compte sur {portal} a été faite. Le lien fonctionne une seule fois et reste valable une heure.",
-    "email.password_reset.button": "Choisir un nouveau mot de passe",
-    "email.access_request.subject": "{retailer} demande l'accès à {portal}",
-    "email.access_request.body": "{contact} de {retailer} a demandé l'accès à {portal}. Acceptez ou refusez la demande dans votre espace d'administration.",
-    "email.access_request.button": "Voir la demande",
-    "email.access_approved.subject": "Votre accès à {portal} est accepté",
-    "email.access_approved.body": "Bonne nouvelle : {brand} a accepté votre demande d'accès à {portal}.",
-    "email.access_approved.body_portal": "Vous recevrez un e-mail séparé pour choisir votre mot de passe.",
-    "email.access_approved.body_api": "Votre logiciel peut récupérer sa clé API une seule fois, avec le jeton reçu lors de la demande.",
-    "email.access_approved.button": "Ouvrir {portal}",
-    "email.access_rejected.subject": "Votre demande pour {portal}",
-    "email.access_rejected.body": "{brand} n'a pas accepté votre demande d'accès à {portal}.",
-    "email.access_rejected.reason": "Motif : {reason}",
-    "email.zip_ready.subject": "Votre téléchargement depuis {portal} est prêt",
-    "email.zip_ready.body": "Votre fichier zip avec {files} images est prêt. Il reste disponible 7 jours.",
-    "email.zip_ready.button": "Télécharger",
-  },
+/** English fallback, copied from the admin-ui locale file (scripts/update-ui.sh keeps the vendored files current). */
+const BUILTIN_EN: Strings = {
+  "email.greeting": "Hello {{name}},",
+  "email.greetingNoName": "Hello,",
+  "email.signoff": "Kind regards,\n{{brand}}",
+  "email.footer": "You receive this email because of your account or request at {{portal}}.",
+  "email.linkFallback": "Button not working? Copy this address into your browser: {{url}}",
+  "email.invite.subject": "{{brand}} invites you to {{portal}}",
+  "email.invite.heading": "You're invited",
+  "email.invite.body": "{{brand}} has created an account for you. There you can find their final product images and article data, and download them whenever you need.",
+  "email.invite.button": "Choose your password",
+  "email.invite.expiry": "This link works once and is valid until {{expires}}.",
+  "email.invite.ignore": "Not expecting this? Then you can ignore this email.",
+  "email.accessRequestReceived.subject": "We received your request for {{portal}}",
+  "email.accessRequestReceived.heading": "Request received",
+  "email.accessRequestReceived.body": "Thank you for your request to {{brand}}. We will check it and email you as soon as it has been reviewed.",
+  "email.accessRequestNew.subject": "New access request from {{retailer}}",
+  "email.accessRequestNew.body": "{{contact}} from {{retailer}} has asked for access to {{portal}}.",
+  "email.accessRequestNew.button": "Review the request",
+  "email.accessApproved.subject": "Your access to {{portal}} is ready",
+  "email.accessApproved.heading": "Welcome",
+  "email.accessApproved.body": "{{brand}} has approved your request.",
+  "email.accessApproved.button": "Open the portal",
+  "email.accessApproved.apiNote": "Your software can now collect its API key using the request number it received.",
+  "email.accessRejected.subject": "About your request for {{portal}}",
+  "email.accessRejected.heading": "Your request",
+  "email.accessRejected.body": "Unfortunately {{brand}} cannot give you access at the moment.",
+  "email.accessRejected.reason": "Explanation: {{reason}}",
+  "email.accessRejected.contact": "Questions? Reply to this email or contact {{brand}}.",
+  "email.zipReady.subject": "Your download from {{portal}} is ready",
+  "email.zipReady.heading": "Your download is ready",
+  "email.zipReady.body": "The zip you asked for ({{files}} files) is ready.",
+  "email.zipReady.button": "Download",
+  "email.zipReady.expiry": "The file is available until {{expires}}.",
+  "email.passwordReset.subject": "Choose a new password for {{portal}}",
+  "email.passwordReset.heading": "New password",
+  "email.passwordReset.body": "Someone asked to reset the password of your account. Choose a new one with the button below.",
+  "email.passwordReset.button": "Choose a new password",
+  "email.passwordReset.expiry": "This link works once and is valid for one hour.",
+  "email.passwordReset.ignore": "Didn't ask for this? Then you can ignore this email; your password stays the same.",
+  "glossary.portal": "Brand portal"
 };
 
 const localeCache = new Map<string, Strings | null>();
@@ -191,16 +127,21 @@ export function pickLanguage(acceptLanguage: string | null | undefined, fallback
 export async function translator(ctx: Ctx, lang: string) {
   const l = normLang(lang);
   const [mine, en] = await Promise.all([vendored(ctx, l), l === "en" ? Promise.resolve(null) : vendored(ctx, "en")]);
-  return (key: string, vars: Record<string, string | number> = {}): string => {
-    const raw = mine?.[key] ?? BUILTIN[l]?.[key] ?? en?.[key] ?? BUILTIN.en[key] ?? key;
-    return raw.replace(/\{(\w+)\}/g, (_, k) => (vars[k] !== undefined ? String(vars[k]) : `{${k}}`));
-  };
+  const lookup = (key: string): string | undefined => mine?.[key] ?? en?.[key] ?? BUILTIN_EN[key];
+  const t = (key: string, vars: Record<string, string | number> = {}): string =>
+    (lookup(key) ?? key).replace(/\{\{\s*(\w+)\s*\}\}|\{(\w+)\}/g, (m, a, b) => {
+      const k = a ?? b;
+      return vars[k] !== undefined ? String(vars[k]) : m;
+    });
+  t.has = (key: string) => lookup(key) !== undefined;
+  return t;
 }
 
 export async function portalName(ctx: Ctx, lang: string): Promise<string> {
   const s = await ctx.settings();
   const l = normLang(lang);
-  const word = s.branding.portal_word?.[l] ?? s.branding.portal_word?.en ?? (await vendored(ctx, l))?.["glossary.portal"] ?? PORTAL_WORD[l] ?? PORTAL_WORD.en;
+  const own = s.branding.portal_name;
+  const word = own?.[l] ?? own?.en ?? (own ? Object.values(own)[0] : undefined) ?? (await vendored(ctx, l))?.["glossary.portal"] ?? PORTAL_WORD[l] ?? PORTAL_WORD.en;
   const brand = s.branding.display_name || s.company.name || "Brand";
   return `${brand} · ${word}`;
 }
@@ -209,15 +150,30 @@ function esc(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+/** E-mail templates; the names are the admin-ui locale keys under `email.`. */
+export type EmailTemplate = "invite" | "passwordReset" | "accessRequestNew" | "accessRequestReceived" | "accessApproved" | "accessRejected" | "zipReady";
+
 export interface EmailSpec {
   to: string;
   lang: string;
-  template: "invite" | "password_reset" | "access_request" | "access_approved" | "access_rejected" | "zip_ready";
+  template: EmailTemplate;
   name?: string | null;
   vars: Record<string, string | number>;
-  extraKeys?: string[];
+  /** Extra paragraphs after the body, as keys relative to the template (e.g. "apiNote", "reason"). */
+  extra?: string[];
   link?: string | null;
 }
+
+/** Paragraphs shown after the button, per template, when the locale file has them. */
+const AFTER: Record<EmailTemplate, string[]> = {
+  invite: ["expiry", "ignore"],
+  passwordReset: ["expiry", "ignore"],
+  accessRequestNew: [],
+  accessRequestReceived: [],
+  accessApproved: [],
+  accessRejected: ["contact"],
+  zipReady: ["expiry"],
+};
 
 /** Renders and sends an e-mail. Never throws: failures are logged without the link (it holds a token). */
 export async function sendEmail(ctx: Ctx, spec: EmailSpec): Promise<boolean> {
@@ -226,18 +182,37 @@ export async function sendEmail(ctx: Ctx, spec: EmailSpec): Promise<boolean> {
     const t = await translator(ctx, spec.lang);
     const s = await ctx.settings();
     const portal = await portalName(ctx, spec.lang);
-    const vars = { portal, brand: s.branding.display_name || s.company.name, ...spec.vars };
+    const brand = s.branding.display_name || s.company.name;
+    const vars: Record<string, string | number> = { portal, brand, name: spec.name ?? "", url: spec.link ?? "", ...spec.vars };
     const k = `email.${spec.template}`;
-    const lines = [spec.name ? t("email.common.greeting", { name: spec.name }) : t("email.common.greeting_anonymous"), t(`${k}.body`, vars), ...(spec.extraKeys ?? []).map((x) => t(x, vars))];
+    const opt = (key: string) => (t.has(key) ? [t(key, vars)] : []);
+    const heading = t.has(`${k}.heading`) ? t(`${k}.heading`, vars) : null;
+    const lines = [spec.name ? t("email.greeting", vars) : t("email.greetingNoName", vars), t(`${k}.body`, vars), ...(spec.extra ?? []).flatMap((x) => opt(`${k}.${x}`))];
     const button = spec.link ? t(`${k}.button`, vars) : null;
-    const footer = [t("email.common.ignore"), t("email.common.footer", vars)];
-    const text = [...lines, ...(spec.link ? [`${button}: ${spec.link}`] : []), "", ...footer, "", "Works with Open Brand Exchange"].join("\n\n");
-    const accent = s.branding.accent_color ?? "#1F4E5F";
+    const after = AFTER[spec.template].flatMap((x) => opt(`${k}.${x}`));
+    const signoff = t("email.signoff", vars);
+    const footer = t("email.footer", vars);
+    const fallback = spec.link ? t("email.linkFallback", vars) : null;
+    const text = [
+      ...(heading ? [heading] : []),
+      ...lines,
+      ...(spec.link ? [`${button}: ${spec.link}`] : []),
+      ...after,
+      signoff,
+      "--",
+      footer,
+      "Works with Open Brand Exchange",
+    ].join("\n\n");
+    const accent = /^#[0-9a-fA-F]{6}$/.test(s.branding.accent_color ?? "") ? s.branding.accent_color! : "#1F4E5F";
+    const para = (l: string) => `<p>${esc(l).replace(/\n/g, "<br>")}</p>`;
     const html = `<!doctype html><html lang="${esc(normLang(spec.lang))}"><body style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#1a1a1a;line-height:1.5;max-width:560px;margin:0 auto;padding:24px">
-<p style="font-weight:600;font-size:18px;margin:0 0 16px">${esc(portal)}</p>
-${lines.map((l) => `<p>${esc(l)}</p>`).join("\n")}
-${spec.link ? `<p style="margin:28px 0"><a href="${esc(spec.link)}" style="background:${esc(accent)};color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">${esc(button!)}</a></p><p style="font-size:13px;color:#555;word-break:break-all">${esc(spec.link)}</p>` : ""}
-<hr style="border:none;border-top:1px solid #e5e5e5;margin:28px 0 12px"><p style="font-size:12px;color:#666">${footer.map(esc).join("<br>")}</p>
+<p style="font-weight:600;font-size:14px;color:#555;margin:0 0 16px">${esc(portal)}</p>
+${heading ? `<h1 style="font-size:22px;margin:0 0 16px">${esc(heading)}</h1>` : ""}
+${lines.map(para).join("\n")}
+${spec.link ? `<p style="margin:28px 0"><a href="${esc(spec.link)}" style="background:${accent};color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">${esc(button!)}</a></p><p style="font-size:13px;color:#555;word-break:break-all">${esc(fallback!)}</p>` : ""}
+${after.map(para).join("\n")}
+${para(signoff)}
+<hr style="border:none;border-top:1px solid #e5e5e5;margin:28px 0 12px"><p style="font-size:12px;color:#666">${esc(footer)}</p>
 <p style="font-size:11px;color:#999">Works with Open Brand Exchange</p></body></html>`;
     await ctx.p.mailer.send({ to: spec.to, subject: t(`${k}.subject`, vars), text, html });
     return true;

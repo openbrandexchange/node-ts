@@ -95,7 +95,7 @@ adminAuth.get("/admin/api/public/branding", async (c) => {
     logo_url: setUp ? await logoUrl(c) : null,
     accent_color: s.branding.accent_color,
     welcome_text: s.branding.welcome_text,
-    portal_word: s.branding.portal_word,
+    portal_name: s.branding.portal_name,
     languages: s.portal.languages,
     default_language: s.portal.default_language,
     access_requests_enabled: setUp && s.portal.access_requests_enabled,
@@ -241,7 +241,7 @@ adminAuth.post("/admin/api/password/forgot", async (c) => {
   if (user) {
     const token = b64url(randomBytes(32));
     await ctx.db.run("INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?, ?, ?)", [await tokenHash(token), user.id, ctx.iso(3600_000)]);
-    ctx.p.defer(sendEmail(ctx, { to: user.email, lang: user.language, template: "password_reset", name: user.name, vars: {}, link: `${await ctx.baseUrl()}/reset-password/${token}` }));
+    ctx.p.defer(sendEmail(ctx, { to: user.email, lang: user.language, template: "passwordReset", name: user.name, vars: {}, link: `${await ctx.baseUrl()}/reset-password/${token}` }));
   }
   return new Response(null, { status: 202 });
 });

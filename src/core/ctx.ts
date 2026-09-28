@@ -35,7 +35,7 @@ export interface SettingsData {
     logo_type: string | null;
     accent_color: string | null;
     welcome_text: Record<string, string> | null;
-    portal_word: Record<string, string> | null;
+    portal_name: Record<string, string> | null;
   };
   portal: {
     access_requests_enabled: boolean;
@@ -51,7 +51,7 @@ export interface SettingsData {
 export function defaultSettings(): SettingsData {
   return {
     company: { name: "", website: null, contact_email: null, country: null },
-    branding: { display_name: "", logo_sha: null, logo_type: null, accent_color: null, welcome_text: null, portal_word: null },
+    branding: { display_name: "", logo_sha: null, logo_type: null, accent_color: null, welcome_text: null, portal_name: null },
     portal: {
       access_requests_enabled: true,
       allow_original_download: true,

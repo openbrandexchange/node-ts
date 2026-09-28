@@ -58,7 +58,7 @@ async function settingsJson(c: C, s: SettingsData) {
       logo_url: await logoUrl(c),
       accent_color: s.branding.accent_color,
       welcome_text: s.branding.welcome_text,
-      portal_word: s.branding.portal_word,
+      portal_name: s.branding.portal_name,
     },
     portal: s.portal,
     defaults: s.defaults,
@@ -97,7 +97,7 @@ adminManage.patch("/admin/api/settings", async (c) => {
   next.branding.display_name = v.str(next.branding.display_name, "/branding/display_name", { required: true, min: 1, max: 200 }) ?? cur.branding.display_name;
   next.branding.accent_color = v.str(next.branding.accent_color, "/branding/accent_color", { pattern: /^#[0-9a-fA-F]{6}$/, msg: "Use a colour like #1F4E5F." });
   next.branding.welcome_text = v.localized(next.branding.welcome_text, "/branding/welcome_text");
-  next.branding.portal_word = v.localized(next.branding.portal_word, "/branding/portal_word");
+  next.branding.portal_name = v.localized(next.branding.portal_name, "/branding/portal_name");
   for (const k of ["access_requests_enabled", "allow_original_download", "allow_article_data_export", "retailer_api_self_service"] as const)
     if (typeof next.portal[k] !== "boolean") v.err(`/portal/${k}`, "Must be true or false.");
   if (!Array.isArray(next.portal.languages) || !next.portal.languages.length || next.portal.languages.some((l) => typeof l !== "string" || !LANG_RE.test(l))) v.err("/portal/languages", "List at least one language tag.");

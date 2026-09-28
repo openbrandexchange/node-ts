@@ -34,7 +34,7 @@ import { enqueueJob, getJob } from "../core/jobs";
 import { exportJson, manifestStream, type ExportInput } from "../core/bulk";
 import { createWebhook, emitBrandEvent, testWebhook, webhookJson, CLIENT_EVENTS, type WebhookRow } from "../core/notify";
 import { assertSafeUrl } from "../lib/ssrf";
-import { sendEmail } from "../core/mail";
+import { pickLanguage, sendEmail } from "../core/mail";
 import { adminAccessRequestJson, type AccessRequestRow } from "../core/accounts";
 import { normDateTime } from "../lib/util";
 
@@ -121,6 +121,8 @@ protocol.post("/obx/v1/access-requests", async (c) => {
     phone: v.str(k.phone, "/contact/phone", { max: 40 }),
     language: v.str(k.language, "/contact/language", { pattern: /^[a-z]{2,3}(-[A-Z]{2})?$/, msg: "Use a language tag such as nl or en." }),
   };
+  // No language given: remember the browser's language at request time, so later e-mails use it.
+  if (!contact.language) contact.language = pickLanguage(c.req.header("accept-language"), s.portal.default_language);
   let access: string[] = ["portal"];
   if (body.access !== undefined) {
     if (!Array.isArray(body.access) || !body.access.length || body.access.some((a) => a !== "portal" && a !== "api")) v.err("/access", 'Choose "portal", "api" or both.');
@@ -143,8 +145,9 @@ protocol.post("/obx/v1/access-requests", async (c) => {
   ctx.p.defer(
     (async () => {
       const admins = await ctx.db.all<UserRow>("SELECT * FROM users WHERE role = 'admin' AND status = 'active'");
+      if (contact.email) await sendEmail(ctx, { to: contact.email, lang: contact.language!, template: "accessRequestReceived", name: contact.name, vars: {} });
       for (const a of admins)
-        await sendEmail(ctx, { to: a.email, lang: a.language, template: "access_request", name: a.name, vars: { retailer: retailer.name!, contact: contact.name! }, link: `${base}/access-requests/${id}` });
+        await sendEmail(ctx, { to: a.email, lang: a.language, template: "accessRequestNew", name: a.name, vars: { retailer: retailer.name!, contact: contact.name! }, link: `${base}/admin/requests` });
       await emitBrandEvent(ctx, "access_request.created", { access_request: adminAccessRequestJson(row) });
     })().catch((e) => ctx.log("error", "access request notification failed", { error: String(e) })),
   );
