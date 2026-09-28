@@ -101,6 +101,12 @@ async function claim(ctx: Ctx, leaseMs: number, kinds?: JobKind[]): Promise<JobR
 }
 
 let running = false;
+let stopRequested = false;
+
+/** Graceful shutdown (Bun): finish the current step, claim no new ones. */
+export function requestJobsStop() {
+  stopRequested = true;
+}
 
 /** Runs job steps until the budget is spent or nothing is runnable. Returns the number of steps run. */
 export async function runJobs(ctx: Ctx, budgetMs: number, opts: { kinds?: JobKind[] } = {}): Promise<number> {
@@ -109,7 +115,7 @@ export async function runJobs(ctx: Ctx, budgetMs: number, opts: { kinds?: JobKin
   const start = ctx.now();
   let steps = 0;
   try {
-    while (ctx.now() - start < budgetMs) {
+    while (ctx.now() - start < budgetMs && !stopRequested) {
       const stepBudget = Math.min(ctx.config.jobStepBudgetMs, budgetMs - (ctx.now() - start));
       if (stepBudget < 500) break;
       const job = await claim(ctx, stepBudget + 60_000, opts.kinds);

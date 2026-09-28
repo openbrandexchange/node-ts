@@ -3,24 +3,38 @@ import { createApp, createWorker } from "../../app";
 import { serverFetch } from "./serve";
 import { createBunPlatform, ensureBucketFromEnv } from "./platform";
 import { staticHandler } from "./static";
+import { validateEnv } from "../shared/config";
+import { markShuttingDown } from "../../core/ops";
+import { requestJobsStop } from "../../core/jobs";
 
 const env = process.env as Record<string, string | undefined>;
-const port = Number(env.PORT ?? 8080);
-const dataDir = env.OBX_DATA_DIR ?? "./data";
-const uiDir = env.OBX_UI_DIR ?? new URL("../../../public", import.meta.url).pathname;
-const trustProxy = /^(1|true|yes)$/i.test(env.OBX_TRUST_PROXY ?? "");
+
+// Check every setting first and say exactly what is wrong, instead of failing later on a request.
+const problems = validateEnv(env, "bun");
+if (problems.length) {
+  console.error(JSON.stringify({ time: new Date().toISOString(), level: "error", msg: "The portal cannot start: its configuration has problems.", problems }));
+  for (const p of problems) console.error(`  - ${p}`);
+  process.exit(78); // EX_CONFIG
+}
+
+const port = Number(env.PORT?.trim() || 8080);
+const dataDir = env.OBX_DATA_DIR?.trim() || "./data";
+const uiDir = env.OBX_UI_DIR?.trim() || new URL("../../../public", import.meta.url).pathname;
+const trustProxy = /^(1|true|yes|on)$/i.test(env.OBX_TRUST_PROXY ?? "");
 
 let kicked: ReturnType<typeof setTimeout> | null = null;
+let stopping = false;
+let jobRun: Promise<unknown> = Promise.resolve();
 const platform = createBunPlatform({
   env,
   dataDir,
   uiDir,
-  dbPath: env.OBX_DB_PATH,
+  dbPath: env.OBX_DB_PATH?.trim() || undefined,
   onKick: () => {
-    if (kicked) return;
+    if (kicked || stopping) return;
     kicked = setTimeout(() => {
       kicked = null;
-      worker.runJobs(10 * 60_000).catch((e) => platform.log("error", "jobs failed", { error: String(e) }));
+      jobRun = worker.runJobs(10 * 60_000).catch((e) => platform.log("error", "jobs failed", { error: String(e) }));
     }, 50);
   },
 });
@@ -28,25 +42,54 @@ const app = createApp(platform);
 const worker = createWorker(platform);
 const serveUi = staticHandler(uiDir);
 
+try {
+  await worker.prepare();
+} catch (e) {
+  platform.log("error", e instanceof Error ? e.message : String(e));
+  process.exit(1);
+}
 await ensureBucketFromEnv(env).catch((e) => platform.log("error", "S3 bucket check failed", { error: String(e) }));
 await worker.rotateSetupCode();
-setInterval(() => worker.tick(50_000).catch((e) => platform.log("error", "tick failed", { error: String(e) })), 60_000);
-setTimeout(() => worker.tick(50_000).catch(() => {}), 2000);
+
+let tickRun: Promise<unknown> = Promise.resolve();
+const runTick = () => {
+  if (stopping) return;
+  tickRun = worker.tick(50_000).catch((e) => platform.log("error", "tick failed", { error: String(e) }));
+};
+const ticker = setInterval(runTick, 60_000);
+const firstTick = setTimeout(runTick, 2000);
 
 const server = Bun.serve({
   port,
-  hostname: env.HOST ?? "0.0.0.0",
+  hostname: env.HOST?.trim() || "0.0.0.0",
   maxRequestBodySize: 2 * 1024 * 1024 * 1024,
   idleTimeout: 255,
   fetch: serverFetch({ app, serveUi, trustProxy }),
 });
 
-platform.log("info", `Open Brand Exchange portal listening on http://localhost:${server.port}`, { dataDir, uiDir });
+platform.log("info", `Open Brand Exchange portal listening on http://localhost:${server.port}`, { dataDir, uiDir, version: platform.config.version });
 
-for (const sig of ["SIGINT", "SIGTERM"] as const)
-  process.on(sig, async () => {
-    platform.log("info", "shutting down");
-    server.stop();
-    await Promise.allSettled([...platform.pending]);
-    process.exit(0);
-  });
+// Graceful shutdown: /readyz turns 503, no new job steps start, in-flight requests and the running
+// job step finish (bounded by OBX_SHUTDOWN_TIMEOUT_MS). A step cut off by the timeout resumes on
+// the next start once its lease expires, because every step checkpoints.
+async function shutdown(signal: string) {
+  if (stopping) return;
+  stopping = true;
+  markShuttingDown();
+  requestJobsStop();
+  clearInterval(ticker);
+  clearTimeout(firstTick);
+  if (kicked) clearTimeout(kicked);
+  platform.log("info", "shutting down", { signal, timeout_ms: platform.config.shutdownTimeoutMs });
+  const drained = Promise.allSettled([server.stop(false), jobRun, tickRun, ...platform.pending]);
+  const timedOut = await Promise.race([drained.then(() => false), Bun.sleep(platform.config.shutdownTimeoutMs).then(() => true)]);
+  if (timedOut) platform.log("warn", "shutdown timeout reached; unfinished job steps resume after the next start");
+  server.stop(true);
+  try {
+    platform.db.raw.close();
+  } catch {
+    /* already closed */
+  }
+  process.exit(0);
+}
+for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => void shutdown(sig));

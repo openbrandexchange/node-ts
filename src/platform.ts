@@ -98,6 +98,12 @@ export interface Config {
   renditionRateLimit: number;
   /** How long one background step may run before it checkpoints. */
   jobStepBudgetMs: number;
+  /** One JSON log line per API request (method, path, status, duration, request id; never IPs or queries). */
+  accessLog: boolean;
+  /** Bearer token for GET /metrics; null disables the endpoint. */
+  metricsToken: string | null;
+  /** Bun: how long a graceful shutdown waits for running requests and job steps. */
+  shutdownTimeoutMs: number;
   customDomainHelp: string;
 }
 

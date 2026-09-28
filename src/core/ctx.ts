@@ -70,6 +70,8 @@ export class Ctx {
   private metaCache = new Map<string, string | null>();
   /** Origin of the current request, used when OBX_PUBLIC_URL is not set. */
   requestOrigin: string | null = null;
+  /** X-Request-Id of the current request (added to every log line); null in background runs. */
+  requestId: string | null = null;
 
   constructor(public readonly p: Platform) {
     this.keys = new Keyring(p.config.secretKey);
@@ -176,6 +178,6 @@ export class Ctx {
   }
 
   log(level: "info" | "warn" | "error", msg: string, extra?: Record<string, unknown>) {
-    this.p.log(level, msg, extra);
+    this.p.log(level, msg, this.requestId ? { request_id: this.requestId, ...(extra ?? {}) } : extra);
   }
 }

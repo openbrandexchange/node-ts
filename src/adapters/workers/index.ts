@@ -2,7 +2,7 @@
 // minute: scheduled imports, jobs, webhooks), optional Queue (run jobs right away), e-mail over HTTPS.
 import { createApp, createWorker, isApiPath } from "../../app";
 import type { BlobStore, Db, Platform, Stmt, SqlValue } from "../../platform";
-import { configFromEnv, secretProblem } from "../shared/config";
+import { configFromEnv, logAllowed, logLevelOf, validateEnv } from "../shared/config";
 import { httpMailer } from "../shared/mailer";
 import { s3Store } from "../shared/s3store";
 import { dohResolver } from "../../lib/ssrf";
@@ -102,12 +102,20 @@ function strEnv(env: Env): Record<string, string | undefined> {
   return out;
 }
 
+class ConfigError extends Error {
+  constructor(public readonly problems: string[]) {
+    super(`The portal is not configured correctly: ${problems.join(" ")}`);
+  }
+}
+
 function makePlatform(env: Env, ctx: ExecutionContext): Platform {
   const e = strEnv(env);
-  const problem = secretProblem(e.OBX_SECRET_KEY);
-  if (problem) throw new Error(problem);
+  const problems = validateEnv(e, "workers");
+  if (problems.length) throw new ConfigError(problems);
+  const minLevel = logLevelOf(e);
   const log = (level: "info" | "warn" | "error", msg: string, extra?: Record<string, unknown>) => {
-    const line = JSON.stringify({ level, msg, ...(extra ?? {}) });
+    if (!logAllowed(minLevel, level)) return;
+    const line = JSON.stringify({ time: new Date().toISOString(), level, msg, ...(extra ?? {}) });
     if (level === "error") console.error(line);
     else console.log(line);
   };
@@ -154,14 +162,17 @@ function makePlatform(env: Env, ctx: ExecutionContext): Platform {
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const path = new URL(req.url).pathname;
-    if (!isApiPath(path) && path !== "/healthz" && env.ASSETS) return env.ASSETS.fetch(req);
+    if (!isApiPath(path) && env.ASSETS) return env.ASSETS.fetch(req);
     let platform: Platform;
     try {
       platform = makePlatform(env, ctx);
     } catch (e) {
-      return new Response(JSON.stringify({ type: "https://openbrandexchange.com/errors/service_unavailable", title: "Service unavailable", status: 503, detail: e instanceof Error ? e.message : "misconfigured", obx_error: "service_unavailable" }), {
+      const detail = e instanceof Error ? e.message : "misconfigured";
+      console.error(JSON.stringify({ time: new Date().toISOString(), level: "error", msg: detail }));
+      if (path === "/healthz") return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ type: "https://openbrandexchange.com/errors/service_unavailable", title: "Service unavailable", status: 503, detail, obx_error: "service_unavailable" }), {
         status: 503,
-        headers: { "content-type": "application/problem+json" },
+        headers: { "content-type": "application/problem+json", "cache-control": "no-store" },
       });
     }
     return createApp(platform).fetch(req);

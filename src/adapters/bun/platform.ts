@@ -7,7 +7,7 @@ import { sqliteDb } from "./sqlite";
 import { diskStore } from "./disk";
 import { s3Store, ensureBucket, type S3Options } from "../shared/s3store";
 import { httpMailer } from "../shared/mailer";
-import { configFromEnv, secretProblem, type EnvLike } from "../shared/config";
+import { configFromEnv, logAllowed, logLevelOf, secretProblem, type EnvLike } from "../shared/config";
 import { b64url, randomBytes } from "../../lib/util";
 import { bunSftp } from "./sftp";
 
@@ -71,8 +71,10 @@ export function storeFromEnv(env: EnvLike, dataDir: string): BlobStore {
 
 export function createBunPlatform(o: BunPlatformOptions): Platform & { pending: Set<Promise<unknown>>; db: ReturnType<typeof sqliteDb> } {
   mkdirSync(o.dataDir, { recursive: true });
+  const minLevel = logLevelOf(o.env);
   const log = (level: "info" | "warn" | "error", msg: string, extra?: Record<string, unknown>) => {
     if (o.quiet && level !== "error") return;
+    if (!logAllowed(minLevel, level)) return;
     const line = JSON.stringify({ time: new Date().toISOString(), level, msg, ...(extra ?? {}) });
     if (level === "error") console.error(line);
     else console.log(line);

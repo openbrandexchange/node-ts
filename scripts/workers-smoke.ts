@@ -160,6 +160,13 @@ try {
   check(job.json.import_run.counts.created === 3, "import created product, variant and image");
   const ui = await fetch(`${base}/some/portal/route`, { headers: { accept: "text/html" } });
   check(ui.status === 200 && (await ui.text()).includes("<html"), "static UI with SPA fallback");
+  check((ui.headers.get("content-security-policy") ?? "").includes("frame-ancestors 'none'"), "static UI carries the Content-Security-Policy from public/_headers");
+  const ready = await fetch(`${base}/readyz`);
+  const readyBody = (await ready.json()) as { ok: boolean; checks: Record<string, { ok: boolean }> };
+  check(ready.status === 200 && readyBody.ok && readyBody.checks.database.ok && readyBody.checks.storage.ok, "readiness: D1 migrated, R2 reachable");
+  const rid = await fetch(`${base}/.well-known/obx`, { headers: { "x-request-id": "smoke-request-0001" } });
+  check(rid.headers.get("x-request-id") === "smoke-request-0001", "request id is echoed");
+  check((await fetch(`${base}/metrics`)).status === 404, "/metrics is off without OBX_METRICS_TOKEN");
   console.log("\nWorkers smoke test passed.");
 } catch (e) {
   console.error(e instanceof Error ? e.message : e);

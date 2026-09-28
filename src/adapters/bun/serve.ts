@@ -11,7 +11,7 @@ export function serverFetch(o: { app: { fetch(req: Request): Response | Promise<
     headers.set("x-obx-client-ip", fwd || srv.requestIP(req)?.address || "unknown");
     if (!o.trustProxy) headers.delete("x-forwarded-proto");
     const r = new Request(req, { headers });
-    if (isApiPath(url.pathname) || url.pathname === "/healthz") return o.app.fetch(r);
+    if (isApiPath(url.pathname)) return o.app.fetch(r);
     return o.serveUi(r);
   };
 }
