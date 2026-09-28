@@ -122,10 +122,12 @@ export async function housekeeping(ctx: Ctx) {
       /* keep going until nothing is left */
     }
   }
-  await refreshCountsSnapshot(ctx);
+  // Only when /metrics is on, and at most hourly: counting a 10,000-product catalog reads ~150,000 rows.
+  const countsAt = Date.parse(JSON.parse((await ctx.meta("counts_snapshot")) ?? "{}").at ?? "") || 0;
+  if (ctx.config.metricsToken && ctx.now() - countsAt >= 3600 * 1000) await refreshCountsSnapshot(ctx);
 }
 
-/** Catalog counts for /metrics, refreshed by housekeeping so a metrics scrape reads one row (D1 bills rows read). */
+/** Catalog counts for /metrics, refreshed hourly by housekeeping so a metrics scrape reads one row (D1 bills rows read). */
 export async function refreshCountsSnapshot(ctx: Ctx) {
   const q = await ctx.db.first<Record<string, number>>(
     `SELECT

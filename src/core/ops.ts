@@ -116,9 +116,14 @@ export async function metricsText(ctx: Ctx): Promise<string> {
     out.push(line("obx_http_request_duration_seconds_sum", k, Number(s.sum.toFixed(6))));
     out.push(line("obx_http_request_duration_seconds_count", k, s.count));
   }
-  // Catalog sizes come from the snapshot housekeeping writes every 10 minutes (one row read per scrape);
+  // Catalog sizes come from the snapshot housekeeping writes hourly (one row read per scrape);
   // the small tables below are counted live through their indexes.
-  const snap = JSON.parse((await ctx.meta("counts_snapshot")) ?? "{}") as Record<string, number>;
+  let snap = JSON.parse((await ctx.meta("counts_snapshot")) ?? "{}") as Record<string, number>;
+  if (!snap.at) {
+    const { refreshCountsSnapshot } = await import("./cron");
+    await refreshCountsSnapshot(ctx);
+    snap = JSON.parse((await ctx.meta("counts_snapshot")) ?? "{}") as Record<string, number>;
+  }
   const live = await ctx.db.first<Record<string, number | null>>(
     `SELECT
        (SELECT COALESCE(MAX(seq), 0) FROM changes) AS latest_seq,
@@ -151,7 +156,7 @@ export async function metricsText(ctx: Ctx): Promise<string> {
     out.push(line("obx_jobs", `kind="${r.kind}",status="${r.status}"`, r.n));
   help("obx_downloads_24h", "gauge", "Downloads by retailers in the last 24 hours.");
   out.push(line("obx_downloads_24h", "", (await ctx.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM download_events WHERE at >= ? AND kind != 'usage'", [ctx.iso(-86_400_000)]))?.n ?? 0));
-  help("obx_catalog_counts_age_seconds", "gauge", "Age of the catalog counts above (refreshed by housekeeping every 10 minutes).");
+  help("obx_catalog_counts_age_seconds", "gauge", "Age of the catalog counts above (refreshed hourly; -1 until the first refresh).");
   out.push(line("obx_catalog_counts_age_seconds", "", snap.at ? Math.max(0, Math.round((ctx.now() - Date.parse(String(snap.at))) / 1000)) : -1));
   return out.join("\n") + "\n";
 }
