@@ -61,4 +61,47 @@ The recipient's language is the user's language, the requester's `contact.langua
 
 - Walked with Playwright against the vendored admin-ui on Bun, Docker Compose and `wrangler dev`: setup wizard, zip import, access request → approve → invitation → retailer login, catalog, article page, single-image download, EAN list, selection zip + CSV, background zip, API key and access key creation, scheduled import from a web address (run now and by the schedule).
 - Found and fixed on the way: zip downloads stalled after the first file on Bun (a stream `pull()` that returned without output); a repeated `PUT /blobs/{sha256}` hung on Bun because the request body was cancelled (now read and hash-checked); link-local and metadata addresses were allowed in development mode; header import problems used row 0 (now null).
-- `obx-conformance all` passes 47/47 on Bun and on `wrangler dev`. `obx push` of `fixtures/kestrel` then a second push (nothing uploaded, all unchanged) and `obx pull` (originals byte-identical, deletes mirrored) work.
+- `obx-conformance all` passed 47/47 on Bun and on `wrangler dev` then; after hardening (see below) 57/57 on both, 58/58 on Bun with `--rate-limit-test`. `obx push` of `fixtures/kestrel` then a second push (nothing uploaded, all unchanged) and `obx pull` (originals byte-identical, deletes mirrored) work.
+
+## Production hardening (2026-09-28)
+
+- Ops: `/readyz`, request ids in every log line, Bun access log, Prometheus `/metrics` behind
+  `OBX_METRICS_TOKEN`, configuration checked at start (exit 78), graceful shutdown, migrations
+  recorded in `d1_migrations` (shared with `wrangler d1 migrations apply`) and a refusal of databases
+  from newer versions, backup/restore commands (tested in `test/backup.test.ts` and, with Docker, by
+  `scripts/backup-restore-test.sh`), security headers (HSTS behind TLS, COOP, Permissions-Policy,
+  `default-src 'none'` on API responses), 405 with `Allow` for wrong methods.
+- Sign-in throttling counts failed attempts only (the e2e walk locked itself out after ten
+  successful sign-ins from one address before).
+- Load test (`scripts/loadtest.ts`, docs/performance.md): HMAC via node:crypto, page-first list
+  queries, indexes for lists, facets and every periodic query; the blob clean-up is one set-based
+  pass per day. D1 bills rows read, so periodic full-table scans (staged originals every minute,
+  per-blob LIKE scans) were the most expensive part of an idle portal.
+- Cloudflare: `npm run deploy` = `wrangler deploy && wrangler d1 migrations apply DB --remote`; no
+  `limits` block; background steps stop at 800 D1 queries per invocation; D1 limit errors answer 503
+  with an actionable sentence.
+
+## Open items (tracked here, with the reason they are open)
+
+1. **Admin API extensions not yet in the spec or the admin screens:** `GET /admin/api/audit-log`,
+   `GET /admin/api/retailers/{id}/export`, `GET /admin/api/users/{id}/export`,
+   `GET /admin/api/me/export`, `DELETE /admin/api/me` and `Settings.retention` (shapes in the section
+   "Privacy, audit log and retention" above). They work over the API; node-admin.yaml and admin-ui
+   need to add them so brands see them in the screens. Reason: other repositories.
+2. **Deploy to Cloudflare button** needs the repository to be public; until then option B of the README.
+   Reason: the owner decides when repositories go public.
+3. **Not run against real cloud accounts:** a real Cloudflare deploy (verified: `wrangler deploy
+   --dry-run`, the prebuilt bundle in `wrangler dev`, the whole flow in `bun run smoke:workers`,
+   conformance on `wrangler dev`) and `deploy/cloudrun/deploy.sh` (shellcheck only; gcloud is not
+   installed here). Reason: no cloud accounts may be used from this environment.
+4. **D1 row estimates** in docs/hosting-cloudflare.md are estimates from query plans and table sizes,
+   not measured on D1 (the local simulator does not bill). Reason: needs a real account; the D1
+   dashboard shows the real numbers.
+5. **Passwords** are argon2id on Bun and bcrypt on Workers; a database moved from Bun to Workers
+   needs password resets (documented in operations.md). Reason: Workers has no native argon2.
+6. **No server-side image resizing** (by design of this edition, see item 1 at the top).
+7. **Protocol API rate limits** are in memory per process or Workers isolate (best effort); the
+   security-sensitive limits (sign-in, setup, resets, access requests, tokens) are in the database.
+   Reason: a per-request D1 write for every API call would cost more than it protects.
+8. **Streamed zip downloads on Bun** go out chunked without `Content-Length`, so browsers show no
+   download progress. Reason: Bun.serve drops the header on streamed bodies; harmless.
