@@ -139,6 +139,84 @@ export interface ProductGroup {
   status: string | null;
   variants: { row: number; externalId: string; data: Record<string, unknown> }[];
   rows: number[];
+  /** The columns of the file this group came from (import rule 9). */
+  present: PresentColumns;
+}
+
+/**
+ * Which columns a products.csv has, by canonical name (aliases resolved): plain columns, the
+ * languages of each text column (the plain one is the import's default language) and the
+ * attr:<key> columns. A node keeps the stored value of every field whose column is missing.
+ */
+export interface PresentColumns {
+  plain: Set<string>;
+  langs: Record<"name" | "description" | "color_name", Set<string>>;
+  attrs: Set<string>;
+}
+
+const COLUMN_ALIASES: Record<string, string> = { style: "style_number", ean: "gtin", barcode: "gtin", colour_code: "color_code", colour_name: "color_name" };
+
+export function presentColumns(cols: string[], defaultLanguage: string): PresentColumns {
+  const p: PresentColumns = { plain: new Set(), langs: { name: new Set(), description: new Set(), color_name: new Set() }, attrs: new Set() };
+  for (const c of cols) {
+    const [raw, tag] = c.split(":");
+    const base = COLUMN_ALIASES[raw] ?? raw;
+    if (base === "attr" && tag) p.attrs.add(tag);
+    else if (tag) {
+      if (base in p.langs) p.langs[base as keyof PresentColumns["langs"]].add(tag);
+    } else if (base) {
+      p.plain.add(base);
+      if (base in p.langs) p.langs[base as keyof PresentColumns["langs"]].add(defaultLanguage);
+    }
+  }
+  return p;
+}
+
+type ColumnField = { path: string; column: string; kind: "plain" | "text" | "attrs" };
+export const PRODUCT_COLUMN_FIELDS: ColumnField[] = [
+  { path: "name", column: "name", kind: "text" },
+  { path: "description", column: "description", kind: "text" },
+  ...["item_type", "target_group", "season", "collection", "gpc_brick", "materials", "care", "country_of_origin", "dpp_url"].map((c) => ({ path: c, column: c, kind: "plain" as const })),
+  { path: "attributes", column: "attr", kind: "attrs" },
+];
+export const VARIANT_COLUMN_FIELDS: ColumnField[] = [
+  ...["gtin", "sku", "size", "size_system"].map((c) => ({ path: c, column: c, kind: "plain" as const })),
+  { path: "color.name", column: "color_name", kind: "text" },
+  { path: "color.supplier_color", column: "supplier_color", kind: "plain" },
+];
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/**
+ * Import rule 9 (spec import-format.md): for a product or variant the node already has, a field
+ * whose column the file does not have keeps its stored value (texts per language, attributes per
+ * key); an empty cell in a column the file has still removes the value. Changes `data` in place.
+ */
+export function keepAbsentColumns(data: Record<string, unknown>, stored: Record<string, unknown>, fields: ColumnField[], present: PresentColumns) {
+  for (const f of fields) {
+    const parts = f.path.split(".");
+    const key = parts.pop()!;
+    let parent: Record<string, unknown> | null = data;
+    let oldParent: Record<string, unknown> | null = stored;
+    for (const seg of parts) {
+      parent = parent && isObj(parent[seg]) ? (parent[seg] as Record<string, unknown>) : null;
+      oldParent = oldParent && isObj(oldParent[seg]) ? (oldParent[seg] as Record<string, unknown>) : null;
+    }
+    if (!parent || !oldParent) continue;
+    const was = oldParent[key];
+    if (was === undefined || was === null) continue;
+    if (f.kind === "plain") {
+      if (!(key in parent) && !present.plain.has(f.column)) parent[key] = was;
+      continue;
+    }
+    if (!isObj(was)) continue;
+    const now: Record<string, unknown> = isObj(parent[key]) ? { ...(parent[key] as Record<string, unknown>) } : {};
+    for (const [k, v] of Object.entries(was)) {
+      const absent = f.kind === "attrs" ? !present.attrs.has(k) : !present.langs[f.column as keyof PresentColumns["langs"]].has(k);
+      if (!(k in now) && absent) now[k] = v;
+    }
+    if (Object.keys(now).length) parent[key] = now;
+  }
 }
 
 const PRODUCT_COLS = new Set([
@@ -233,6 +311,7 @@ export function parseProductsCsv(text: string, file: string, defaultLanguage: st
     size_system: idx(["size_system"]),
     variant_status: idx(["variant_status"]),
   };
+  const present = presentColumns(cols, defaultLanguage);
   const names = langCols(["name"]);
   const descs = langCols(["description"]);
   const colorNames = langCols(["color_name", "colour_name"]);
@@ -317,7 +396,7 @@ export function parseProductsCsv(text: string, file: string, defaultLanguage: st
     let g = groups.get(key);
     if (!g) {
       if (!rowOk) continue;
-      g = { key, firstRow: row, brandRef: cell(cells, I.brand) || null, product, status: status || null, variants: [], rows: [] };
+      g = { key, firstRow: row, brandRef: cell(cells, I.brand) || null, product, status: status || null, variants: [], rows: [], present };
       groups.set(key, g);
       order.push(key);
     } else {

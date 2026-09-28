@@ -7,7 +7,7 @@ import { ObxError } from "../lib/problem";
 import { getBlob, storeBlob, fileRef, blobKey } from "./blobs";
 import { ignoredEntry, readZipDirectory, readZipEntry, unsafeEntryReason, ZipError, type ZipReadEntry } from "../lib/zip";
 import { storeReader, readText, streamToStore } from "./storeio";
-import { parseAssetsCsv, parseImageName, parseProductsCsv, IMAGE_EXT, type AssetOverride, type ProductGroup, type RowError } from "./importformat";
+import { keepAbsentColumns, parseAssetsCsv, parseImageName, parseProductsCsv, IMAGE_EXT, PRODUCT_COLUMN_FIELDS, VARIANT_COLUMN_FIELDS, type AssetOverride, type ProductGroup, type RowError } from "./importformat";
 import { isPlainObject, safeJsonParse, slugify } from "../lib/util";
 import { fetchSource, type SourceRow } from "./sources";
 import type { Stmt } from "../platform";
@@ -637,6 +637,8 @@ async function applyGroup(ctx: Ctx, job: JobRow, st: State, input: ImportInput, 
   const pdata: Record<string, unknown> = { ...g.product };
   if (brandExt) pdata.brand_external_id = brandExt;
   if (g.status) pdata.status = g.status;
+  const storedProduct = await s.load("product", g.key);
+  if (storedProduct) keepAbsentColumns(pdata, s.recordData(storedProduct), PRODUCT_COLUMN_FIELDS, g.present);
   const pr = await s.apply("upsert", "product", g.key, pdata);
   results.push({ r: pr, row: g.firstRow, file });
   if (pr.result === "error") {
@@ -644,7 +646,10 @@ async function applyGroup(ctx: Ctx, job: JobRow, st: State, input: ImportInput, 
     return;
   }
   for (const v of g.variants) {
-    const r = await s.apply("upsert", "variant", v.externalId, v.data);
+    const vdata: Record<string, unknown> = structuredClone(v.data);
+    const storedVariant = await s.load("variant", v.externalId);
+    if (storedVariant) keepAbsentColumns(vdata, s.recordData(storedVariant), VARIANT_COLUMN_FIELDS, g.present);
+    const r = await s.apply("upsert", "variant", v.externalId, vdata);
     results.push({ r, row: v.row, file });
   }
   const product = s.get("product", g.key)!;

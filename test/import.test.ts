@@ -68,6 +68,32 @@ describe("canonical import (I-IMP-1..4)", () => {
     expect((await data("KO-1001_NVY_1")).rights.credit).toBe("Photo: Test Studio");
   });
 
+  test("a column the file does not have keeps the field; an empty cell removes it (import rule 9, I-IMP-6)", async () => {
+    const { node, token } = await kestrelNode();
+    await importKestrel(node, token);
+    const run = async (csv: string) => {
+      const f = formData([{ name: "csv", filename: "products.csv", type: "text/csv", data: csv }]);
+      const r = await node.api(token, "POST", "/obx/v1/ingest/imports", { body: f.body, headers: { "content-type": f.contentType } });
+      expect(r.status).toBe(202);
+      await node.drain();
+      return (await node.api(token, "GET", `/obx/v1/ingest/jobs/${r.json.id}`)).json;
+    };
+    const product = async () => (await node.api(token, "GET", "/obx/v1/ingest/products/KO-1001")).json.data;
+    const only = await run("brand,style_number,name:en\nKestrel,KO-1001,Merino Crew Sweater\nKestrel,KO-1002,Waxed Field Jacket\n");
+    expect(only.status).toBe("succeeded");
+    expect({ created: only.import_run.counts.created, updated: only.import_run.counts.updated }).toEqual({ created: 0, updated: 0 });
+    let p = await product();
+    expect(p.name.nl).toBe("Merino trui met ronde hals");
+    expect(p.description?.en).toBeTruthy();
+    expect(p.materials?.length).toBeGreaterThan(0);
+    expect(p.care?.length).toBeGreaterThan(0);
+    const season = await run("brand,style_number,name:en,season\nKestrel,KO-1001,Merino Crew Sweater,\n");
+    expect(season.import_run.counts.updated).toBe(1);
+    p = await product();
+    expect(p.season ?? null).toBeNull();
+    expect(p.collection).toBeTruthy();
+  });
+
   test("an image named with colour ALL belongs to every colour: {style}_ALL_{position}, colour null", async () => {
     const { node, token } = await kestrelNode();
     const img = kestrelImages().find((i) => i.name === "KO-1005_COG_1_front.png")!;

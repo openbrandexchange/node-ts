@@ -29,6 +29,10 @@ always forward-only and applied automatically.
   images alone, or with an assets.csv that has no row for them, keep their embargo, credit, alt text
   and AI label, also when those were set in the admin. Before, every such import reset them to the
   defaults, which lifted embargoes.
+- A column that a products.csv does not have leaves that field of an existing product or variant as
+  it is (spec import rule 9, per language for texts): a file with only `style_number` and `name:nl`
+  changes only the Dutch names. Before, it removed the descriptions, materials, care codes and the
+  other languages. An empty cell in a column the file has still removes the value.
 - Discovery reports `spec_version` 0.1.0 instead of 0.1.0-draft.
 - `Settings.retention.download_stats_days` is now `download_events_days`, the name the other two
   portals use; a value stored under the old name is read as the new one.
