@@ -150,7 +150,7 @@ test('the invited retailer sets a password, browses, pastes EANs and downloads a
   await axe(page, 'portal article')
 
   await page.getByRole('link', { name: 'EAN list' }).first().click()
-  await page.getByLabel('EANs').fill('2000100101018\n2000100101025\n2000100201015\n9999999999994\nabc')
+  await page.getByRole('textbox', { name: 'EANs' }).fill('2000100101018\n2000100101025\n2000100201015\n9999999999994\nabc')
   await page.getByRole('button', { name: 'Find articles' }).click()
   await expect(page.getByText(/found/).first()).toBeVisible()
   await expect(page.getByText('1 not found')).toBeVisible()
