@@ -90,7 +90,7 @@ protocol.get("/.well-known/obx", async (c) => {
   return json(c, doc, 200, { "access-control-allow-origin": "*", "cache-control": "public, max-age=300" });
 });
 
-protocol.options("/.well-known/obx", (c) => new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, OPTIONS", "access-control-max-age": "86400" } }));
+protocol.options("/.well-known/obx", () => new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, OPTIONS", "access-control-max-age": "86400" } }));
 
 // ------------------------------------------------------------------ access requests
 

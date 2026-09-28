@@ -1,6 +1,6 @@
 // Audit log, personal-data export and erasure, and retention of logs and statistics.
 import { describe, expect, test } from "bun:test";
-import { TestNode, importKestrel } from "./helpers";
+import { TestNode } from "./helpers";
 import { Ctx } from "../src/core/ctx";
 import { housekeeping } from "../src/core/cron";
 

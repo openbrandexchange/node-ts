@@ -20,14 +20,14 @@ export const PORTAL_WORD: Record<string, string> = {
   hr: "Portal za trgovce",
   hu: "Viszonteladói portál",
   it: "Area rivenditori",
-  lt: "Pardavėjų portalas",
+  lt: "Prekybininkų portalas",
   lv: "Tirgotāju portāls",
   mt: "Portal għall-bejjiegħa",
   nb: "Forhandlerportal",
   nl: "Beeldbank",
   pl: "Portal dla sprzedawców",
   pt: "Portal de revendedores",
-  ro: "Portal pentru revânzători",
+  ro: "Portal pentru comercianți",
   sk: "Portál pre predajcov",
   sl: "Portal za trgovce",
   sv: "Återförsäljarportal",
@@ -36,7 +36,7 @@ export const PORTAL_WORD: Record<string, string> = {
 type Strings = Record<string, string>;
 
 /** English fallback, copied from the admin-ui locale file (scripts/update-ui.sh keeps the vendored files current). */
-const BUILTIN_EN: Strings = {
+export const BUILTIN_EN: Strings = {
   "email.greeting": "Hello {{name}},",
   "email.greetingNoName": "Hello,",
   "email.signoff": "Kind regards,\n{{brand}}",
