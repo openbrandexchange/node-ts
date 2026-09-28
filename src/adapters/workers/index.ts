@@ -16,7 +16,18 @@ export interface Env {
   [key: string]: unknown;
 }
 
+const dbCache = new WeakMap<D1Database, Db>();
+
+/** One Db wrapper per D1 binding, so the "migrations applied" check runs once per isolate. */
 export function d1Db(d1: D1Database): Db {
+  const hit = dbCache.get(d1);
+  if (hit) return hit;
+  const db = makeD1Db(d1);
+  dbCache.set(d1, db);
+  return db;
+}
+
+function makeD1Db(d1: D1Database): Db {
   const prep = (sql: string, params?: SqlValue[]) => {
     const s = d1.prepare(sql);
     return params && params.length ? s.bind(...params.map((p) => (p === undefined ? null : p))) : s;
