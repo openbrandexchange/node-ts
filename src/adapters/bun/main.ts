@@ -1,6 +1,6 @@
 // Bun entry point: `bun src/adapters/bun/main.ts` (also used by the Docker image and Cloud Run).
 import { createApp, createWorker, isApiPath } from "../../app";
-import { createBunPlatform } from "./platform";
+import { createBunPlatform, ensureBucketFromEnv } from "./platform";
 import { staticHandler } from "./static";
 
 const env = process.env as Record<string, string | undefined>;
@@ -27,6 +27,7 @@ const app = createApp(platform);
 const worker = createWorker(platform);
 const serveUi = staticHandler(uiDir);
 
+await ensureBucketFromEnv(env).catch((e) => platform.log("error", "S3 bucket check failed", { error: String(e) }));
 await worker.rotateSetupCode();
 setInterval(() => worker.tick(50_000).catch((e) => platform.log("error", "tick failed", { error: String(e) })), 60_000);
 setTimeout(() => worker.tick(50_000).catch(() => {}), 2000);

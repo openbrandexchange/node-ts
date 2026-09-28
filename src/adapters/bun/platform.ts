@@ -5,7 +5,7 @@ import { lookup } from "node:dns/promises";
 import type { BlobStore, Platform } from "../../platform";
 import { sqliteDb } from "./sqlite";
 import { diskStore } from "./disk";
-import { s3Store } from "../shared/s3store";
+import { s3Store, ensureBucket, type S3Options } from "../shared/s3store";
 import { httpMailer } from "../shared/mailer";
 import { configFromEnv, secretProblem, type EnvLike } from "../shared/config";
 import { b64url, randomBytes } from "../../lib/util";
@@ -40,21 +40,30 @@ export function loadOrCreateSecret(env: EnvLike, dataDir: string, log: (m: strin
   return k;
 }
 
+export function s3OptionsFromEnv(env: EnvLike): S3Options | null {
+  if ((env.OBX_STORAGE ?? "disk").toLowerCase() !== "s3") return null;
+  const need = ["OBX_S3_BUCKET", "OBX_S3_ACCESS_KEY_ID", "OBX_S3_SECRET_ACCESS_KEY"].filter((k) => !env[k]);
+  if (need.length) throw new Error(`OBX_STORAGE=s3 needs ${need.join(", ")}`);
+  const region = env.OBX_S3_REGION ?? "us-east-1";
+  return {
+    endpoint: env.OBX_S3_ENDPOINT ?? `https://s3.${region}.amazonaws.com`,
+    bucket: env.OBX_S3_BUCKET!,
+    region,
+    accessKeyId: env.OBX_S3_ACCESS_KEY_ID!,
+    secretAccessKey: env.OBX_S3_SECRET_ACCESS_KEY!,
+    prefix: env.OBX_S3_PREFIX,
+    pathStyle: env.OBX_S3_PATH_STYLE ? /^(1|true)$/i.test(env.OBX_S3_PATH_STYLE) : true,
+  };
+}
+
+export async function ensureBucketFromEnv(env: EnvLike) {
+  const o = s3OptionsFromEnv(env);
+  if (o && /^(1|true|yes)$/i.test(env.OBX_S3_CREATE_BUCKET ?? "")) await ensureBucket(o);
+}
+
 export function storeFromEnv(env: EnvLike, dataDir: string): BlobStore {
-  if ((env.OBX_STORAGE ?? "disk").toLowerCase() === "s3") {
-    const need = ["OBX_S3_BUCKET", "OBX_S3_ACCESS_KEY_ID", "OBX_S3_SECRET_ACCESS_KEY"].filter((k) => !env[k]);
-    if (need.length) throw new Error(`OBX_STORAGE=s3 needs ${need.join(", ")}`);
-    const region = env.OBX_S3_REGION ?? "us-east-1";
-    return s3Store({
-      endpoint: env.OBX_S3_ENDPOINT ?? `https://s3.${region}.amazonaws.com`,
-      bucket: env.OBX_S3_BUCKET!,
-      region,
-      accessKeyId: env.OBX_S3_ACCESS_KEY_ID!,
-      secretAccessKey: env.OBX_S3_SECRET_ACCESS_KEY!,
-      prefix: env.OBX_S3_PREFIX,
-      pathStyle: env.OBX_S3_PATH_STYLE ? /^(1|true)$/i.test(env.OBX_S3_PATH_STYLE) : true,
-    });
-  }
+  const s3 = s3OptionsFromEnv(env);
+  if (s3) return s3Store(s3);
   const dir = resolve(env.OBX_FILES_DIR ?? join(dataDir, "files"));
   mkdirSync(dir, { recursive: true });
   return diskStore(dir);

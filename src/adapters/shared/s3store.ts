@@ -12,6 +12,16 @@ export interface S3Options {
   pathStyle?: boolean;
 }
 
+/** Creates the bucket if it does not exist yet (used by the Docker Compose setup with a local S3 server). */
+export async function ensureBucket(o: S3Options): Promise<void> {
+  const aws = new AwsClient({ accessKeyId: o.accessKeyId, secretAccessKey: o.secretAccessKey, service: "s3", region: o.region });
+  const url = `${o.endpoint.replace(/\/+$/, "")}/${o.bucket}`;
+  const head = await aws.fetch(url, { method: "HEAD" });
+  if (head.ok) return;
+  const r = await aws.fetch(url, { method: "PUT" });
+  if (!r.ok && r.status !== 409) throw new Error(`could not create bucket ${o.bucket}: ${r.status}`);
+}
+
 export function s3Store(o: S3Options): BlobStore {
   const aws = new AwsClient({ accessKeyId: o.accessKeyId, secretAccessKey: o.secretAccessKey, service: "s3", region: o.region });
   const ep = o.endpoint.replace(/\/+$/, "");

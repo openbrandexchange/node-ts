@@ -129,7 +129,7 @@ The same code runs on [Bun](https://bun.sh), with SQLite and files on disk or in
 ```sh
 cp .env.example .env          # set OBX_SECRET_KEY (openssl rand -base64 48) and OBX_SETUP_CODE
 docker compose up -d          # http://localhost:8080 — data in the "portal-data" volume
-docker compose --profile s3 up -d   # same, with images in a bundled MinIO (set OBX_STORAGE=s3)
+docker compose --profile s3 up -d   # same, with images in a bundled S3 server (set OBX_STORAGE=s3)
 ```
 
 Put HTTPS in front (Caddy, Traefik, nginx) and set `OBX_PUBLIC_URL` and `OBX_TRUST_PROXY=true`. Back up the `portal-data` volume (database + files + generated secret key).
@@ -166,7 +166,7 @@ The script creates a Cloud Storage bucket, secrets and a service account, builds
 
 ```sh
 bun install
-bun test                      # unit + HTTP tests (bun:sqlite, spec fixtures in test/fixtures)
+bun run test                  # unit + HTTP tests (bun:sqlite, spec fixtures in test/fixtures)
 bun run typecheck
 bun run smoke:workers         # the whole flow in the local Workers runtime (wrangler dev, D1 + R2)
 bun run dev                   # Bun server with reload on http://localhost:8080

@@ -6,7 +6,7 @@ services:
     image: brand-portal:latest
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${OBX_PORT:-8080}:8080"
     environment:
       OBX_PUBLIC_URL: ${OBX_PUBLIC_URL:-http://localhost:8080}
       OBX_SECRET_KEY: ${OBX_SECRET_KEY:?Set OBX_SECRET_KEY in .env (openssl rand -base64 48)}
@@ -14,9 +14,10 @@ services:
       OBX_MAIL_PROVIDER: ${OBX_MAIL_PROVIDER:-}
       OBX_MAIL_API_KEY: ${OBX_MAIL_API_KEY:-}
       OBX_MAIL_FROM: ${OBX_MAIL_FROM:-}
-      # Files on the volume by default; switch to the bundled MinIO with OBX_STORAGE=s3 (profile "s3").
+      # Files on the volume by default; switch to the bundled S3 server with OBX_STORAGE=s3 (profile "s3").
       OBX_STORAGE: ${OBX_STORAGE:-disk}
-      OBX_S3_ENDPOINT: ${OBX_S3_ENDPOINT:-http://minio:9000}
+      OBX_S3_ENDPOINT: ${OBX_S3_ENDPOINT:-http://s3:9000}
+      OBX_S3_CREATE_BUCKET: "true"
       OBX_S3_BUCKET: ${OBX_S3_BUCKET:-portal}
       OBX_S3_REGION: ${OBX_S3_REGION:-us-east-1}
       OBX_S3_ACCESS_KEY_ID: ${OBX_S3_ACCESS_KEY_ID:-portal}
@@ -24,27 +25,17 @@ services:
     volumes:
       - portal-data:/data
 
-  minio:
+  # Optional local S3-compatible storage (RustFS): `docker compose --profile s3 up -d` with OBX_STORAGE=s3.
+  s3:
     profiles: ["s3"]
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+    image: rustfs/rustfs:latest
+    restart: unless-stopped
     environment:
-      MINIO_ROOT_USER: ${OBX_S3_ACCESS_KEY_ID:-portal}
-      MINIO_ROOT_PASSWORD: ${OBX_S3_SECRET_ACCESS_KEY:-portal-secret-change-me}
+      RUSTFS_ACCESS_KEY: ${OBX_S3_ACCESS_KEY_ID:-portal}
+      RUSTFS_SECRET_KEY: ${OBX_S3_SECRET_ACCESS_KEY:-portal-secret-change-me}
     volumes:
-      - minio-data:/data
-
-  minio-init:
-    profiles: ["s3"]
-    image: minio/mc:latest
-    depends_on: [minio]
-    entrypoint: >
-      /bin/sh -c "sleep 3; mc alias set local http://minio:9000 $${MINIO_USER} $${MINIO_PASS} && mc mb -p local/$${BUCKET}; exit 0"
-    environment:
-      MINIO_USER: ${OBX_S3_ACCESS_KEY_ID:-portal}
-      MINIO_PASS: ${OBX_S3_SECRET_ACCESS_KEY:-portal-secret-change-me}
-      BUCKET: ${OBX_S3_BUCKET:-portal}
+      - s3-data:/data
 
 volumes:
   portal-data:
-  minio-data:
+  s3-data:

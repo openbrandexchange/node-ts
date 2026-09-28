@@ -494,7 +494,9 @@ adminManage.patch("/admin/api/import-sources/:id", async (c) => {
     mode: s.mode,
     config: safeJsonParse(s.config, {}),
   };
-  const merged = mergePatch(current, { name: body.name, schedule: body.schedule, mode: body.mode, config: body.config, kind: body.kind }) as Record<string, unknown>;
+  const patch: Record<string, unknown> = {};
+  for (const k of ["name", "schedule", "mode", "config", "kind"]) if (body[k] !== undefined) patch[k] = body[k];
+  const merged = mergePatch(current, patch) as Record<string, unknown>;
   const f = await validateSource(c, merged, s);
   const cred = await mergeCredentials(c, s, body.credentials);
   const enabled = body.enabled === undefined ? !!s.enabled : body.enabled === true;
