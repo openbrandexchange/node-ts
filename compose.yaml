@@ -3,8 +3,9 @@
 # file next to this file (see .env.example); without OBX_SECRET_KEY one is generated into the volume.
 services:
   portal:
+    # No fixed image name: Compose names the build after the project (the folder), so two
+    # checkouts on one machine do not overwrite each other's image.
     build: .
-    image: brand-portal:latest
     restart: unless-stopped
     ports:
       - "${OBX_PORT:-8080}:8080"
