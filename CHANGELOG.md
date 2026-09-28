@@ -9,9 +9,11 @@ always forward-only and applied automatically.
 
 ### Changed
 
-- The web interface is admin-ui main after 0.1.1 (commit fe1a1ad): the zip dialog downloads the
-  version you picked, website fields accept an address without `https://`, and an approved API key
-  can be shown when the retailer asked on the web form.
+- The web interface is admin-ui 0.1.1 (commit dabdcd0): the zip dialog downloads the version you
+  picked, website fields accept an address without `https://`, an approved API key can be shown when
+  the retailer asked on the web form, the "Get started" list asks to set up e-mail while none is
+  configured, and on Cloudflare the scheduled-import form no longer offers SFTP (the node reports
+  `settings.node.source_kinds`).
 - The start-up log and the setup-code line name the address to open (`OBX_PUBLIC_URL`), not only the
   port inside the container. Docker Compose derives the default public address from `OBX_PORT`.
 - The web interface is served under admin-ui's strict Content-Security-Policy: no inline styles.
