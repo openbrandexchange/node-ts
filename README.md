@@ -24,7 +24,7 @@ It is free and open source (AGPL-3.0). You own the data; there is no vendor in b
 2. Fill in two values when asked:
    - **OBX_SECRET_KEY**: a long random text of at least 32 characters. On a Mac or Linux: `openssl rand -base64 48`.
    - **OBX_SETUP_CODE**: a code you make up, e.g. `KESTREL-2026`. You type it once in the setup wizard, so nobody else can claim your new portal.
-3. Cloudflare creates the database (D1), the file storage (R2) and the portal, and shows you its address (`https://brand-portal.<you>.workers.dev`).
+3. Cloudflare creates the database (D1), the file storage (R2), the minute timer (Cron Trigger) and the portal, applies the database migrations, and shows you its address (`https://brand-portal.<you>.workers.dev`).
 4. Open that address, enter the setup code, your company name, your languages and your admin account. Done.
 
 > The button works once this repository is public. Until then, use option B.
@@ -37,8 +37,10 @@ bun install
 bunx wrangler login
 bunx wrangler secret put OBX_SECRET_KEY      # paste: openssl rand -base64 48
 bunx wrangler secret put OBX_SETUP_CODE      # a code you choose
-bunx wrangler deploy                          # creates D1 + R2 on first deploy
+bun run deploy                                # creates D1 + R2 + cron, deploys, applies migrations
 ```
+
+Details, plans and limits: [docs/hosting-cloudflare.md](docs/hosting-cloudflare.md).
 
 ### Try it on your computer
 
@@ -57,7 +59,7 @@ bunx wrangler dev    # http://localhost:8787 — the setup code is printed in th
 
 Data is stored in `./data` (SQLite database + files).
 
-**Which Cloudflare plan?** Use **Workers Paid** ($5/month). The free plan limits each request to 10 ms of CPU, which is not enough for password checks and building zip files. Storage costs for a typical catalog are a few dollars per month (R2 has no download fees).
+**Which Cloudflare plan?** Use **Workers Paid** ($5/month). The free plan limits each request to 10 ms of CPU, which is not enough for password checks and building zip files, and its daily database allowance runs out with a real catalog. What happens at each limit: [docs/hosting-cloudflare.md](docs/hosting-cloudflare.md#which-plan-what-the-free-plan-allows-and-what-happens-when-a-limit-is-reached). Storage costs for a typical catalog are a few dollars per month (R2 has no download fees).
 
 ---
 
@@ -142,7 +144,11 @@ docker compose logs portal        # shows the setup code for the wizard
 
 Optional settings (e-mail, your own setup code, public address) go in a `.env` file: `cp .env.example .env`. Without `OBX_SECRET_KEY` a key is generated into the volume on first start. For images in a bundled S3 server: set `OBX_STORAGE=s3` in `.env` and run `docker compose --profile s3 up -d`.
 
-Put HTTPS in front (Caddy, Traefik, nginx) and set `OBX_PUBLIC_URL` and `OBX_TRUST_PROXY=true`. Back up the `portal-data` volume (database + files + generated secret key).
+Put HTTPS in front (Caddy, Traefik, nginx) and set `OBX_PUBLIC_URL` and `OBX_TRUST_PROXY=true`. Back up while it runs with `docker compose exec portal bun src/adapters/bun/backup.ts backup /data/backups/$(date +%F)` (database, files and generated secret key). More: [docs/hosting-docker.md](docs/hosting-docker.md).
+
+### Standalone binary (no Docker, no Bun)
+
+Each release has one archive per platform (`obx-portal-<version>-linux-x64.tar.gz`, `…-linux-arm64`, `…-darwin-arm64`, `…-windows-x64.zip`) with a single executable and the web interface: unpack and run `./obx-portal`. As a systemd service: [docs/hosting-standalone.md](docs/hosting-standalone.md).
 
 ### Google Cloud Run
 
@@ -155,6 +161,8 @@ The script creates a Cloud Storage bucket, secrets and a service account, builds
 ---
 
 ## Configuration
+
+The most used settings are below; every setting, health checks, logs, metrics, backups and data retention are in [docs/operations.md](docs/operations.md).
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -169,6 +177,8 @@ The script creates a Cloud Storage bucket, secrets and a service account, builds
 | `OBX_TRUST_PROXY` | `false` | Bun behind a reverse proxy: trust `X-Forwarded-For` / `X-Forwarded-Proto`. |
 | `OBX_MAX_UPLOAD_BYTES` | 32 MiB (Cloudflare) / 100 MiB (Bun) | Largest single upload; bigger files use resumable uploads. |
 | `OBX_RATE_LIMIT_API`, `OBX_RATE_LIMIT_MEDIA` | `600`, `3000` | Requests per minute per API key. |
+| `OBX_METRICS_TOKEN` | — | Turns on Prometheus `GET /metrics` (Bearer token, 16+ characters). |
+| `OBX_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. JSON logs with a `request_id` per request. |
 
 ---
 
@@ -176,8 +186,12 @@ The script creates a Cloud Storage bucket, secrets and a service account, builds
 
 ```sh
 bun install
-bun run test                  # unit + HTTP tests (bun:sqlite, spec fixtures in test/fixtures)
+bun run lint                  # oxlint
 bun run typecheck
+bun run test                  # unit + HTTP tests (bun:sqlite, spec fixtures in test/fixtures)
+bun run audit && bun run licenses   # dependency vulnerabilities and licences
+sh e2e/run.sh                 # browser tests with axe and keyboard checks (needs Node.js)
+bun run loadtest              # 10,000-product load test (docs/performance.md)
 bun run smoke:workers         # the whole flow in the local Workers runtime (wrangler dev, D1 + R2)
 bun run dev                   # Bun server with reload on http://localhost:8080
 bunx wrangler dev             # Workers runtime locally
@@ -191,8 +205,16 @@ bunx wrangler dev             # Workers runtime locally
 - The admin screens come from [admin-ui](https://github.com/openbrandexchange/admin-ui): `scripts/update-ui.sh` (or `bun run update-ui`) copies its committed build into `public/`, including the e-mail strings in `public/locales/`. The admin API is plain REST + JSON (session cookie, `X-CSRF-Token` header on writes, `{items, next_cursor}` lists, problem+json errors), so any SPA stack works, for example React with TanStack Query. When developing the UI, run this node on port 8080 and let the UI's dev server proxy `/admin/api`, `/obx` and `/.well-known` to it (same origin, no CORS needed).
 - Contracts: [openbrandexchange/spec](https://github.com/openbrandexchange/spec). Implementation notes and deviations: [NOTES.md](NOTES.md). Fixtures are copied with `scripts/sync-fixtures.sh`.
 
+## Documentation
+
+[Hosting](docs/hosting.md) (Cloudflare, Docker, Cloud Run, standalone) · [Operations](docs/operations.md) · [Upgrading](docs/upgrading.md) · [Automatic upload](docs/automation.md) · [Security](docs/security.md) · [Performance](docs/performance.md) · [Privacy notice template](docs/privacy-notice-template.md) · [Changelog](CHANGELOG.md) · [Implementation notes](NOTES.md)
+
+Questions: hello@openbrandexchange.com. Security problems: security@openbrandexchange.com ([SECURITY.md](SECURITY.md)). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) (Developer Certificate of Origin), [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Licence
 
-GNU Affero General Public License v3.0 — see [LICENSE](LICENSE). If you run a modified version for others, you must offer them its source code. The protocol specification is CC-BY-4.0; the shared admin UI and the Go SDK are Apache-2.0.
+GNU Affero General Public License v3.0 only — see [LICENSE](LICENSE) and [NOTICE](NOTICE). If you run a modified version for others, you must offer them its source code. The protocol specification is CC-BY-4.0; the shared admin UI and the Go SDK are Apache-2.0.
+
+An initiative of Richard Lindhout · Open Brand Exchange Foundation (in formation).
 
 <sub>Works with Open Brand Exchange.</sub>

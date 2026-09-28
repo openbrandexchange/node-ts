@@ -15,7 +15,7 @@ const COMMON = new Set(
     "1111111111 0000000000 1234512345 qwertyuiop1 asdfghjkl asdfghjkl1 zxcvbnm123 monkey123 dragon123 football1 " +
     "baseball1 sunshine1 princess1 superman1 starwars1 trustno11 whatever whatever1 secret secret123 wachtwoord " +
     "wachtwoord1 welkom welkom123 geheim passwort passwort1 motdepasse azerty azerty123 contrasena contraseña " +
-    "photopilot openbrandexchange brandportal beeldbank kestrel"
+    "openbrandexchange brandportal beeldbank kestrel"
   ).split(/\s+/),
 );
 
