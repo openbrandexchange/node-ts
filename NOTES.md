@@ -12,7 +12,7 @@ Decisions taken where the spec (v0.1.0-draft) was silent, ambiguous or in tensio
 6. **Cursors** are sealed (HMAC) JSON with the node id: snapshot cursors expire after 24 h, live cursors below the retention floor get `cursor_expired`. History older than 100 days is pruned.
 7. **Access tokens** are stateless sealed tokens (1 h) that carry the client's secret version; every request re-checks the client and retailer rows, so revoking, blocking and rotating take effect immediately.
 8. **Rendition URLs** are signed per viewer (`a=c.<client>` / `u.<user>` / `p.<admin preview>`), valid 60–90 minutes (rounded to 30-minute buckets so browsers can cache thumbnails). Each download re-checks that the actor is still active and still allowed to see the asset.
-9. **Asset external id for "all colours" images from imports** is `{style}_ALL_{position}` (the filename pattern always has a colour; this only happens when `assets.csv` empties `color_code`).
+9. **Images of all colours** (import-format.md, "all colours"): the colour part `ALL` in a file name, or an empty `color_code` in `assets.csv`, gives `color_code: null` and the external id `{style}_ALL_{position}`. File-name qualifiers follow the spec: two-part keys (`size_chart`, `tilted_left`, `tilted_right`) first, the rightmost role and view win, `other` is the view when the name also has another role.
 10. **`changes.available` webhooks** are sent at most every 30 seconds per subscription (minute tick plus right after writes). Retries: 1 min, 5 min, 30 min, 2 h, 6 h, 12 h, then given up; a subscription failing for 3 days is disabled.
 11. **Exports** keep one running export per API key; parts are ≤ 2 GiB, the manifest is streamed from stored lines (header counts are final). Exports expire 48 h after finishing.
 
@@ -24,6 +24,8 @@ Decisions taken where the spec (v0.1.0-draft) was silent, ambiguous or in tensio
 15. **EAN paste** (`text`) splits on every non-digit, including spaces (as the admin spec says); the protocol lookup (`gtins`) keeps inner spaces inside one code.
 16. **Admin product list** `visibility=pending_files` = products with images that miss an original or a web version.
 17. **Cookies:** `obx_session` and `obx_csrf` are `Secure` when the request came over HTTPS (on Bun, `X-Forwarded-Proto` counts only with `OBX_TRUST_PROXY=true`). A portal served over plain `http://` on a LAN would otherwise be unable to log in.
+18a. **API keys** made in the admin (or on approval of an access request) get `catalog:read` + `media:read` (+ `media:original` when the retailer may download originals); `usage:write` only when the admin asks for it. What a key can see is always limited by the retailer's grant at request time.
+18b. **Wrong methods** on an existing path answer `405 method_not_allowed` with an `Allow` header; unknown paths answer `404 not_found`.
 18. **Links in e-mails** go to real UI routes: `/invite/{token}`, `/reset-password/{token}`, `/downloads` (zip ready), `/admin/requests` (new access request), `/login` (approved without a portal invitation; with one, the invitation e-mail is the way in).
 
 ## E-mail strings

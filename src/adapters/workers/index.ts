@@ -102,6 +102,8 @@ function strEnv(env: Env): Record<string, string | undefined> {
   return out;
 }
 
+let warnedPrivate = false;
+
 class ConfigError extends Error {
   constructor(public readonly problems: string[]) {
     super(`The portal is not configured correctly: ${problems.join(" ")}`);
@@ -120,6 +122,10 @@ function makePlatform(env: Env, ctx: ExecutionContext): Platform {
     else console.log(line);
   };
   let kicked = false;
+  if (/^(1|true|yes|on)$/i.test(e.OBX_ALLOW_PRIVATE_URLS ?? "") && !warnedPrivate) {
+    warnedPrivate = true;
+    log("warn", "OBX_ALLOW_PRIVATE_URLS is on: imports and webhooks may use http:// addresses. Use this only for local development.");
+  }
   const platform: Platform = {
     db: d1Db(env.DB),
     blobs:

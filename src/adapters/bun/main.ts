@@ -48,6 +48,8 @@ try {
   platform.log("error", e instanceof Error ? e.message : String(e));
   process.exit(1);
 }
+if (platform.config.allowPrivateUrls)
+  platform.log("warn", "OBX_ALLOW_PRIVATE_URLS is on: imports and webhooks may reach http:// and private addresses. Use this only for local development.");
 await ensureBucketFromEnv(env).catch((e) => platform.log("error", "S3 bucket check failed", { error: String(e) }));
 await worker.rotateSetupCode();
 

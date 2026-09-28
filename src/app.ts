@@ -120,12 +120,43 @@ export function createApp(platform: Platform) {
   app.route("/", adminManage);
   app.route("/", portal);
 
+  // An existing path with a method it does not support answers 405 with an Allow header.
+  const allowed = allowedMethods(app.routes);
   app.notFound((c) => {
-    if (isApiPath(c.req.path)) return problemResponse(new ObxError("not_found", "There is nothing at this address."));
+    if (isApiPath(c.req.path)) {
+      const methods = allowed(c.req.path);
+      if (methods.length) return problemResponse(new ObxError("method_not_allowed", `This address supports ${methods.join(", ")}.`, [], { headers: { allow: methods.join(", ") } }));
+      return problemResponse(new ObxError("not_found", "There is nothing at this address."));
+    }
     return c.text("Not found", 404);
   });
 
   return app;
+}
+
+/** Methods registered for a path (route handlers only, not middleware), for 405 answers. */
+function allowedMethods(routes: { path: string; method: string }[]) {
+  let table: { re: RegExp; methods: Set<string> }[] | null = null;
+  return (path: string): string[] => {
+    table ??= (() => {
+      const byPath = new Map<string, Set<string>>();
+      for (const r of routes) {
+        if (r.method === "ALL" || r.path.includes("*")) continue;
+        byPath.set(r.path, (byPath.get(r.path) ?? new Set()).add(r.method));
+      }
+      return [...byPath].map(([p, methods]) => {
+        const re = p
+          .split("/")
+          .map((seg) => (seg.startsWith(":") ? "[^/]+" : seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
+          .join("/");
+        return { re: new RegExp(`^${re}$`), methods };
+      });
+    })();
+    const out = new Set<string>();
+    for (const t of table) if (t.re.test(path)) for (const m of t.methods) out.add(m);
+    if (out.has("GET")) out.add("HEAD");
+    return [...out].sort();
+  };
 }
 
 /** Background work for adapters: the minute tick and "run queued jobs now". */

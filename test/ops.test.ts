@@ -80,6 +80,23 @@ describe("security headers", () => {
   });
 });
 
+describe("wrong methods", () => {
+  test("an existing path answers 405 with Allow; an unknown path stays 404", async () => {
+    const node = new TestNode();
+    await node.setup();
+    const del = await node.request("DELETE", "/obx/v1/changes");
+    expect(del.status).toBe(405);
+    expect(del.json.obx_error).toBe("method_not_allowed");
+    expect(del.headers.get("allow")).toBe("GET, HEAD");
+    const put = await node.request("PUT", "/obx/v1/assets/ast_1/renditions/web");
+    expect(put.headers.get("allow")).toBe("GET, HEAD");
+    expect((await node.request("PATCH", "/obx/v1/webhooks/wh_1")).headers.get("allow")).toBe("DELETE");
+    const none = await node.request("GET", "/obx/v1/nothing-here");
+    expect(none.status).toBe(404);
+    expect(none.json.obx_error).toBe("not_found");
+  });
+});
+
 describe("metrics", () => {
   test("/metrics does not exist without OBX_METRICS_TOKEN", async () => {
     const node = new TestNode();

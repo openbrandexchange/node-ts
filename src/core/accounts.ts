@@ -126,7 +126,8 @@ export async function deleteRetailer(ctx: Ctx, r: RetailerRow) {
 }
 
 export function defaultScopes(originalAllowed: boolean): string[] {
-  return originalAllowed ? ["catalog:read", "media:read", "media:original", "usage:write"] : ["catalog:read", "media:read", "usage:write"];
+  // usage:write only when asked for explicitly (spec NOTES: API keys).
+  return originalAllowed ? ["catalog:read", "media:read", "media:original"] : ["catalog:read", "media:read"];
 }
 
 export async function createClient(ctx: Ctx, retailer: RetailerRow, name: string, scopes: string[] | null, createdBy: string) {

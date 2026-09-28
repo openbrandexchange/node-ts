@@ -29,30 +29,47 @@ export const CARE_CODES = new Set(
 
 export interface ParsedImageName {
   style: string;
-  color: string;
+  /** Colour code as written, or null for `ALL` (an image of every colour of the product). */
+  color: string | null;
   position: number;
   role: string | null;
   view: string | null;
 }
 
-/** {style}_{color}_{position}[_{qualifier}…].{ext}, parsed from the right (§2.1). */
+const QUALIFIERS = new Set([...ROLES, ...VIEWS]);
+
+/**
+ * {style}_{color}_{position}[_{qualifier}…].{ext}, parsed from the right (import-format.md §2.1):
+ * two-part keys (size_chart, tilted_left, tilted_right) first, the rightmost role and view win,
+ * `other` is the view when the name also has another role, and colour `ALL` means all colours.
+ */
 export function parseImageName(file: string): ParsedImageName | { error: string } {
   const base = file.split("/").pop()!;
   const m = base.match(/^(.*)\.([A-Za-z]+)$/);
   if (!m || !IMAGE_EXT.test(base)) return { error: "Not an image file name (jpg, jpeg, png, webp, tif, tiff)." };
   const parts = m[1].split("_");
+  const qualifiers: string[] = [];
+  for (;;) {
+    const two = parts.length > 4 ? `${parts[parts.length - 2]}_${parts[parts.length - 1]}`.toLowerCase() : "";
+    if (two && QUALIFIERS.has(two)) {
+      qualifiers.push(two);
+      parts.splice(-2, 2);
+    } else if (parts.length > 3 && QUALIFIERS.has(parts[parts.length - 1].toLowerCase())) {
+      qualifiers.push(parts.pop()!.toLowerCase());
+    } else break;
+  }
+  const hasOtherRole = qualifiers.some((q) => q !== "other" && ROLES.includes(q));
   let role: string | null = null;
   let view: string | null = null;
-  while (parts.length > 3) {
-    const last = parts[parts.length - 1].toLowerCase();
-    if (last === "detail") {
-      role = role ?? "detail";
-      view = view ?? "detail";
-    } else if (ROLES.includes(last) && !VIEWS.includes(last)) role = role ?? last;
-    else if (VIEWS.includes(last) && !ROLES.includes(last)) view = view ?? last;
-    else if (ROLES.includes(last)) role = role ?? last;
-    else break;
-    parts.pop();
+  for (const q of qualifiers) {
+    if (q === "detail") {
+      role ??= "detail";
+      view ??= "detail";
+    } else if (q === "other") {
+      if (hasOtherRole) view ??= "other";
+      else role ??= "other";
+    } else if (ROLES.includes(q)) role ??= q;
+    else view ??= q;
   }
   if (parts.length < 3) return { error: "The name needs {style}_{colour}_{position}, e.g. KO-1001_NVY_1.jpg." };
   const pos = parts[parts.length - 1];
@@ -60,7 +77,7 @@ export function parseImageName(file: string): ParsedImageName | { error: string 
   const color = parts[parts.length - 2];
   const style = parts.slice(0, -2).join("_");
   if (!color || !style) return { error: "The name needs {style}_{colour}_{position}." };
-  return { style, color, position: Number(pos), role: role ?? null, view };
+  return { style, color: color.toUpperCase() === "ALL" ? null : color, position: Number(pos), role, view };
 }
 
 // ------------------------------------------------------------------ materials & care

@@ -17,7 +17,7 @@ beforeAll(async () => {
   token = await node.ingestToken(admin);
   await importKestrel(node, token);
   await addRenditions(node, token);
-  full = await node.retailerClient(admin, { name: "Full Retailer" });
+  full = await node.retailerClient(admin, { name: "Full Retailer", scopes: ["catalog:read", "media:read", "media:original", "usage:write"] });
   at = await node.accessToken(full.clientId, full.secret);
   brandIds = Object.fromEntries((await node.platform.db.all<{ id: string; external_id: string }>("SELECT id, external_id FROM brands")).map((b) => [b.external_id, b.id]));
 }, 120_000);
@@ -35,6 +35,8 @@ describe("OAuth2 token endpoint and bearer auth (P-AUTH-1, P-AUTH-2)", () => {
     expect(ok.json.expires_in).toBe(3600);
     expect(ok.json.scope.split(" ").sort()).toEqual(["catalog:read", "media:original", "media:read", "usage:write"]);
     expect(ok.headers.get("cache-control")).toBe("no-store");
+    const plain = await node.retailerClient(admin, { name: "Default Scopes" });
+    expect(plain.clientRow.scopes.sort()).toEqual(["catalog:read", "media:original", "media:read"]);
     const post = await form({ grant_type: "client_credentials", client_id: full.clientId, client_secret: full.secret, scope: "catalog:read" });
     expect(post.json.scope).toBe("catalog:read");
     const wrong = await form({ grant_type: "client_credentials" }, `Basic ${btoa(`${full.clientId}:obxs_wrong`)}`);

@@ -41,6 +41,16 @@ describe("canonical import (I-IMP-1..4)", () => {
     expect((await node.feed(at, snap.cursor)).entries).toEqual([]);
   });
 
+  test("an image named with colour ALL belongs to every colour: {style}_ALL_{position}, colour null", async () => {
+    const { node, token } = await kestrelNode();
+    const img = kestrelImages().find((i) => i.name === "KO-1005_COG_1_front.png")!;
+    const job = await importKestrel(node, token, [{ name: "images", filename: "KO-1005_all_9_size_chart.png", type: "image/png", data: img.bytes } as never]);
+    expect(job.import_run.counts.errors).toBe(0);
+    const a = await node.platform.db.first<{ external_id: string; color_code: string | null; stored: string }>("SELECT external_id, color_code, stored FROM assets WHERE external_id = 'KO-1005_ALL_9'");
+    expect(a).toMatchObject({ external_id: "KO-1005_ALL_9", color_code: null });
+    expect(JSON.parse(a!.stored)).toMatchObject({ role: "size_chart", view: null });
+  });
+
   test("products match expected/product-*.json once renditions exist (P-CAT-1, P-MEDIA-1)", async () => {
     const { node, token, at } = await kestrelNode();
     await importKestrel(node, token);

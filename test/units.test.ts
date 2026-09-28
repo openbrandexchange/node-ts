@@ -43,6 +43,12 @@ describe("import format", () => {
     expect(parseImageName("KO-1003_RST_3_model.png")).toMatchObject({ style: "KO-1003", role: "model", view: null });
     expect(parseImageName("AB_12_34_BLK_2_packshot_back.JPG")).toMatchObject({ style: "AB_12_34", color: "BLK", position: 2, role: "packshot", view: "back" });
     expect(parseImageName("KO-1004_IND_3_detail.jpg")).toMatchObject({ role: "detail", view: "detail" });
+    expect(parseImageName("KO-1002_BLK_4_model_tilted_left.jpg")).toMatchObject({ style: "KO-1002", color: "BLK", position: 4, role: "model", view: "tilted_left" });
+    expect(parseImageName("KO-1001_NVY_5_back_front.jpg")).toMatchObject({ position: 5, role: null, view: "front" });
+    expect(parseImageName("KO-1005_all_4_size_chart.png")).toEqual({ style: "KO-1005", color: null, position: 4, role: "size_chart", view: null });
+    expect(parseImageName("KO-1001_NVY_6_model_other.jpg")).toMatchObject({ role: "model", view: "other" });
+    expect(parseImageName("KO-1001_NVY_6_other.jpg")).toMatchObject({ role: "other", view: null });
+    expect(parseImageName("KO-1001_ALL_2_tilted_right.webp")).toMatchObject({ color: null, view: "tilted_right" });
     expect("error" in parseImageName("KO-1001_NVY_front.jpg")).toBe(true);
     expect("error" in parseImageName("KO-1001_NVY_01.jpg")).toBe(true);
   });
