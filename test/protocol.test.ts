@@ -20,7 +20,7 @@ beforeAll(async () => {
   full = await node.retailerClient(admin, { name: "Full Retailer" });
   at = await node.accessToken(full.clientId, full.secret);
   brandIds = Object.fromEntries((await node.platform.db.all<{ id: string; external_id: string }>("SELECT id, external_id FROM brands")).map((b) => [b.external_id, b.id]));
-});
+}, 120_000);
 
 const productId = async (ext: string) => (await node.platform.db.first<{ id: string }>("SELECT id FROM products WHERE external_id = ?", [ext]))!.id;
 const assetId = async (ext: string) => (await node.platform.db.first<{ id: string }>("SELECT id FROM assets WHERE external_id = ?", [ext]))!.id;

@@ -167,11 +167,11 @@ export async function attempt(ctx: Ctx, hook: WebhookRow, body: string, eventId:
   }
 }
 
-async function recordAttempt(ctx: Ctx, hook: WebhookRow, d: DeliveryRow, r: Awaited<ReturnType<typeof attempt>>) {
+async function recordAttempt(ctx: Ctx, hook: WebhookRow, d: DeliveryRow, r: Awaited<ReturnType<typeof attempt>>, final = false) {
   const now = ctx.iso();
   const n = d.attempt + 1;
   const age = ctx.now() - Date.parse(d.created_at);
-  const giveUp = !r.ok && (n > RETRY_DELAYS.length || age > 24 * 3600 * 1000);
+  const giveUp = !r.ok && (final || n > RETRY_DELAYS.length || age > 24 * 3600 * 1000);
   const state = r.ok ? "done" : giveUp ? "failed" : "pending";
   const next = r.ok || giveUp ? null : ctx.iso(RETRY_DELAYS[n - 1] * 1000);
   const failingSince = r.ok ? null : (hook.failing_since ?? now);
@@ -224,8 +224,7 @@ export async function testWebhook(ctx: Ctx, hook: WebhookRow): Promise<DeliveryR
     now,
   ]);
   const r = await attempt(ctx, hook, body, eventId);
-  const out = await recordAttempt(ctx, hook, { ...d, attempt: RETRY_DELAYS.length }, r);
-  return { ...out, attempt: 1 };
+  return recordAttempt(ctx, hook, d, r, true);
 }
 
 // ------------------------------------------------------------------ job completion hooks

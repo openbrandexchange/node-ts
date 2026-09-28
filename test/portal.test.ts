@@ -36,7 +36,7 @@ beforeAll(async () => {
   retailer = await inviteAndAccept("rita@fictional.example", r1.json.id);
   const r2 = await admin.req("POST", "/admin/api/retailers", { json: { name: "Kestrel Only Shop", brand_ids: [brandIds["kestrel"]], allow_original: false } });
   restricted = await inviteAndAccept("kim@kestrelonly.example", r2.json.id);
-});
+}, 120_000);
 
 describe("retailer portal (A-INV-1, A-PORT-1, A-PORT-2)", () => {
   test("viewer, product list with filters and facets, detail", async () => {

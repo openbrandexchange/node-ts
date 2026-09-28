@@ -41,7 +41,12 @@ const proc = Bun.spawn(
 
 let log = "";
 const collect = async (s: ReadableStream<Uint8Array>) => {
-  for await (const ch of s) log += new TextDecoder().decode(ch);
+  const r = s.getReader();
+  for (;;) {
+    const { done, value } = await r.read();
+    if (done) break;
+    log += new TextDecoder().decode(value);
+  }
 };
 collect(proc.stdout);
 collect(proc.stderr);
@@ -106,7 +111,7 @@ try {
   ] as const) {
     const b = fakeJpeg(w, h, w + h + name.length);
     const sha = await sha256Hex(b);
-    const up = await call("PUT", `/obx/v1/ingest/blobs/${sha}`, { bearer: it, body: b, headers: { "content-type": "image/jpeg" } });
+    const up = await call("PUT", `/obx/v1/ingest/blobs/${sha}`, { bearer: it, body: b as BodyInit, headers: { "content-type": "image/jpeg" } });
     check(up.status === 201, `blob ${name} stored in R2`);
     files[name] = { sha256: sha };
   }
@@ -142,7 +147,7 @@ try {
     ...zip,
     ...enc.encode(`\r\n--${boundary}--\r\n`),
   ]);
-  const imp = await call("POST", "/obx/v1/ingest/imports", { bearer: it, body, headers: { "content-type": `multipart/form-data; boundary=${boundary}` } });
+  const imp = await call("POST", "/obx/v1/ingest/imports", { bearer: it, body: body as BodyInit, headers: { "content-type": `multipart/form-data; boundary=${boundary}` } });
   check(imp.status === 202, "import accepted (202)");
   let status = "";
   for (let i = 0; i < 40 && status !== "succeeded" && status !== "failed"; i++) {
