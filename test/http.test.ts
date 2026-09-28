@@ -84,3 +84,24 @@ test("the admin UI is served at every route, with the API next to it", async () 
   expect((await en.json()).email.invite.subject).toContain("{{portal}}");
   expect((await fetch(`${base}/admin/api/session`)).headers.get("content-type")).toContain("json");
 });
+
+test("UI files follow admin-ui's integration guide: strict CSP, caching, no HTML for missing files", async () => {
+  const base = `http://localhost:${server.port}`;
+  const html = await fetch(`${base}/admin`, { headers: { accept: "text/html" } });
+  const csp = html.headers.get("content-security-policy") ?? "";
+  expect(csp).toContain("style-src 'self';");
+  expect(csp).not.toContain("unsafe-inline");
+  expect(html.headers.get("cache-control")).toBe("no-cache");
+  const asset = (await html.text()).match(/assets\/[^"]+\.js/)![0];
+  expect((await fetch(`${base}/${asset}`)).headers.get("cache-control")).toContain("immutable");
+  for (const path of ["/assets/Gone-12345678.js", "/locales/xx.json"]) {
+    const res = await fetch(base + path, { headers: { accept: "text/html,*/*" } });
+    expect({ path, status: res.status }).toEqual({ path, status: 404 });
+  }
+  for (const path of ["/LICENSE", "/NOTICE", "/THIRD-PARTY-LICENSES.txt"]) {
+    const res = await fetch(base + path);
+    expect({ path, status: res.status, type: res.headers.get("content-type")?.replace(/;\s*/, "; ") }).toEqual({ path, status: 200, type: "text/plain; charset=utf-8" });
+  }
+  const api = await fetch(`${base}/admin/api/session`, { headers: { origin: "https://elsewhere.example" } });
+  expect(api.headers.get("access-control-allow-origin")).toBeNull();
+});
