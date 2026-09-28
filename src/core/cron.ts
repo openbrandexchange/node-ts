@@ -74,11 +74,11 @@ const DAY = 24 * 3600 * 1000;
 export async function retentionStmts(ctx: Ctx) {
   const r = (await ctx.settings()).retention;
   return [
-    { sql: "DELETE FROM download_events WHERE at < ?", params: [ctx.iso(-r.download_events_days * DAY)] },
-    { sql: "UPDATE download_events SET actor_name = NULL WHERE at < ? AND actor_name IS NOT NULL AND actor_type = 'user'", params: [ctx.iso(-Math.min(400, r.download_events_days) * DAY)] },
+    { sql: "DELETE FROM download_events WHERE at < ?", params: [ctx.iso(-r.download_stats_days * DAY)] },
+    { sql: "UPDATE download_events SET actor_name = NULL WHERE at < ? AND actor_name IS NOT NULL AND actor_type = 'user'", params: [ctx.iso(-Math.min(400, r.download_stats_days) * DAY)] },
     { sql: "DELETE FROM audit_log WHERE at < ?", params: [ctx.iso(-r.audit_log_days * DAY)] },
     // IP addresses are for abuse investigation only (security.md §9: at most 30 days).
-    { sql: "UPDATE audit_log SET ip = NULL WHERE ip IS NOT NULL AND at < ?", params: [ctx.iso(-30 * DAY)] },
+    { sql: "UPDATE audit_log SET ip = NULL WHERE ip IS NOT NULL AND at < ?", params: [ctx.iso(-Math.min(30, r.ip_days) * DAY)] },
     { sql: "DELETE FROM access_requests WHERE status != 'pending' AND COALESCE(decided_at, created_at) < ?", params: [ctx.iso(-r.access_requests_days * DAY)] },
   ];
 }

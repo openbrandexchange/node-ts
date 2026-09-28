@@ -40,7 +40,7 @@ describe("audit log of admin actions", () => {
     expect(actions).toContain("settings.update:422");
     expect(actions).toContain("session.login:401");
     const upd = items.find((i) => i.action === "retailers.update");
-    expect(upd).toMatchObject({ actor: { type: "user", name: "Ada Admin", role: "admin" }, method: "PATCH", route: "/admin/api/retailers/:id", target_id: r.json.id, succeeded: true });
+    expect(upd).toMatchObject({ actor: { type: "user", name: "Ada Admin", role: "admin" }, method: "PATCH", route: "/admin/api/retailers/:id", target: { type: "retailer", id: r.json.id }, target_id: r.json.id, succeeded: true });
     expect(upd.request_id).toMatch(/^req_/);
     const failedLogin = items.find((i) => i.action === "session.login" && i.status === 401);
     expect(failedLogin.actor).toMatchObject({ type: "user", name: "Ada Admin" });
@@ -83,7 +83,7 @@ describe("personal data: export and erasure", () => {
     expect(d.users.map((u: any) => u.email)).toEqual(["sam@outdoorshop.example"]);
     expect(d.api_clients.map((k: any) => k.name)).toEqual(["Shop sync"]);
     expect(d.audit_log.some((e: any) => e.action === "invites.accept")).toBe(true);
-    expect(d.retention).toEqual({ download_events_days: 730, audit_log_days: 365, access_requests_days: 365 });
+    expect(d.retention).toEqual({ download_stats_days: 730, audit_log_days: 365, ip_days: 30, access_requests_days: 365 });
     expect(r.text).not.toContain(secret);
     expect(r.text).not.toContain("password_hash");
     expect(r.text).not.toContain("argon2");
@@ -134,24 +134,28 @@ describe("retention", () => {
     const bad = await admin.req("PATCH", "/admin/api/settings", { json: { retention: { audit_log_days: 5 } } });
     expect(bad.status).toBe(422);
     expect(bad.json.errors[0].pointer).toBe("/retention/audit_log_days");
-    const ok = await admin.req("PATCH", "/admin/api/settings", { json: { retention: { download_events_days: 90 } } });
-    expect(ok.json.retention).toEqual({ download_events_days: 90, audit_log_days: 365, access_requests_days: 365 });
+    const ok = await admin.req("PATCH", "/admin/api/settings", { json: { retention: { download_stats_days: 90 } } });
+    expect(ok.json.retention).toEqual({ download_stats_days: 90, audit_log_days: 365, ip_days: 30, access_requests_days: 365 });
+    const unknown = await admin.req("PATCH", "/admin/api/settings", { json: { retention: { forever: 1 } } });
+    expect(unknown.status).toBe(422);
+    expect(unknown.json.errors[0].pointer).toBe("/retention/forever");
   });
 
-  test("housekeeping deletes old statistics, old audit entries, decided requests and clears IPs after 30 days", async () => {
+  test("housekeeping deletes old statistics, old audit entries, decided requests and clears IPs after ip_days", async () => {
     const node = new TestNode();
     const admin = await node.setup();
-    await admin.req("PATCH", "/admin/api/settings", { json: { retention: { download_events_days: 60, audit_log_days: 90, access_requests_days: 30 } } });
+    await admin.req("PATCH", "/admin/api/settings", { json: { retention: { download_stats_days: 60, audit_log_days: 90, ip_days: 7, access_requests_days: 30 } } });
     const db = node.platform.db;
     const ago = (days: number) => new Date(Date.now() - days * 86400_000).toISOString();
     await db.run("INSERT INTO download_events (id, at, kind, retailer_id, retailer_name, actor_type, actor_name, files) VALUES ('old', ?, 'image', NULL, 'Shop', 'user', 'Old Name', 1), ('new', ?, 'image', NULL, 'Shop', 'user', 'New Name', 1)", [ago(61), ago(1)]);
-    await db.run("INSERT INTO audit_log (id, at, actor_type, action, method, route, status, ip) VALUES ('a_old', ?, 'user', 'x.update', 'PATCH', '/x', 200, '198.51.100.1'), ('a_mid', ?, 'user', 'x.update', 'PATCH', '/x', 200, '198.51.100.2'), ('a_new', ?, 'user', 'x.update', 'PATCH', '/x', 200, '198.51.100.3')", [ago(91), ago(31), ago(1)]);
+    await db.run("INSERT INTO audit_log (id, at, actor_type, action, method, route, status, ip) VALUES ('a_old', ?, 'user', 'x.update', 'PATCH', '/x', 200, '198.51.100.1'), ('a_mid', ?, 'user', 'x.update', 'PATCH', '/x', 200, '198.51.100.2'), ('a_new', ?, 'user', 'x.update', 'PATCH', '/x', 200, '198.51.100.3'), ('a_week', ?, 'user', 'x.update', 'PATCH', '/x', 200, '198.51.100.4')", [ago(91), ago(31), ago(1), ago(8)]);
     await db.run("INSERT INTO access_requests (id, status, retailer, contact, access, request_token_hash, created_at, decided_at) VALUES ('ar_old', 'rejected', '{}', '{\"email\":\"a@b.example\"}', '[]', 'h1', ?, ?), ('ar_pending', 'pending', '{}', '{}', '[]', 'h2', ?, NULL)", [ago(40), ago(31), ago(40)]);
     await housekeeping(new Ctx(node.platform));
     expect((await db.all<{ id: string }>("SELECT id FROM download_events ORDER BY id")).map((r) => r.id)).toEqual(["new"]);
-    expect(await db.all("SELECT id, ip FROM audit_log WHERE id IN ('a_old', 'a_mid', 'a_new') ORDER BY id")).toEqual([
+    expect(await db.all("SELECT id, ip FROM audit_log WHERE id IN ('a_old', 'a_mid', 'a_new', 'a_week') ORDER BY id")).toEqual([
       { id: "a_mid", ip: null },
       { id: "a_new", ip: "198.51.100.3" },
+      { id: "a_week", ip: null },
     ]);
     expect((await db.all<{ id: string }>("SELECT id FROM access_requests ORDER BY id")).map((r) => r.id)).toEqual(["ar_pending"]);
   });

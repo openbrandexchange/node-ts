@@ -30,10 +30,10 @@ Decisions taken where the spec (v0.1.0-draft) was silent, ambiguous or in tensio
 
 ## Privacy, audit log and retention (admin API extensions, not yet in node-admin.yaml)
 
-- `GET /admin/api/audit-log?limit&cursor&action&actor_id&target_id&outcome=succeeded|failed` (admins): `{items, next_cursor}`; each item `{id, at, actor {type, id, name, role}, action, method, route, target_id, status, succeeded, request_id, ip, details}`. Every non-GET admin API request is recorded after it ran (also failures), plus sign-ins (the attempted account, also when it fails), setup, password resets, invitation acceptance, retailers' self-service API keys and personal-data exports. Retailer browsing, selections and downloads are not audit entries (they are download statistics). Request bodies are never stored. `action` is derived from the route: `PATCH /admin/api/retailers/:id` → `retailers.update`, `POST …/:id/approve` → `access-requests.approve`.
+- `GET /admin/api/audit-log?limit&cursor&action&actor_id&target_id&outcome=succeeded|failed` (admins): `{items, next_cursor}`; each item `{id, at, actor {type, id, name, role}, action, target {type, id} | null, status, detail, ip, request_id}` (the fields node-php also returns) plus `method`, `route`, `target_id` and `succeeded`. Every non-GET admin API request is recorded after it ran (also failures), plus sign-ins (the attempted account, also when it fails), setup, password resets, invitation acceptance, retailers' self-service API keys and personal-data exports. Retailer browsing, selections and downloads are not audit entries (they are download statistics). Request bodies are never stored. `action` is derived from the route: `PATCH /admin/api/retailers/:id` → `retailers.update`, `POST …/:id/approve` → `access-requests.approve`.
 - `GET /admin/api/retailers/{id}/export` and `GET /admin/api/users/{id}/export` (admins), `GET /admin/api/me/export` (anyone signed in): a JSON attachment (`format: "obx-personal-data-export/1"`) with everything stored about that company or person: accounts, API keys (never secrets), webhooks, access requests, selection, download events, audit entries and the retention periods. `DELETE /admin/api/me`: a retailer's person deletes their own account (administrators are removed by another administrator).
 - Deleting a retailer or a person erases the personal data: accounts, sessions, selections, password resets, API keys, webhooks and access requests are deleted; download statistics keep only the company name; audit entries keep the account id but lose name and IP.
-- `Settings.retention` = `{download_events_days: 730, audit_log_days: 365, access_requests_days: 365}` (each 30–3650). Housekeeping (every 10 minutes) deletes older download events, audit entries and decided access requests, removes people's names from download events after 400 days (or the shorter retention) and clears audit IPs after 30 days (security.md §9).
+- `Settings.retention` = `{download_stats_days: 730, audit_log_days: 365, ip_days: 30, access_requests_days: 365}` (30–3650 days; `ip_days` 1–30; unknown keys are refused), the same keys and ranges as node-php. Housekeeping (every 10 minutes) deletes older download events, audit entries and decided access requests, removes people's names from download events after 400 days (or the shorter retention) and clears audit IPs after `ip_days` (at most 30, security.md §9).
 
 ## E-mail strings
 
@@ -87,7 +87,10 @@ The recipient's language is the user's language, the requester's `contact.langua
    `GET /admin/api/retailers/{id}/export`, `GET /admin/api/users/{id}/export`,
    `GET /admin/api/me/export`, `DELETE /admin/api/me` and `Settings.retention` (shapes in the section
    "Privacy, audit log and retention" above). They work over the API; node-admin.yaml and admin-ui
-   need to add them so brands see them in the screens. Reason: other repositories.
+   need to add them so brands see them in the screens. The paths are the same in node-php and node-go;
+   node-php uses the same `Settings.retention` keys, node-go sets retention through environment
+   variables (`OBX_STATS_RETENTION_DAYS` …); node-php names actions `METHOD /route`, node-go and this
+   node `retailers.update`. The spec should settle one shape. Reason: other repositories.
 2. **Deploy to Cloudflare button** needs the repository to be public; until then option B of the README.
    Reason: the owner decides when repositories go public.
 3. **Not run against real cloud accounts:** a real Cloudflare deploy (verified: `wrangler deploy

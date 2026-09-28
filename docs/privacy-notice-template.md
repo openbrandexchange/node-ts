@@ -43,8 +43,8 @@ autoriteitpersoonsgegevens.nl]).
 
 ### For the brand: where these numbers come from
 
-- Retention periods are the defaults of Settings → retention (`download_events_days` 730,
-  `audit_log_days` 365, `access_requests_days` 365); change the table when you change them.
+- Retention periods are the defaults of Settings → retention (`download_stats_days` 730,
+  `audit_log_days` 365, `ip_days` 30, `access_requests_days` 365); change the table when you change them.
 - Exports and erasure: [operations.md](operations.md#data-retention-and-personal-data). The API also
   lets signed-in people download (`GET /admin/api/me/export`) or delete (`DELETE /admin/api/me`) their
   own data; mention it in the notice once your portal's screens offer it.

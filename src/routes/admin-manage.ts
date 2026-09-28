@@ -109,10 +109,12 @@ adminManage.patch("/admin/api/settings", async (c) => {
   if (!["published", "unpublished"].includes(next.defaults.ingest_status)) v.err("/defaults/ingest_status", 'Use "published" or "unpublished".');
   const rdef = defaultSettings().retention;
   const ret = isPlainObject(next.retention) ? (next.retention as Record<string, unknown>) : {};
+  for (const k of Object.keys(ret)) if (!(k in rdef)) v.err(`/retention/${k}`, `Unknown setting. Known: ${Object.keys(rdef).join(", ")}.`);
   next.retention = { ...rdef };
   for (const k of Object.keys(rdef) as (keyof SettingsData["retention"])[]) {
     const val = ret[k] ?? rdef[k];
-    if (typeof val !== "number" || !Number.isInteger(val) || val < RETENTION_LIMITS.min || val > RETENTION_LIMITS.max) v.err(`/retention/${k}`, `A whole number of days from ${RETENTION_LIMITS.min} to ${RETENTION_LIMITS.max}.`);
+    const [lo, hi] = RETENTION_LIMITS[k];
+    if (typeof val !== "number" || !Number.isInteger(val) || val < lo || val > hi) v.err(`/retention/${k}`, `A whole number of days from ${lo} to ${hi}.`);
     else next.retention[k] = val;
   }
   const r = isPlainObject(next.defaults.rights) ? (next.defaults.rights as Record<string, unknown>) : { ...SPEC_DEFAULT_RIGHTS };

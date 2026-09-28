@@ -49,15 +49,23 @@ export interface SettingsData {
   /** How long personal and usage data is kept (days). See docs/privacy-notice-template.md. */
   retention: {
     /** Download statistics (per retailer, per article). Names of the people who downloaded are removed after 400 days or sooner. */
-    download_events_days: number;
-    /** Audit log of admin actions (IP addresses are always cleared after 30 days). */
+    download_stats_days: number;
+    /** Audit log of admin actions. */
     audit_log_days: number;
+    /** IP addresses in the audit log (at most 30 days, security.md §9). */
+    ip_days: number;
     /** Decided (approved or declined) access requests with their contact details. */
     access_requests_days: number;
   };
 }
 
-export const RETENTION_LIMITS = { min: 30, max: 3650 };
+/** Allowed ranges in days, the same in every node edition. */
+export const RETENTION_LIMITS: Record<keyof SettingsData["retention"], [number, number]> = {
+  download_stats_days: [30, 3650],
+  audit_log_days: [30, 3650],
+  ip_days: [1, 30],
+  access_requests_days: [30, 3650],
+};
 
 export function defaultSettings(): SettingsData {
   return {
@@ -72,7 +80,7 @@ export function defaultSettings(): SettingsData {
       default_language: "en",
     },
     defaults: { rights: { ...SPEC_DEFAULT_RIGHTS }, ingest_status: "published" },
-    retention: { download_events_days: 730, audit_log_days: 365, access_requests_days: 365 },
+    retention: { download_stats_days: 730, audit_log_days: 365, ip_days: 30, access_requests_days: 365 },
   };
 }
 

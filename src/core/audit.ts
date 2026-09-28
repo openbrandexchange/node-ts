@@ -50,6 +50,18 @@ export function actionName(method: string, route: string): string {
   return special[plain.join("/")] ?? [...plain, verb].join(".");
 }
 
+/** What kind of object the route acts on: `retailer`, `user`, `product`, `settings`, `node` … */
+export function targetType(route: string): string | null {
+  const plain = route.replace(/^\/admin\/api\/?/, "").split("/").filter((x) => x && !x.startsWith(":"));
+  const first = plain[0];
+  if (!first) return null;
+  if (["session", "password", "me", "invites"].includes(first)) return "user";
+  if (first === "setup") return "node";
+  if (first === "settings") return "settings";
+  const noun = (first === "catalog" || first === "portal") && plain[1] ? plain[1] : first;
+  return noun.replace(/-/g, "_").replace(/ies$/, "y").replace(/s$/, "");
+}
+
 export async function writeAudit(ctx: Ctx, e: AuditEntry) {
   await ctx.db.run(
     "INSERT INTO audit_log (id, at, actor_type, actor_id, actor_name, actor_role, action, method, route, target_id, status, request_id, ip, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -97,11 +109,12 @@ export function auditJson(r: AuditRow) {
     action: r.action,
     method: r.method,
     route: r.route,
+    target: r.target_id || targetType(r.route) ? { type: targetType(r.route), id: r.target_id } : null,
     target_id: r.target_id,
     status: r.status,
     succeeded: r.status < 400,
     request_id: r.request_id,
     ip: r.ip,
-    details: r.details ? JSON.parse(r.details) : null,
+    detail: r.details ? JSON.parse(r.details) : null,
   };
 }
