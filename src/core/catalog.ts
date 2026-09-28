@@ -1071,7 +1071,9 @@ export class CatalogSession {
     try {
       await this.ctx.db.batch(batch);
     } catch (e) {
-      throw mapDbError(e);
+      const mapped = mapDbError(e);
+      if (mapped.code === "internal_error") this.ctx.log("error", "catalog commit failed", { error: e instanceof Error ? e.message : String(e) });
+      throw mapped;
     }
     for (const o of all) {
       o.o = { inDb: !o.deleted, status: o.status, stored: JSON.stringify(o.stored), parent: o.parent, files: JSON.stringify(o.files) };

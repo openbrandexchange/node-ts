@@ -8,11 +8,12 @@
   "scripts": {
     "dev": "bun --watch src/adapters/bun/main.ts",
     "start": "bun src/adapters/bun/main.ts",
-    "test": "bun test",
+    "test": "bun scripts/gen-migrations.ts && bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "dev:workers": "wrangler dev",
     "deploy": "wrangler deploy",
-    "smoke:workers": "bun scripts/workers-smoke.ts"
+    "smoke:workers": "bun scripts/workers-smoke.ts",
+    "gen": "bun scripts/gen-migrations.ts"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",
@@ -30,8 +31,14 @@
   },
   "cloudflare": {
     "label": "Open Brand Exchange node",
-    "products": ["Workers", "D1", "R2"],
-    "categories": ["storage"],
+    "products": [
+      "Workers",
+      "D1",
+      "R2"
+    ],
+    "categories": [
+      "storage"
+    ],
     "docs_url": "https://github.com/openbrandexchange/node-ts#readme",
     "bindings": {
       "OBX_SECRET_KEY": {

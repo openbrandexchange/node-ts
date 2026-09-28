@@ -75,7 +75,7 @@ export class TestNode {
       dataDir: dir,
       uiDir: join(import.meta.dir, "..", "public"),
       dbPath: ":memory:",
-      quiet: true,
+      quiet: process.env.OBX_TEST_LOG ? false : true,
       now: () => Date.now() + this.clock.offset,
     });
     this.platform.mailer = { configured: true, send: async (m) => void this.mails.push(m) };
