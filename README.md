@@ -50,14 +50,24 @@ bun install
 bun start            # http://localhost:8080 — the setup code is printed in the terminal
 ```
 
-Or in the Cloudflare runtime itself (local D1 and R2, nothing leaves your computer):
+Data is stored in `./data` (SQLite database + files).
+
+Or in the Cloudflare runtime itself (local D1 and R2 under `.wrangler/state`, nothing leaves your computer):
 
 ```sh
 echo "OBX_SECRET_KEY=$(openssl rand -hex 32)" > .dev.vars
-bunx wrangler dev    # http://localhost:8787 — the setup code is printed in the terminal
+bunx wrangler dev    # http://localhost:8787
 ```
 
-Data is stored in `./data` (SQLite database + files).
+Open the address: as soon as the page loads, the terminal prints a line with
+`First-run setup code: XXXX-XXXX-XXXX`. (Put `OBX_SETUP_CODE=…` in `.dev.vars` to choose it yourself.)
+Two things work differently from a real deployment:
+
+- The minute timer does not run by itself. Scheduled imports run with **Run now**, or when you
+  trigger the timer: `curl http://localhost:8787/cdn-cgi/local/scheduled`.
+- Imports and notifications refuse `http://` and addresses on your own network. To try a scheduled
+  import from a file on your own computer, add `OBX_ALLOW_PRIVATE_URLS=true` to `.dev.vars` (never on
+  a real portal).
 
 **Which Cloudflare plan?** Use **Workers Paid** ($5/month). The free plan limits each request to 10 ms of CPU, which is not enough for password checks and building zip files, and its daily database allowance runs out with a real catalog. What happens at each limit: [docs/hosting-cloudflare.md](docs/hosting-cloudflare.md#which-plan-what-the-free-plan-allows-and-what-happens-when-a-limit-is-reached). Storage costs for a typical catalog are a few dollars per month (R2 has no download fees).
 
@@ -110,9 +120,14 @@ Everything below works against **any** Open Brand Exchange portal, because it on
 
 ```sh
 export OBX_URL=https://brands.yourbrand.com OBX_TOKEN=obxi_…
-obx push --csv products.csv --images ./images     # uploads only new images, makes web versions for you
+obx push ./export                                  # products.csv, assets.csv and the images below it
+obx push --csv products.csv --images ./images     # the same with separate files
 obx watch ./outbox                                 # keeps publishing whatever lands in a folder
 ```
+
+`obx` uploads only new images and makes the web versions for you. Keep `assets.csv` (image rights,
+embargo dates, AI labels) next to `products.csv`: it is always sent along. An import without it resets
+those image details to the portal's defaults.
 
 **Straight from your PIM (developers):**
 
@@ -142,7 +157,7 @@ docker compose up -d              # http://localhost:8080 — data in the "porta
 docker compose logs portal        # shows the setup code for the wizard
 ```
 
-Optional settings (e-mail, your own setup code, public address) go in a `.env` file: `cp .env.example .env`. Without `OBX_SECRET_KEY` a key is generated into the volume on first start. For images in a bundled S3 server: set `OBX_STORAGE=s3` in `.env` and run `docker compose --profile s3 up -d`.
+Optional settings (e-mail, your own setup code, public address) go in a `.env` file: `cp .env.example .env`. Port 8080 already taken on your computer? Set `OBX_PORT=8090` in `.env` and open http://localhost:8090. Without `OBX_SECRET_KEY` a key is generated into the volume on first start. For images in a bundled S3 server: set `OBX_STORAGE=s3` in `.env` and run `docker compose --profile s3 up -d`.
 
 Put HTTPS in front (Caddy, Traefik, nginx) and set `OBX_PUBLIC_URL` and `OBX_TRUST_PROXY=true`. Back up while it runs with `docker compose exec portal bun src/adapters/bun/backup.ts backup /data/backups/$(date +%F)` (database, files and generated secret key). More: [docs/hosting-docker.md](docs/hosting-docker.md).
 

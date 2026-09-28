@@ -1,4 +1,5 @@
-# "Portal for Google Cloud & Docker" build of the TypeScript node (Bun runtime).
+# Docker build of the Portal for Cloudflare (node-ts) on the Bun runtime, for your own server or any
+# container host.
 # docker build -t brand-portal . && docker run -p 8080:8080 -v portal-data:/data brand-portal
 FROM oven/bun:1.3-slim AS deps
 WORKDIR /app
