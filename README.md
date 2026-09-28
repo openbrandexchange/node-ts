@@ -1,0 +1,188 @@
+# Open Brand Exchange · Portal for Cloudflare
+
+Your own **brand portal** for retailers, running on your own Cloudflare account. It gives your brand:
+
+1. **A portal for your retailers** ("*Kestrel · Beeldbank*", "*Kestrel · Händlerportal*", "*Kestrel · Brand portal*"…). Retailers ask for access, log in, search and filter your products, paste a list of EANs, pick products and download images (original, web or square) and article data (CSV) as zip files.
+2. **A standard API for your retailers' software.** Shops, PIMs and ERPs pull your products, EANs, images, rights and AI labels automatically, using the open [Open Brand Exchange](https://openbrandexchange.com) protocol. You hand out an *API key for their software* in the admin.
+3. **Automatic upload from your own systems.** Publish from your PIM, ERP, DAM or a shared folder: a nightly CSV + images from a web address or an S3/R2 bucket, the `obx` command-line tool, a GitHub Action, n8n/Make/Zapier or the upload API. Nothing is published twice: unchanged products and images cost nothing.
+
+It is free and open source (AGPL-3.0). You own the data; there is no vendor in between.
+
+> This repository is the TypeScript edition. The same portal also exists as
+> **Portal for Google Cloud & Docker** (`node-go`) and **Portal for web hosting** (`node-php`).
+> All three speak the same protocol and run the same admin screens.
+
+---
+
+## Quickstart (60 seconds)
+
+### Option A: the Deploy to Cloudflare button
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/openbrandexchange/node-ts)
+
+1. Click the button and log in to Cloudflare (or create a free account).
+2. Fill in two values when asked:
+   - **OBX_SECRET_KEY**: a long random text of at least 32 characters. On a Mac or Linux: `openssl rand -base64 48`.
+   - **OBX_SETUP_CODE**: a code you make up, e.g. `KESTREL-2026`. You type it once in the setup wizard, so nobody else can claim your new portal.
+3. Cloudflare creates the database (D1), the file storage (R2) and the portal, and shows you its address (`https://brand-portal.<you>.workers.dev`).
+4. Open that address, enter the setup code, your company name, your languages and your admin account. Done.
+
+> The button works once this repository is public. Until then, use option B.
+
+### Option B: one command
+
+```sh
+git clone https://github.com/openbrandexchange/node-ts && cd node-ts
+bun install
+bunx wrangler login
+bunx wrangler secret put OBX_SECRET_KEY      # paste: openssl rand -base64 48
+bunx wrangler secret put OBX_SETUP_CODE      # a code you choose
+bunx wrangler deploy                          # creates D1 + R2 on first deploy
+```
+
+### Try it on your computer
+
+```sh
+bun install
+bun start            # http://localhost:8080 — the setup code is printed in the terminal
+```
+
+Data is stored in `./data` (SQLite database + files).
+
+**Which Cloudflare plan?** Use **Workers Paid** ($5/month). The free plan limits each request to 10 ms of CPU, which is not enough for password checks and building zip files. Storage costs for a typical catalog are a few dollars per month (R2 has no download fees).
+
+---
+
+## After setup
+
+In the admin you find, in plain words:
+
+| Screen | What you do there |
+|---|---|
+| **Products** | See what is published, what is offline and which images still miss web versions. Publish/unpublish, edit, reorder images. |
+| **Imports** | Upload a CSV and images by hand, or add a **scheduled import** (web address, S3/R2 bucket; SFTP on the self-hosted build) that runs hourly, daily or weekly. Download the CSV template. |
+| **Retailers** | Approve or reject access requests (with a reason), invite retailer users by e-mail, block a retailer, choose which brands they see and whether they may download originals. |
+| **API keys for software** | Create a key for a retailer's shop or PIM. The secret is shown once; rotate or revoke it at any time. |
+| **Automatic upload** | Create an upload token for your PIM/ERP/CLI (shown once, can be limited to one brand). |
+| **Webhooks** | Let your own systems know when an import finished or a retailer asked for access. |
+| **Statistics** | Downloads per retailer, per product and per day; usage reported by retailers' software. |
+| **Settings** | Logo, accent colour, welcome text, languages, default image rights, original downloads on/off, article data export on/off, custom domain. |
+
+Retailers use the same address. They see only what you published, for the brands you allowed them.
+
+### Your own domain
+
+Cloudflare dashboard → **Workers & Pages → brand-portal → Settings → Domains & Routes → Add → Custom domain** (e.g. `brands.yourbrand.com`). Then set the variable `OBX_PUBLIC_URL=https://brands.yourbrand.com` and deploy again, so e-mails link to the right address.
+
+### E-mail
+
+Invitations, password resets, "your download is ready" and "a retailer asked for access" are sent in the recipient's language through an e-mail service with an HTTPS API. Set three variables (Cloudflare: **Settings → Variables and secrets**; Docker: `.env`):
+
+| Variable | Value |
+|---|---|
+| `OBX_MAIL_PROVIDER` | `resend`, `postmark`, `sendgrid`, `mailchannels` or `webhook` (POSTs the message as JSON to `OBX_MAIL_WEBHOOK_URL`, e.g. an n8n flow) |
+| `OBX_MAIL_API_KEY` | the service's API key (as a secret) |
+| `OBX_MAIL_FROM` | the sender, e.g. `portal@yourbrand.com` (verify it with the service) |
+
+Without e-mail the portal still works: the admin copies invitation links by hand.
+
+---
+
+## Publishing automatically
+
+Everything below works against **any** Open Brand Exchange portal, because it only uses the standard upload API and the standard CSV format. Full recipes (cron, Windows Task Scheduler, GitHub Action, n8n/Make/Zapier): [spec/docs/automation.md](https://github.com/openbrandexchange/spec/blob/main/docs/automation.md).
+
+**The CSV:** one row per size, product columns repeated; images named `{style}_{colour}_{position}.jpg`, e.g. `KO-1001_NVY_1.jpg`, `KO-1001_NVY_2_back.jpg`. Download the template in **Imports**.
+
+**Scheduled import (no code):** Imports → Scheduled imports → Add → web address of your `products.csv` or zip, or an S3/R2 bucket. Choose *Only add and update* or *Mirror* (also takes products offline that disappeared from the file — refused when more than half would disappear, so a broken export never empties your catalog).
+
+**The `obx` tool:** create a token in **Automatic upload**, then
+
+```sh
+export OBX_URL=https://brands.yourbrand.com OBX_TOKEN=obxi_…
+obx push --csv products.csv --images ./images     # uploads only new images, makes web versions for you
+obx watch ./outbox                                 # keeps publishing whatever lands in a folder
+```
+
+**Straight from your PIM (developers):**
+
+```sh
+curl -X PUT -H "Authorization: Bearer $OBX_TOKEN" -H 'Content-Type: application/json' \
+  "$OBX_URL/obx/v1/ingest/products/KO-1001" \
+  -d '{"style_number":"KO-1001","name":{"en":"Merino Crew Sweater","nl":"Merino trui met ronde hals"}}'
+```
+
+### About web versions of images
+
+This edition does not resize images on the server (Cloudflare Workers has no image library). The admin screens and the `obx` tool make the **web**, **square** and **thumbnail** versions on your computer and upload them with the original. The **original is always stored and served byte for byte** (so embedded C2PA content credentials survive).
+
+When an image arrives without those versions (for example from a scheduled import or an n8n flow), it is still published and the original is served in their place. The admin marks such images with "web versions missing", and the API marks the substitute with `"x-obx-fallback": true`. Open the product in the admin (or run `obx push` once) to add them.
+
+---
+
+## Other ways to host this edition
+
+The same code runs on [Bun](https://bun.sh), with SQLite and files on disk or in any S3-compatible storage.
+
+### Docker / your own server
+
+```sh
+cp .env.example .env          # set OBX_SECRET_KEY (openssl rand -base64 48) and OBX_SETUP_CODE
+docker compose up -d          # http://localhost:8080 — data in the "portal-data" volume
+docker compose --profile s3 up -d   # same, with images in a bundled MinIO (set OBX_STORAGE=s3)
+```
+
+Put HTTPS in front (Caddy, Traefik, nginx) and set `OBX_PUBLIC_URL` and `OBX_TRUST_PROXY=true`. Back up the `portal-data` volume (database + files + generated secret key).
+
+### Google Cloud Run
+
+```sh
+PROJECT=my-project REGION=europe-west4 ./deploy/cloudrun/deploy.sh
+```
+
+The script creates a Cloud Storage bucket, secrets and a service account, builds the image and deploys one always-on instance. Images go to the bucket; the SQLite database is continuously copied to the same bucket with Litestream and restored on start. (Needs `gcloud` and billing on the project.)
+
+---
+
+## Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `OBX_SECRET_KEY` | — (required on Cloudflare; generated into `data/secret.key` on Bun) | Encrypts stored credentials and signs download links. Keep it; changing it breaks stored import credentials and webhook secrets. |
+| `OBX_SETUP_CODE` | printed in the log on first start | One-time code for the setup wizard. |
+| `OBX_PUBLIC_URL` | the address of the request | Public address used in e-mails and API links. |
+| `OBX_ALLOW_PRIVATE_URLS` | `false` | Development only: allow `http://` and private addresses for imports and webhooks. |
+| `OBX_MAIL_PROVIDER`, `OBX_MAIL_API_KEY`, `OBX_MAIL_FROM`, `OBX_MAIL_WEBHOOK_URL` | — | E-mail, see above. |
+| `OBX_STORAGE` | `disk` (Bun) / R2 (Cloudflare) | `s3` for S3-compatible storage: `OBX_S3_ENDPOINT`, `OBX_S3_BUCKET`, `OBX_S3_REGION`, `OBX_S3_ACCESS_KEY_ID`, `OBX_S3_SECRET_ACCESS_KEY`, `OBX_S3_PREFIX`. |
+| `PORT` | `8080` | Bun: listen port. |
+| `OBX_DATA_DIR`, `OBX_DB_PATH`, `OBX_UI_DIR` | `./data`, `data/obx.sqlite`, `./public` | Bun: where things live. |
+| `OBX_TRUST_PROXY` | `false` | Bun behind a reverse proxy: trust `X-Forwarded-For` / `X-Forwarded-Proto`. |
+| `OBX_MAX_UPLOAD_BYTES` | 32 MiB (Cloudflare) / 100 MiB (Bun) | Largest single upload; bigger files use resumable uploads. |
+| `OBX_RATE_LIMIT_API`, `OBX_RATE_LIMIT_MEDIA` | `600`, `3000` | Requests per minute per API key. |
+
+---
+
+## For developers
+
+```sh
+bun install
+bun test                      # unit + HTTP tests (bun:sqlite, spec fixtures in test/fixtures)
+bun run typecheck
+bun run smoke:workers         # the whole flow in the local Workers runtime (wrangler dev, D1 + R2)
+bun run dev                   # Bun server with reload on http://localhost:8080
+bunx wrangler dev             # Workers runtime locally
+```
+
+- `src/app.ts` — the Hono app; `src/platform.ts` — the storage/runtime interface (database, file store, mailer).
+- `src/adapters/workers` — Cloudflare (D1, R2, static assets, Cron Trigger, optional Queue); `src/adapters/bun` — Bun (bun:sqlite, disk or S3, SFTP).
+- `src/core` — the protocol logic: one write path for all catalog changes (`catalog.ts`), the change feed, imports, zip jobs, exports, webhooks.
+- `src/routes` — OBX Protocol (`/obx/v1`), Ingest API (`/obx/v1/ingest`), Node Admin + Portal API (`/admin/api`).
+- `migrations/*.sql` — one SQLite schema for D1 and bun:sqlite, applied automatically at start.
+- The admin screens come from [admin-ui](https://github.com/openbrandexchange/admin-ui): `scripts/vendor-admin-ui.sh` copies its build into `public/`. When developing the UI, run this node on port 8080 and let the UI's dev server proxy `/admin/api`, `/obx` and `/.well-known` to it.
+- Contracts: [openbrandexchange/spec](https://github.com/openbrandexchange/spec). Implementation notes and deviations: [NOTES.md](NOTES.md). Fixtures are copied with `scripts/sync-fixtures.sh`.
+
+## Licence
+
+GNU Affero General Public License v3.0 — see [LICENSE](LICENSE). If you run a modified version for others, you must offer them its source code. The protocol specification is CC-BY-4.0; the shared admin UI and the Go SDK are Apache-2.0.
+
+<sub>Works with Open Brand Exchange.</sub>
