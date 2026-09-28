@@ -180,3 +180,26 @@ describe("images and schedules", () => {
     expect(pickLanguage("zh-CN")).toBe("en");
   });
 });
+
+describe("e-mail delivery", () => {
+  test("a temporary provider failure is retried; a refused message is not", async () => {
+    const { httpMailer } = await import("../src/adapters/shared/mailer");
+    const seen: number[] = [];
+    let answers = [503, 429, 200];
+    const srv = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("", { status: (seen.push(1), answers.shift() ?? 200) }) });
+    try {
+      const m = httpMailer({ provider: "webhook", from: "portal@kestrel.example", webhookUrl: `http://127.0.0.1:${srv.port}/mail`, retryDelaysMs: [5, 5] });
+      await m.send({ to: "a@b.example", subject: "s", text: "t", html: "h" });
+      expect(seen.length).toBe(3);
+      answers = [422];
+      seen.length = 0;
+      await expect(m.send({ to: "a@b.example", subject: "s", text: "t", html: "h" })).rejects.toThrow("422");
+      expect(seen.length).toBe(1);
+      answers = [500, 500, 500];
+      seen.length = 0;
+      await expect(m.send({ to: "a@b.example", subject: "s", text: "t", html: "h" })).rejects.toThrow("after 3 attempts");
+    } finally {
+      srv.stop(true);
+    }
+  });
+});

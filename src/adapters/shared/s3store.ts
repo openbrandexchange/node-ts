@@ -22,6 +22,8 @@ export async function ensureBucket(o: S3Options): Promise<void> {
   if (!r.ok && r.status !== 409) throw new Error(`could not create bucket ${o.bucket}: ${r.status}`);
 }
 
+const FIRST_BYTE_TIMEOUT_MS = 60_000;
+
 export function s3Store(o: S3Options): BlobStore {
   const aws = new AwsClient({ accessKeyId: o.accessKeyId, secretAccessKey: o.secretAccessKey, service: "s3", region: o.region });
   const ep = o.endpoint.replace(/\/+$/, "");
@@ -29,9 +31,16 @@ export function s3Store(o: S3Options): BlobStore {
   const pre = (o.prefix ?? "").replace(/^\/+|\/+$/g, "");
   const full = (k: string) => (pre ? `${pre}/${k}` : k);
   const url = (k: string) => `${base}/${full(k).split("/").map(encodeURIComponent).join("/")}`;
+  // aws4fetch retries 5xx/429 with exponential backoff; this adds a timeout until the response
+  // headers arrive (the body of a large download may then stream for as long as it needs).
   const call = async (u: string, init: RequestInit = {}) => {
-    const res = await aws.fetch(u, init);
-    return res;
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(new Error(`S3 did not answer within ${FIRST_BYTE_TIMEOUT_MS / 1000} s`)), FIRST_BYTE_TIMEOUT_MS);
+    try {
+      return await aws.fetch(u, { ...init, signal: ac.signal });
+    } finally {
+      clearTimeout(timer);
+    }
   };
   const text = (xml: string, tag: string) => xml.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`))?.[1] ?? null;
   return {

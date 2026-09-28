@@ -8,16 +8,45 @@ export interface MailEnv {
   from?: string;
   webhookUrl?: string;
   log?: (msg: string) => void;
+  /** Waits between attempts (tests shorten them). */
+  retryDelaysMs?: number[];
 }
+
+/** Three attempts: network errors, 429 and 5xx are retried after 1 s and 4 s (or the provider's Retry-After, up to 10 s). */
+export const RETRY_DELAYS_MS = [1000, 4000];
+
+async function postWithRetry(url: string, headers: Record<string, string>, body: unknown, delays: number[]) {
+  let last = "";
+  for (let attempt = 0; ; attempt++) {
+    let retryAfterMs: number | null = null;
+    try {
+      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
+      if (r.ok) {
+        await r.body?.cancel().catch(() => {});
+        return;
+      }
+      await r.body?.cancel().catch(() => {});
+      last = `mail provider answered ${r.status}`;
+      if (r.status !== 429 && r.status < 500) throw new PermanentMailError(last);
+      const ra = Number(r.headers.get("retry-after"));
+      if (Number.isFinite(ra) && ra > 0) retryAfterMs = Math.min(ra * 1000, 10_000);
+    } catch (err) {
+      if (err instanceof PermanentMailError) throw err;
+      last = last || (err instanceof Error ? err.message : String(err));
+    }
+    if (attempt >= delays.length) throw new Error(`${last} (after ${attempt + 1} attempts)`);
+    await new Promise((res) => setTimeout(res, retryAfterMs ?? delays[attempt]));
+    last = "";
+  }
+}
+
+class PermanentMailError extends Error {}
 
 export function httpMailer(e: MailEnv): Mailer {
   const provider = (e.provider ?? "").toLowerCase();
   const from = e.from ?? "";
   const configured = !!provider && (provider === "console" || (!!from && (provider === "webhook" ? !!e.webhookUrl : !!e.apiKey)));
-  const post = async (url: string, headers: Record<string, string>, body: unknown) => {
-    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
-    if (!r.ok) throw new Error(`mail provider answered ${r.status}`);
-  };
+  const post = (url: string, headers: Record<string, string>, body: unknown) => postWithRetry(url, headers, body, e.retryDelaysMs ?? RETRY_DELAYS_MS);
   return {
     configured,
     async send(m: MailMessage) {
