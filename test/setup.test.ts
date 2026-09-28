@@ -43,6 +43,32 @@ describe("first-run setup (A-SETUP-1)", () => {
   });
 });
 
+describe("setup code as people type it", () => {
+  test("a chosen OBX_SETUP_CODE matches whatever the case and surrounding spaces", async () => {
+    const node = new TestNode({ OBX_SETUP_CODE: "Kestrel-2026" });
+    const b = await node.browser();
+    const r = await b.req("POST", "/admin/api/setup", {
+      json: { setup_code: "  kestrel-2026 ", company: { name: "Kestrel Outfitters", default_language: "en" }, admin: { name: "A", email: "a@kestrel.example", password: "a long enough password" } },
+    });
+    expect(r.status).toBe(201);
+  });
+
+  test("the generated code is logged with the address to open", async () => {
+    const node = new TestNode({ OBX_SETUP_CODE: "", OBX_PUBLIC_URL: "https://brands.kestrel.example/" });
+    const lines: string[] = [];
+    node.platform.log = (_level, msg) => void lines.push(msg);
+    await node.worker.rotateSetupCode();
+    const line = lines.find((l) => l.startsWith("First-run setup code: "));
+    expect(line).toContain("open https://brands.kestrel.example in your browser");
+    const code = line!.match(/code: (\S+)/)![1];
+    const b = await node.browser();
+    const r = await b.req("POST", "/admin/api/setup", {
+      json: { setup_code: code.toLowerCase(), company: { name: "Kestrel Outfitters", default_language: "en" }, admin: { name: "A", email: "a@kestrel.example", password: "a long enough password" } },
+    });
+    expect(r.status).toBe(201);
+  });
+});
+
 describe("sessions and CSRF (A-SESS-1)", () => {
   test("login, wrong password, CSRF required, cookie flags, logout", async () => {
     const node = new TestNode();

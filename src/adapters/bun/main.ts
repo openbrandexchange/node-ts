@@ -71,7 +71,9 @@ const server = Bun.serve({
   fetch: serverFetch({ app, serveUi, trustProxy }),
 });
 
-platform.log("info", `Open Brand Exchange portal listening on http://localhost:${server.port}`, { dataDir, uiDir, version: platform.config.version });
+// In a container the listen port is not the address people open, so name the public address too.
+const openAt = platform.config.publicUrl?.replace(/\/+$/, "") ?? `http://localhost:${server.port}`;
+platform.log("info", `Open Brand Exchange portal listening on port ${server.port}; open ${openAt} in your browser`, { dataDir, uiDir, version: platform.config.version });
 
 // Graceful shutdown: /readyz turns 503, no new job steps start, in-flight requests and the running
 // job step finish (bounded by OBX_SHUTDOWN_TIMEOUT_MS). A step cut off by the timeout resumes on

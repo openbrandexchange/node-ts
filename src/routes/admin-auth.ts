@@ -50,11 +50,14 @@ export async function ensureSetupCode(ctx: Ctx, rotate = false): Promise<void> {
   const raw = b64url(randomBytes(9)).replace(/[-_]/g, "x").toUpperCase().slice(0, 12);
   const code = `${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}`;
   await ctx.setMeta("setup_code_hash", await sha256Hex(code));
-  ctx.log("info", `First-run setup code: ${code}  (open the portal in your browser and enter it in the setup wizard)`);
+  const where = ctx.config.publicUrl ? `open ${ctx.config.publicUrl.replace(/\/+$/, "")} in your browser` : "open the portal in your browser";
+  ctx.log("info", `First-run setup code: ${code}  (${where} and enter it in the setup wizard)`);
 }
 
 async function checkSetupCode(ctx: Ctx, code: string): Promise<boolean> {
-  if (ctx.config.setupCode) return timingSafeEqualStr(code.trim(), ctx.config.setupCode.trim());
+  // Case and surrounding spaces never matter: people read the code from a log or a password manager
+  // and type it on whatever keyboard they have.
+  if (ctx.config.setupCode) return timingSafeEqualStr(code.trim().toUpperCase(), ctx.config.setupCode.trim().toUpperCase());
   const h = await ctx.meta("setup_code_hash");
   return !!h && timingSafeEqualStr(await sha256Hex(code.trim().toUpperCase()), h);
 }
