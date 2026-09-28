@@ -114,7 +114,28 @@ export async function housekeeping(ctx: Ctx) {
   }
   await pruneJobs(ctx);
   await pruneChanges(ctx);
-  await gcBlobs(ctx);
+  // Daily work: unreferenced files and the catalog counts behind /metrics.
+  const last = Date.parse((await ctx.meta("daily_housekeeping_at")) ?? "") || 0;
+  if (ctx.now() - last >= 24 * 3600 * 1000) {
+    await ctx.setMeta("daily_housekeeping_at", ctx.iso());
+    while ((await gcBlobs(ctx)) === 500) {
+      /* keep going until nothing is left */
+    }
+  }
+  await refreshCountsSnapshot(ctx);
+}
+
+/** Catalog counts for /metrics, refreshed by housekeeping so a metrics scrape reads one row (D1 bills rows read). */
+export async function refreshCountsSnapshot(ctx: Ctx) {
+  const q = await ctx.db.first<Record<string, number>>(
+    `SELECT
+       (SELECT COUNT(*) FROM products) AS products,
+       (SELECT COUNT(*) FROM variants) AS variants,
+       (SELECT COUNT(*) FROM assets) AS assets,
+       (SELECT COUNT(*) FROM blobs) AS blobs,
+       (SELECT COALESCE(SUM(bytes), 0) FROM blobs) AS blob_bytes`,
+  );
+  await ctx.setMeta("counts_snapshot", JSON.stringify({ ...q, at: ctx.iso() }));
 }
 
 /** Everything the minute tick does, bounded by `budgetMs`. */

@@ -168,3 +168,29 @@ describe("scheduled pull import from SFTP (Bun build)", () => {
     expect(bad.json.message).toContain("host key");
   });
 });
+
+describe("unreferenced files", () => {
+  test("housekeeping removes files no image uses (after a day), keeps used ones and the logo, once a day", async () => {
+    const { TestNode: Node, uploadBlob: upload } = await import("./helpers");
+    const { fakeJpeg } = await import("../src/lib/image");
+    const { housekeeping } = await import("../src/core/cron");
+    const { Ctx } = await import("../src/core/ctx");
+    const node = new Node();
+    const admin = await node.setup();
+    const token = await node.ingestToken(admin);
+    const used = await upload(node, token, fakeJpeg(1200, 1600, 11));
+    const orphan = await upload(node, token, fakeJpeg(1200, 1600, 12));
+    await node.api(token, "PUT", "/obx/v1/ingest/products/KO-9", { json: { style_number: "KO-9", name: { en: "Nine" } } });
+    await node.api(token, "PUT", "/obx/v1/ingest/variants/2000100101018", { json: { product_external_id: "KO-9", gtin: "2000100101018", color: { code: "NVY" }, size: "M" } });
+    const a = await node.api(token, "PUT", "/obx/v1/ingest/assets/KO-9_NVY_1", { json: { product_external_id: "KO-9", color_code: "NVY", position: 1, role: "packshot", files: { original: { sha256: used } } } });
+    expect(a.status).toBeLessThan(300);
+    const has = async (sha: string) => !!(await node.platform.db.first("SELECT 1 AS x FROM blobs WHERE sha256 = ?", [sha])) && !!(await node.platform.blobs.head(`blobs/${sha.slice(0, 2)}/${sha}`));
+    const ctx = new Ctx(node.platform);
+    await housekeeping(ctx);
+    expect(await has(orphan)).toBe(true); // younger than a day
+    node.clock.offset = 25 * 3600 * 1000;
+    await housekeeping(new Ctx(node.platform));
+    expect(await has(orphan)).toBe(false);
+    expect(await has(used)).toBe(true);
+  });
+});

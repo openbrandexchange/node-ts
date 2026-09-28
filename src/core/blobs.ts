@@ -254,24 +254,24 @@ export async function abortUpload(ctx: Ctx, u: UploadRow) {
   await ctx.db.run("UPDATE uploads SET status = 'aborted' WHERE id = ?", [u.id]);
 }
 
-/** Removes blobs that no asset references and that are older than 24 hours. */
-export async function gcBlobs(ctx: Ctx, limit = 200) {
+/**
+ * Removes blobs that no asset references and that are older than 24 hours. One set-based pass
+ * (every asset row is read once, not once per blob), run at most once a day: on D1 every row a
+ * query reads is billed, and a per-blob LIKE scan would read blobs × assets rows.
+ */
+export async function gcBlobs(ctx: Ctx, limit = 500) {
   const cutoff = ctx.iso(-24 * 3600 * 1000);
-  const after = (await ctx.meta("gc_blob_cursor")) ?? "";
-  const rows = await ctx.db.all<{ sha256: string; created_at: string }>("SELECT sha256, created_at FROM blobs WHERE sha256 > ? ORDER BY sha256 LIMIT ?", [after, limit]);
-  if (!rows.length) {
-    await ctx.setMeta("gc_blob_cursor", "");
-    return;
-  }
+  const logo = (await ctx.settings()).branding.logo_sha ?? "";
+  const rows = await ctx.db.all<{ sha256: string }>(
+    `SELECT b.sha256 FROM blobs b WHERE b.created_at < ? AND b.sha256 != ? AND b.sha256 NOT IN (
+       SELECT json_extract(j.value, '$.sha256') FROM assets a, json_each(a.files) j
+       UNION SELECT json_extract(j.value, '$.sha256') FROM assets a, json_each(a.staged) j WHERE a.staged IS NOT NULL
+     ) LIMIT ?`,
+    [cutoff, logo, limit],
+  );
   for (const r of rows) {
-    if (r.created_at > cutoff) continue;
-    const pat = `%"${r.sha256}"%`;
-    const used = await ctx.db.first("SELECT 1 AS x FROM assets WHERE files LIKE ? OR staged LIKE ? LIMIT 1", [pat, pat]);
-    if (used) continue;
-    const logo = (await ctx.settings()).branding.logo_sha === r.sha256;
-    if (logo) continue;
     await ctx.db.run("DELETE FROM blobs WHERE sha256 = ?", [r.sha256]);
     await ctx.blobs.delete([blobKey(r.sha256)]);
   }
-  await ctx.setMeta("gc_blob_cursor", rows[rows.length - 1].sha256);
+  return rows.length;
 }

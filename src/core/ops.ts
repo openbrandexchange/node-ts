@@ -116,13 +116,11 @@ export async function metricsText(ctx: Ctx): Promise<string> {
     out.push(line("obx_http_request_duration_seconds_sum", k, Number(s.sum.toFixed(6))));
     out.push(line("obx_http_request_duration_seconds_count", k, s.count));
   }
-  const q = await ctx.db.first<Record<string, number | null>>(
+  // Catalog sizes come from the snapshot housekeeping writes every 10 minutes (one row read per scrape);
+  // the small tables below are counted live through their indexes.
+  const snap = JSON.parse((await ctx.meta("counts_snapshot")) ?? "{}") as Record<string, number>;
+  const live = await ctx.db.first<Record<string, number | null>>(
     `SELECT
-       (SELECT COUNT(*) FROM products) AS products,
-       (SELECT COUNT(*) FROM variants) AS variants,
-       (SELECT COUNT(*) FROM assets) AS assets,
-       (SELECT COUNT(*) FROM blobs) AS blobs,
-       (SELECT COALESCE(SUM(bytes), 0) FROM blobs) AS blob_bytes,
        (SELECT COALESCE(MAX(seq), 0) FROM changes) AS latest_seq,
        (SELECT COUNT(*) FROM retailers WHERE status = 'active') AS retailers,
        (SELECT COUNT(*) FROM api_clients WHERE status = 'active') AS api_clients,
@@ -130,6 +128,7 @@ export async function metricsText(ctx: Ctx): Promise<string> {
        (SELECT COUNT(*) FROM webhooks WHERE status = 'active' AND failing_since IS NOT NULL) AS failing_webhooks,
        (SELECT COUNT(*) FROM webhook_deliveries WHERE state = 'pending') AS pending_deliveries`,
   );
+  const q = { ...snap, ...live };
   const gauges: [string, string, number | null | undefined][] = [
     ["obx_catalog_products", "Products stored (all states).", q?.products],
     ["obx_catalog_variants", "Variants stored (all states).", q?.variants],
@@ -152,5 +151,7 @@ export async function metricsText(ctx: Ctx): Promise<string> {
     out.push(line("obx_jobs", `kind="${r.kind}",status="${r.status}"`, r.n));
   help("obx_downloads_24h", "gauge", "Downloads by retailers in the last 24 hours.");
   out.push(line("obx_downloads_24h", "", (await ctx.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM download_events WHERE at >= ? AND kind != 'usage'", [ctx.iso(-86_400_000)]))?.n ?? 0));
+  help("obx_catalog_counts_age_seconds", "gauge", "Age of the catalog counts above (refreshed by housekeeping every 10 minutes).");
+  out.push(line("obx_catalog_counts_age_seconds", "", snap.at ? Math.max(0, Math.round((ctx.now() - Date.parse(String(snap.at))) / 1000)) : -1));
   return out.join("\n") + "\n";
 }
