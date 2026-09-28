@@ -241,7 +241,7 @@ adminAuth.post("/admin/api/password/forgot", async (c) => {
   if (user) {
     const token = b64url(randomBytes(32));
     await ctx.db.run("INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?, ?, ?)", [await tokenHash(token), user.id, ctx.iso(3600_000)]);
-    ctx.p.defer(sendEmail(ctx, { to: user.email, lang: user.language, template: "passwordReset", name: user.name, vars: {}, link: `${await ctx.baseUrl()}/reset-password/${token}` }));
+    ctx.p.defer(sendEmail(ctx, { to: user.email, lang: user.language, template: "passwordReset", name: user.name, vars: {}, link: `${await ctx.mailBaseUrl()}/reset-password/${token}` }));
   }
   return new Response(null, { status: 202 });
 });

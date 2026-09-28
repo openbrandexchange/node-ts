@@ -228,7 +228,7 @@ registerJob("download", downloadStep, async (ctx, job) => {
     template: "zipReady",
     name: input.name,
     vars: { files: result.files ?? 0, expires: (job.expires_at ?? "").slice(0, 10) },
-    link: `${await ctx.baseUrl()}/downloads`,
+    link: `${await ctx.mailBaseUrl()}/downloads`,
   });
 });
 

@@ -188,6 +188,22 @@ describe("settings effects", () => {
   });
 });
 
+describe("e-mail links never follow a forged Host header", () => {
+  test("password reset link uses the address the node was set up at", async () => {
+    const node = new TestNode();
+    await node.setup();
+    const b = await node.browser();
+    // Without OBX_PUBLIC_URL an attacker could otherwise send the victim a
+    // reset link pointing at their own host (password reset poisoning).
+    const r = await b.req("POST", "http://evil.example/admin/api/password/forgot", { json: { email: "admin@kestrel.example" } });
+    expect(r.status).toBe(202);
+    await node.drain();
+    const mail = node.mails.find((m) => m.to === "admin@kestrel.example")!;
+    expect(mail.text).not.toContain("evil.example");
+    expect(mail.text).toContain("http://localhost/reset-password/");
+  });
+});
+
 describe("webhooks (P-HOOK-1) and brand webhooks", () => {
   test("signature test vector", async () => {
     const v = JSON.parse(fixtureText("examples/webhook-signature-vector.json"));

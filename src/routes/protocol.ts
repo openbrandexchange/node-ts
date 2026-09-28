@@ -147,7 +147,7 @@ protocol.post("/obx/v1/access-requests", async (c) => {
       const admins = await ctx.db.all<UserRow>("SELECT * FROM users WHERE role = 'admin' AND status = 'active'");
       if (contact.email) await sendEmail(ctx, { to: contact.email, lang: contact.language!, template: "accessRequestReceived", name: contact.name, vars: {} });
       for (const a of admins)
-        await sendEmail(ctx, { to: a.email, lang: a.language, template: "accessRequestNew", name: a.name, vars: { retailer: retailer.name!, contact: contact.name! }, link: `${base}/admin/requests` });
+        await sendEmail(ctx, { to: a.email, lang: a.language, template: "accessRequestNew", name: a.name, vars: { retailer: retailer.name!, contact: contact.name! }, link: `${await ctx.mailBaseUrl()}/admin/requests` });
       await emitBrandEvent(ctx, "access_request.created", { access_request: adminAccessRequestJson(row) });
     })().catch((e) => ctx.log("error", "access request notification failed", { error: String(e) })),
   );

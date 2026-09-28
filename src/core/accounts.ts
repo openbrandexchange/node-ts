@@ -170,7 +170,7 @@ export async function inviteUser(
 }
 
 export async function sendInvite(ctx: Ctx, user: UserRow, token: string) {
-  const base = await ctx.baseUrl();
+  const base = await ctx.mailBaseUrl();
   const url = `${base}/invite/${token}`;
   const expires = user.invite_expires_at!;
   const sent = await sendEmail(ctx, {
@@ -287,7 +287,7 @@ export async function approveAccessRequest(
       vars: {},
       extra: apiClient ? ["apiNote"] : [],
       // With a portal invite the retailer first chooses a password via the invite e-mail.
-      link: invite ? null : `${await ctx.baseUrl()}/login`,
+      link: invite ? null : `${await ctx.mailBaseUrl()}/login`,
     });
   const updated = (await ctx.db.first<AccessRequestRow>("SELECT * FROM access_requests WHERE id = ?", [r.id]))!;
   return {

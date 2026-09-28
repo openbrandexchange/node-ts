@@ -158,6 +158,19 @@ export class Ctx {
     return ((await this.meta("origin")) ?? "http://localhost:8080").replace(/\/+$/, "");
   }
 
+  /**
+   * Base URL for links in e-mails: OBX_PUBLIC_URL, else the address the node
+   * was set up at. Never the Host of an arbitrary later request: a forged
+   * Host header must not end up in password-reset or invitation links.
+   */
+  async mailBaseUrl(): Promise<string> {
+    const configured = this.config.publicUrl;
+    if (configured) return configured.replace(/\/+$/, "");
+    const recorded = await this.meta("origin");
+    if (recorded) return recorded.replace(/\/+$/, "");
+    return this.baseUrl();
+  }
+
   urlPolicy(schemes?: string[]): UrlPolicy {
     return { allowPrivate: this.config.allowPrivateUrls, resolve: this.p.resolveHost, schemes };
   }
