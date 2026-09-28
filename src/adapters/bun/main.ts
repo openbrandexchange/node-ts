@@ -1,5 +1,6 @@
 // Bun entry point: `bun src/adapters/bun/main.ts` (also used by the Docker image and Cloud Run).
-import { createApp, createWorker, isApiPath } from "../../app";
+import { createApp, createWorker } from "../../app";
+import { serverFetch } from "./serve";
 import { createBunPlatform, ensureBucketFromEnv } from "./platform";
 import { staticHandler } from "./static";
 
@@ -37,17 +38,7 @@ const server = Bun.serve({
   hostname: env.HOST ?? "0.0.0.0",
   maxRequestBodySize: 2 * 1024 * 1024 * 1024,
   idleTimeout: 255,
-  async fetch(req, srv) {
-    const url = new URL(req.url);
-    const headers = new Headers(req.headers);
-    headers.delete("x-obx-client-ip");
-    const fwd = trustProxy ? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() : null;
-    headers.set("x-obx-client-ip", fwd || srv.requestIP(req)?.address || "unknown");
-    if (!trustProxy) headers.delete("x-forwarded-proto");
-    const r = new Request(req, { headers });
-    if (isApiPath(url.pathname) || url.pathname === "/healthz") return app.fetch(r);
-    return serveUi(r);
-  },
+  fetch: serverFetch({ app, serveUi, trustProxy }),
 });
 
 platform.log("info", `Open Brand Exchange portal listening on http://localhost:${server.port}`, { dataDir, uiDir });

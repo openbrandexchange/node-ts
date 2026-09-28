@@ -157,7 +157,7 @@ export function parseProductsCsv(text: string, file: string, defaultLanguage: st
     errors.push({ file, row, column, severity, obx_error: code, detail, value: value === null ? null : value.slice(0, 500) });
   const csv = parseCsv(text);
   if (!csv.header.length || csv.header.every((h) => h === "")) {
-    err(0, null, "The file has no header row.", null, "import_invalid");
+    err(null, null, "The file has no header row.", null, "import_invalid");
     return { groups: [], errors, rows: 0 };
   }
   const cols = csv.header.map(normHeader);
@@ -169,11 +169,11 @@ export function parseProductsCsv(text: string, file: string, defaultLanguage: st
       (VARIANT_COLS.has(base) && (!lang || ["color_name", "colour_name"].includes(base))) ||
       (base === "attr" && lang && KEY_RE.test(lang)) ||
       base === "image_files";
-    if (lang && base !== "attr" && !LANG_RE.test(lang)) err(0, csv.header[i], `"${lang}" is not a language tag like nl or en.`, null, "validation_failed", "warning");
-    else if (!ok) err(0, csv.header[i], `Unknown column "${csv.header[i]}" was ignored.`, null, "validation_failed", "warning");
+    if (lang && base !== "attr" && !LANG_RE.test(lang)) err(null, csv.header[i], `"${lang}" is not a language tag like nl or en.`, null, "validation_failed", "warning");
+    else if (!ok) err(null, csv.header[i], `Unknown column "${csv.header[i]}" was ignored.`, null, "validation_failed", "warning");
   });
   if (!cols.some((c) => c === "style_number" || c === "style")) {
-    err(0, "style_number", "The required column style_number is missing.", null, "import_invalid");
+    err(null, "style_number", "The required column style_number is missing.", null, "import_invalid");
     return { groups: [], errors, rows: csv.rows.length };
   }
   const idx = (names: string[]) => {
@@ -221,7 +221,7 @@ export function parseProductsCsv(text: string, file: string, defaultLanguage: st
   const colorNames = langCols(["color_name", "colour_name"]);
   const attrs = cols.map((c, i) => ({ c, i })).filter((x) => x.c.startsWith("attr:"));
   if (!names.length) {
-    err(0, "name", "At least one name column (name or name:<lang>) is required.", null, "import_invalid");
+    err(null, "name", "At least one name column (name or name:<lang>) is required.", null, "import_invalid");
     return { groups: [], errors, rows: csv.rows.length };
   }
   const groups = new Map<string, ProductGroup>();
@@ -389,7 +389,7 @@ export function parseAssetsCsv(text: string, file: string, defaultLanguage: stri
   const cols = csv.header.map(normHeader);
   const fi = cols.indexOf("file");
   if (fi < 0) {
-    err(0, "file", "The required column file is missing.");
+    err(null, "file", "The required column file is missing.");
     return { rows: [], errors };
   }
   const out: AssetOverride[] = [];

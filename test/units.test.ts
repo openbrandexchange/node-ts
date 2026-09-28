@@ -74,6 +74,13 @@ describe("SSRF protection", () => {
     await expect(assertSafeUrl("https://localhost/x", pol)).rejects.toMatchObject({ code: "unsafe_url" });
     expect((await assertSafeUrl("https://example.com/x", pol)).host).toBe("example.com");
   });
+  test("development mode allows private hosts but never link-local or cloud metadata", async () => {
+    const pol = { allowPrivate: true, resolve: async (h: string) => (h === "meta.example" ? ["169.254.169.254"] : ["127.0.0.1"]) };
+    expect((await assertSafeUrl("http://127.0.0.1:8080/feed.csv", pol)).port).toBe("8080");
+    expect((await assertSafeUrl("https://files.local/x", pol)).host).toBe("files.local");
+    for (const url of ["https://169.254.169.254/latest/meta-data", "https://[fe80::1]/hook", "https://[::ffff:169.254.169.254]/", "http://metadata.google.internal/", "https://meta.example/x"])
+      await expect(assertSafeUrl(url, pol)).rejects.toMatchObject({ code: "unsafe_url" });
+  });
 });
 
 describe("zip", () => {

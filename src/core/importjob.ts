@@ -452,7 +452,7 @@ async function loadGroups(ctx: Ctx, st: State, input: ImportInput, sink?: ErrSin
   if (sink) {
     st.counts.rows = parsed.rows;
     for (const e of parsed.errors) {
-      if (e.obx_error === "import_invalid" && e.row === 0) throw new ObxError("import_invalid", e.detail);
+      if (e.obx_error === "import_invalid" && e.row === null) throw new ObxError("import_invalid", e.detail);
       sink.add(e);
     }
   }

@@ -129,6 +129,21 @@ export async function handleBlobHead(c: C, w: Writer) {
   return new Response(null, { status: 200, headers: { "content-length": "0", "obx-blob-bytes": String(b.bytes), "cache-control": "no-store" } });
 }
 
+async function drainBody(req: Request, max: number) {
+  if (!req.body) return;
+  const r = req.body.getReader();
+  let n = 0;
+  for (;;) {
+    const { done, value } = await r.read();
+    if (done) return;
+    n += value.length;
+    if (n > max) {
+      await r.cancel().catch(() => {});
+      throw new ObxError("payload_too_large", "The file is larger than this node accepts.");
+    }
+  }
+}
+
 export async function handleBlobPut(c: C, w: Writer) {
   need(w, "ingest:write");
   const ctx = ctxOf(c);
@@ -136,7 +151,8 @@ export async function handleBlobPut(c: C, w: Writer) {
   if (!/^[a-f0-9]{64}$/.test(sha)) throw new ObxError("validation_failed", "The path must be the lowercase hex sha256 of the bytes.");
   const existing = await getBlob(ctx, sha);
   if (existing) {
-    await c.req.raw.body?.cancel().catch(() => {});
+    // Read and discard the upload: cancelling a request body makes Bun hang the response.
+    await drainBody(c.req.raw, ctx.config.maxUploadBytes);
     return json(c, blobJson(existing, false), 200);
   }
   const bytes = await readBody(c.req.raw, ctx.config.maxUploadBytes);

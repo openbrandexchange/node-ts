@@ -84,6 +84,27 @@ export function isBlockedIp(ip: string): boolean {
   return false;
 }
 
+/**
+ * Link-local and cloud-metadata targets: refused even when OBX_ALLOW_PRIVATE_URLS is on, because
+ * local development never needs them and they hand out cloud credentials.
+ */
+export function isAlwaysBlockedIp(ip: string): boolean {
+  if (ip.includes(".") && !ip.includes(":")) {
+    const n = v4ToInt(ip);
+    if (n === null) return true;
+    return (n >>> 16) === 0xa9fe || ip === "100.100.100.200"; // 169.254.0.0/16, Alibaba metadata
+  }
+  const n = expandV6(ip.replace(/^\[|\]$/g, ""));
+  if (!n) return true;
+  if ((n[0] & 0xffc0) === 0xfe80) return true; // fe80::/10
+  if (n[0] === 0xfd00 && n[1] === 0x0ec2 && n.slice(2, 7).every((x) => x === 0) && n[7] === 0x254) return true; // AWS IPv6 metadata
+  const mapped = n.slice(0, 5).every((x) => x === 0) && n[5] === 0xffff;
+  if (mapped) return isAlwaysBlockedIp(`${n[6] >> 8}.${n[6] & 0xff}.${n[7] >> 8}.${n[7] & 0xff}`);
+  return false;
+}
+
+const METADATA_NAMES = /^(metadata|metadata\.google\.internal|instance-data|instance-data\.ec2\.internal)$/i;
+
 export interface UrlPolicy {
   allowPrivate: boolean;
   resolve: Resolver | null;
@@ -105,8 +126,18 @@ export async function assertSafeUrl(raw: string, policy: UrlPolicy): Promise<URL
   const devHttp = policy.allowPrivate && scheme === "http:";
   if (!schemes.includes(scheme) && !devHttp) throw new ObxError("unsafe_url", "Only https:// addresses are allowed.");
   if (u.username || u.password) throw new ObxError("unsafe_url", "Put credentials in the credential fields, not in the address.");
-  if (policy.allowPrivate) return u;
   const host = u.hostname.replace(/^\[|\]$/g, "");
+  if (policy.allowPrivate) {
+    const unsafe = "Link-local and cloud metadata addresses are never allowed.";
+    if (METADATA_NAMES.test(host)) throw new ObxError("unsafe_url", unsafe);
+    if (/^[\d.]+$/.test(host) || host.includes(":")) {
+      if (isAlwaysBlockedIp(host)) throw new ObxError("unsafe_url", unsafe);
+    } else if (policy.resolve) {
+      const ips = await policy.resolve(host).catch(() => [] as string[]);
+      if (ips.some(isAlwaysBlockedIp)) throw new ObxError("unsafe_url", unsafe);
+    }
+    return u;
+  }
   if (LOCAL_NAMES.test(host)) throw new ObxError("unsafe_url", "Addresses on a local or private network are not allowed.");
   const literal = /^[\d.]+$/.test(host) || host.includes(":");
   if (literal) {
