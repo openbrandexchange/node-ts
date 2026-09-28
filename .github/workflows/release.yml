@@ -59,7 +59,11 @@ jobs:
           upload-artifact: false
       - name: Checksums
         working-directory: dist/release
-        run: shasum -a 256 $(ls | grep -v SHA256SUMS) >SHA256SUMS && cat SHA256SUMS
+        run: |
+          rm -f SHA256SUMS
+          shasum -a 256 -- * >"$RUNNER_TEMP/SHA256SUMS"
+          mv "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS
+          cat SHA256SUMS
       - name: Release notes from CHANGELOG.md
         run: |
           v="${{ needs.verify.outputs.version }}"

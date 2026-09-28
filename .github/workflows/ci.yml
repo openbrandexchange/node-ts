@@ -38,6 +38,8 @@ jobs:
         run: bun run smoke:workers
       - name: Shell scripts
         run: shellcheck deploy/*.sh deploy/cloudrun/*.sh scripts/*.sh e2e/run.sh
+      - name: Workflow files
+        uses: raven-actions/actionlint@v2
 
   conformance:
     # obx-conformance comes from the obx-go repository. While the repositories are private, the
@@ -96,11 +98,12 @@ jobs:
             # The Workers runtime runs background jobs from the minute cron; trigger it every few seconds.
             nohup sh -c 'while sleep 3; do curl -s "http://127.0.0.1:8080/__scheduled?cron=*+*+*+*+*" >/dev/null; done' >/dev/null 2>&1 &
           fi
-          for i in $(seq 1 90); do curl -fs http://127.0.0.1:8080/readyz >/dev/null && break; sleep 1; done
+          for _ in $(seq 1 90); do curl -fs http://127.0.0.1:8080/readyz >/dev/null && break; sleep 1; done
           curl -fs http://127.0.0.1:8080/readyz
       - name: obx-conformance all
         if: env.OBX_READ_TOKEN != ''
-        run: "$RUNNER_TEMP/obx-conformance" all --url http://127.0.0.1:8080 --setup-code CONFORMANCE-1
+        run: |
+          "$RUNNER_TEMP/obx-conformance" all --url http://127.0.0.1:8080 --setup-code CONFORMANCE-1
       - name: Node log
         if: failure() && env.OBX_READ_TOKEN != ''
         run: tail -n 300 "$RUNNER_TEMP/node.log"
@@ -143,7 +146,7 @@ jobs:
       - name: Starts, answers health and readiness, runs as non-root
         run: |
           docker run -d --name portal -p 8080:8080 -e OBX_SECRET_KEY=ci-secret-key-0123456789abcdefghijkl brand-portal:ci
-          for i in $(seq 1 30); do curl -fs http://localhost:8080/readyz >/dev/null && break; sleep 1; done
+          for _ in $(seq 1 30); do curl -fs http://localhost:8080/readyz >/dev/null && break; sleep 1; done
           curl -fs http://localhost:8080/healthz
           curl -fs http://localhost:8080/readyz
           curl -fs http://localhost:8080/admin/api/setup | grep -q '"required":true'
