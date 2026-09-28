@@ -6,6 +6,7 @@ import { configFromEnv, logAllowed, logLevelOf, validateEnv } from "../shared/co
 import { httpMailer } from "../shared/mailer";
 import { s3Store } from "../shared/s3store";
 import { dohResolver } from "../../lib/ssrf";
+import { UNDERLYING_DB } from "../../db/migrate";
 import type { D1Database, ExecutionContext, Fetcher, MessageBatch, Queue, R2Bucket } from "./types";
 
 export interface Env {
@@ -53,6 +54,18 @@ function makeD1Db(d1: D1Database): Db {
       return out;
     },
   };
+}
+
+/** A Db that reports how many statements it ran (per invocation, for the D1 query cap). */
+export function countingDb(db: Db, add: (n: number) => void): Db {
+  const counted: Db & { [UNDERLYING_DB]: Db } = {
+    [UNDERLYING_DB]: db,
+    all: (sql, params) => (add(1), db.all(sql, params)),
+    first: (sql, params) => (add(1), db.first(sql, params)),
+    run: (sql, params) => (add(1), db.run(sql, params)),
+    batch: (stmts) => (add(stmts.length), db.batch(stmts)),
+  };
+  return counted;
 }
 
 export function r2Store(b: R2Bucket): BlobStore {
@@ -126,8 +139,14 @@ function makePlatform(env: Env, ctx: ExecutionContext): Platform {
     warnedPrivate = true;
     log("warn", "OBX_ALLOW_PRIVATE_URLS is on: imports and webhooks may use http:// addresses. Use this only for local development.");
   }
+  // D1 allows 1,000 queries per invocation on Workers Paid (50 on Free). Background steps stop and
+  // checkpoint well before that; OBX_D1_QUERY_BUDGET tunes the threshold.
+  let queries = 0;
+  const budget = Number(e.OBX_D1_QUERY_BUDGET?.trim() || 800);
+  const db = countingDb(d1Db(env.DB), (n) => (queries += n));
   const platform: Platform = {
-    db: d1Db(env.DB),
+    db,
+    queryBudgetLeft: () => budget - queries,
     blobs:
       e.OBX_STORAGE === "s3"
         ? s3Store({

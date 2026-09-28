@@ -145,8 +145,11 @@ portal.get("/admin/api/portal/products", async (c) => {
   const w = filterSql(f, viewer, ctx.iso());
   const off = (await decodeListCursor<number>(ctx, "portal-products", c.req.query("cursor") || undefined)) ?? 0;
   const total = (await ctx.db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM products p JOIN brands b ON b.id = p.brand_id WHERE ${w.sql}`, w.params))?.n ?? 0;
+  // Page first on the narrow columns, then read the stored documents of that page only.
   const rows = await ctx.db.all<ProductRow & { brand_stored: string }>(
-    `SELECT p.*, b.stored AS brand_stored FROM products p JOIN brands b ON b.id = p.brand_id WHERE ${w.sql} ORDER BY p.style_number COLLATE NOCASE, p.id LIMIT ? OFFSET ?`,
+    `SELECT p.*, b.stored AS brand_stored FROM (
+       SELECT p.id AS pid, p.style_number AS sn FROM products p JOIN brands b ON b.id = p.brand_id WHERE ${w.sql} ORDER BY p.style_number COLLATE NOCASE, p.id LIMIT ? OFFSET ?
+     ) pg JOIN products p ON p.id = pg.pid JOIN brands b ON b.id = p.brand_id ORDER BY pg.sn COLLATE NOCASE, pg.pid`,
     [...w.params, limit + 1, off],
   );
   const page = rows.slice(0, limit);
@@ -207,10 +210,17 @@ portal.get("/admin/api/portal/facets", async (c) => {
   const brandRows = await simple("p.brand_id", "brand_id");
   const brands = await visibleBrands(ctx, viewer);
   const cw = filterSql(f, viewer, now, "color");
-  const colorRows = await ctx.db.all<{ value: string; count: number; name: string | null }>(
-    `SELECT v.color_code AS value, COUNT(DISTINCT p.id) AS count, MAX(json_extract(v.stored, '$.color.name')) AS name FROM products p JOIN brands b ON b.id = p.brand_id JOIN variants v ON v.product_id = p.id AND v.status = 'published' WHERE ${cw.sql} AND v.color_code IS NOT NULL GROUP BY v.color_code ORDER BY count DESC, value LIMIT 300`,
+  const counted = await ctx.db.all<{ value: string; count: number; r: number }>(
+    `SELECT v.color_code AS value, COUNT(DISTINCT p.id) AS count, MIN(v.rowid) AS r FROM products p JOIN brands b ON b.id = p.brand_id JOIN variants v ON v.product_id = p.id AND v.status = 'published' WHERE ${cw.sql} AND v.color_code IS NOT NULL GROUP BY v.color_code ORDER BY count DESC, value LIMIT 300`,
     cw.params,
   );
+  // Colour names from one variant per colour (not a JSON parse of every variant).
+  const names = new Map<number, string | null>();
+  for (let i = 0; i < counted.length; i += 100) {
+    const chunk = counted.slice(i, i + 100).map((r) => r.r);
+    for (const n of await ctx.db.all<{ r: number; name: string | null }>(`SELECT rowid AS r, json_extract(stored, '$.color.name') AS name FROM variants WHERE rowid IN (${placeholders(chunk.length)})`, chunk)) names.set(n.r, n.name);
+  }
+  const colorRows = counted.map((r) => ({ value: r.value, count: r.count, name: names.get(r.r) ?? null }));
   return json(c, {
     brands: brandRows.map((r) => ({ value: r.value, label: String(brands.find((b) => b.id === r.value)?.name ?? r.value), count: r.count })),
     item_types: await simple("p.item_type", "item_type"),

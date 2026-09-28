@@ -67,9 +67,13 @@ export async function schemaStatus(db: Db): Promise<SchemaStatus> {
 
 let migrated = new WeakSet<Db>();
 
+/** Wrappers (like the per-invocation query counter on Workers) point here to the database they wrap. */
+export const UNDERLYING_DB = Symbol("underlying db");
+
 /** Applies pending migrations once per database handle (cheap check afterwards). */
 export async function migrate(db: Db): Promise<void> {
-  if (migrated.has(db)) return;
+  const key = ((db as unknown as Record<symbol, Db>)[UNDERLYING_DB] ?? db) as Db;
+  if (migrated.has(key)) return;
   await db.run(`CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)`);
   const status = await schemaStatus(db);
   if (status.unknown.length) throw new SchemaTooNewError(status.unknown);
@@ -79,7 +83,7 @@ export async function migrate(db: Db): Promise<void> {
     stmts.push({ sql: `INSERT OR IGNORE INTO ${MIGRATIONS_TABLE} (name) VALUES (?)`, params: [m.name] } as never);
     await db.batch(stmts);
   }
-  migrated.add(db);
+  migrated.add(key);
 }
 
 export function resetMigrationCache() {

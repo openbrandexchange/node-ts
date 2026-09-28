@@ -115,7 +115,7 @@ export async function runJobs(ctx: Ctx, budgetMs: number, opts: { kinds?: JobKin
   const start = ctx.now();
   let steps = 0;
   try {
-    while (ctx.now() - start < budgetMs && !stopRequested) {
+    while (ctx.now() - start < budgetMs && !stopRequested && !ctx.overBudget(Infinity)) {
       const stepBudget = Math.min(ctx.config.jobStepBudgetMs, budgetMs - (ctx.now() - start));
       if (stepBudget < 500) break;
       const job = await claim(ctx, stepBudget + 60_000, opts.kinds);

@@ -1,6 +1,10 @@
 // Cloudflare Workers edition ("Portal for Cloudflare").
-// `bunx wrangler deploy` (or the Deploy to Cloudflare button) creates the D1 database and the R2 bucket
-// below automatically. Secrets: OBX_SECRET_KEY (required) and OBX_SETUP_CODE (recommended), see README.
+// `bun run deploy` (and the Deploy to Cloudflare button, which runs the same script) deploys the
+// Worker, lets Wrangler create the D1 database and the R2 bucket below when they do not exist yet,
+// and applies migrations/ to D1. The Worker also applies missing migrations itself at its first
+// request, so a plain `wrangler deploy` works too. Secrets: OBX_SECRET_KEY (required) and
+// OBX_SETUP_CODE (recommended); the button asks for both (.dev.vars.example). Plans and limits:
+// docs/hosting-cloudflare.md.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "brand-portal",
@@ -37,10 +41,9 @@
   },
   "observability": {
     "enabled": true
-  },
-  "limits": {
-    "cpu_ms": 300000
   }
+  // CPU time: every background step checkpoints within 20-25 s, inside the Workers Paid default of
+  // 30 s, so no "limits" entry is needed (setting one is refused on the free plan).
   // Optional: a Queue lets long background jobs continue immediately instead of once a minute.
   // Uncomment, then `bunx wrangler queues create brand-portal-jobs`.
   // "queues": {

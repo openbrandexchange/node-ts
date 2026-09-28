@@ -66,7 +66,7 @@ async function step(ctx: Ctx, job: JobRow, deadline: number): Promise<StepOutcom
   st.summary ??= summarize([]);
   const stream = await ctx.blobs.get(`jobs/${job.id}/ops.json`);
   const ops = stream ? (JSON.parse(await new Response(stream).text()) as unknown[]) : [];
-  while (st.i < ops.length && ctx.now() < deadline) {
+  while (st.i < ops.length && !ctx.overBudget(deadline)) {
     const r = await runOp(ctx, input.opts, ops[st.i], st.i);
     await ctx.db.batch([jobItemStmt(job.id, "result", st.i + 1, r, r.result === "error")]);
     const s = summarize([r]);

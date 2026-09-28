@@ -81,6 +81,27 @@ describe("security headers", () => {
   });
 });
 
+describe("Cloudflare plan limits", () => {
+  test("D1 limit errors become a 503 with a message the brand can act on", async () => {
+    const node = new TestNode();
+    await node.setup();
+    const real = node.platform.db.all.bind(node.platform.db);
+    for (const [msg, expected] of [
+      ["D1_ERROR: Your account has exceeded D1's free tier daily row read limit. Upgrade to a paid plan or wait until tomorrow (midnight UTC) to continue.", "after midnight UTC"],
+      ["D1_ERROR: Exceeded maximum DB size.", "database is full"],
+      ["Too many API requests by single worker invocation.", "more database queries"],
+    ] as const) {
+      node.platform.db.all = (async () => {
+        throw new Error(msg);
+      }) as never;
+      const r = await node.request("GET", "/admin/api/public/branding");
+      node.platform.db.all = real;
+      expect({ status: r.status, code: r.json.obx_error }).toEqual({ status: 503, code: "service_unavailable" });
+      expect(r.json.detail).toContain(expected);
+    }
+  });
+});
+
 describe("wrong methods", () => {
   test("an existing path answers 405 with Allow; an unknown path stays 404", async () => {
     const node = new TestNode();
@@ -243,4 +264,41 @@ describe("the Bun process", () => {
     const out = await new Response(p.stdout).text();
     expect(out).toContain('"msg":"shutting down"');
   }, 20_000);
+});
+
+describe("D1 query cap per invocation (Workers)", () => {
+  test("a long import checkpoints before the query budget runs out and finishes over several invocations", async () => {
+    const { countingDb } = await import("../src/adapters/workers/index");
+    const { formData, fixtureText, kestrelImages } = await import("./helpers");
+    const node = new TestNode();
+    const admin = await node.setup();
+    const token = await node.ingestToken(admin);
+    let used = 0;
+    const perInvocation: number[] = [];
+    node.platform.db = countingDb(node.platform.db, (n) => (used += n)) as never;
+    node.platform.queryBudgetLeft = () => 150 - used;
+    node.platform.kickJobs = () => {};
+    const f = formData([
+      { name: "csv", filename: "products.csv", type: "text/csv", data: fixtureText("kestrel/products.csv") },
+      { name: "assets_csv", filename: "assets.csv", type: "text/csv", data: fixtureText("kestrel/assets.csv") },
+      ...kestrelImages().map((i) => ({ name: "images", filename: i.name, type: "image/png", data: i.bytes })),
+    ]);
+    const r = await node.api(token, "POST", "/obx/v1/ingest/imports", { body: f.body, headers: { "content-type": f.contentType } });
+    expect(r.status).toBe(202);
+    await Promise.allSettled([...node.platform.pending]);
+    let status = "";
+    for (let i = 0; i < 200 && status !== "succeeded"; i++) {
+      used = 0;
+      await node.worker.runJobs(60_000);
+      perInvocation.push(used);
+      status = (await node.platform.db.first<{ status: string }>("SELECT status FROM jobs WHERE id = ?", [r.json.id]))!.status;
+    }
+    expect(status).toBe("succeeded");
+    expect(perInvocation.length).toBeGreaterThan(3);
+    // Each invocation stops within one unit of work of the budget (never near D1's 1,000).
+    expect(Math.max(...perInvocation)).toBeLessThan(400);
+    const job = await node.api(token, "GET", `/obx/v1/ingest/jobs/${r.json.id}`);
+    expect(job.json.import_run.counts.errors).toBe(0);
+    expect(job.json.import_run.counts.files).toBe(27);
+  });
 });

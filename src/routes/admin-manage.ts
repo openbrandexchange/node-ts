@@ -34,6 +34,7 @@ import {
   rejectAccessRequest,
   resendInvite,
   retailerJson,
+  retailerCounts,
   rotateClient,
   userJson,
   type AccessRequestRow,
@@ -232,13 +233,15 @@ adminManage.get("/admin/api/catalog/products", async (c) => {
   const off = (await decodeListCursor<number>(ctx, "admin-products", c.req.query("cursor") || undefined)) ?? 0;
   const whereSql = where.join(" AND ");
   const total = (await ctx.db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM products p JOIN brands b ON b.id = p.brand_id WHERE ${whereSql}`, params))?.n ?? 0;
+  // Page first (sort + filter on the products table only), then count children for that page only.
   const rows = await ctx.db.all<Record<string, unknown>>(
     `SELECT p.id, p.external_id, p.style_number, p.stored, p.status, p.modified_at, b.external_id AS brand_external_id, b.status AS brand_status,
        (SELECT COUNT(*) FROM variants v WHERE v.product_id = p.id) AS variant_count,
        (SELECT COUNT(*) FROM assets a WHERE a.product_id = p.id) AS asset_count,
        (SELECT COUNT(*) FROM assets a WHERE a.product_id = p.id AND (a.has_original = 0 OR a.missing_renditions > 0)) AS pending_asset_count,
        (SELECT a.id || '|' || a.files FROM assets a WHERE a.product_id = p.id AND a.has_original = 1 ORDER BY CASE WHEN a.color_code IS NULL THEN 0 ELSE 1 END, a.color_code, a.position LIMIT 1) AS first_asset
-     FROM products p JOIN brands b ON b.id = p.brand_id WHERE ${whereSql} ORDER BY ${order} LIMIT ? OFFSET ?`,
+     FROM (SELECT p.id AS pid FROM products p JOIN brands b ON b.id = p.brand_id WHERE ${whereSql} ORDER BY ${order} LIMIT ? OFFSET ?) pg
+     JOIN products p ON p.id = pg.pid JOIN brands b ON b.id = p.brand_id ORDER BY ${order}`,
     [...params, limit + 1, off],
   );
   const base = await ctx.baseUrl();
@@ -596,7 +599,8 @@ adminManage.get("/admin/api/retailers", async (c) => {
   const rows = await ctx.db.all<RetailerRow>(`SELECT * FROM retailers WHERE ${where.join(" AND ")} ORDER BY lower(name), id LIMIT ?`, [...params, limit + 1] as never);
   const page = rows.slice(0, limit);
   const items = [];
-  for (const r of page) items.push(await retailerJson(ctx, r));
+  const counts = await retailerCounts(ctx, page.map((r) => r.id));
+  for (const r of page) items.push(await retailerJson(ctx, r, counts.get(r.id)));
   const last = page[page.length - 1];
   return json(c, { items, next_cursor: rows.length > limit ? await encodeListCursor(ctx, "retailers", { n: last.name.toLowerCase(), id: last.id }) : null });
 });

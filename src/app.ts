@@ -90,7 +90,9 @@ export function createApp(platform: Platform) {
         ? err
         : err instanceof SchemaTooNewError
           ? (platform.log("error", err.message, { request_id: requestId }), new ObxError("service_unavailable", err.message))
-          : (() => {
+          : platformLimitError(err)
+            ? (platform.log("error", "platform limit reached", { request_id: requestId, error: String(err) }), platformLimitError(err)!)
+            : (() => {
               platform.log("error", "unhandled error", { request_id: requestId, path: c.req.path, method: c.req.method, error: err instanceof Error ? `${err.name}: ${err.message}` : String(err), stack: err instanceof Error ? err.stack?.split("\n").slice(0, 6).join(" | ") : undefined });
               return new ObxError("internal_error", "Something went wrong on the server. Try again later.");
             })();
@@ -134,6 +136,21 @@ export function createApp(platform: Platform) {
   });
 
   return app;
+}
+
+/**
+ * Cloudflare plan limits surface as D1 errors. Answer them with a message a brand can act on
+ * instead of a generic server error (see docs/hosting-cloudflare.md).
+ */
+export function platformLimitError(err: unknown): ObxError | null {
+  const m = err instanceof Error ? err.message : String(err);
+  if (/free tier daily row (read|write) limit/i.test(m))
+    return new ObxError("service_unavailable", "The Cloudflare free plan's daily database allowance is used up. The portal works again after midnight UTC; the Workers Paid plan removes this limit.", [], { retryAfter: 3600 });
+  if (/exceeded maximum DB size|maximum account storage/i.test(m))
+    return new ObxError("service_unavailable", "The portal's database is full (500 MB on the Cloudflare free plan, 10 GB on Workers Paid). Reading still works; delete old data or upgrade the plan to write again.");
+  if (/too many (api requests|subrequests|queries)/i.test(m))
+    return new ObxError("service_unavailable", "This request needed more database queries than the Cloudflare plan allows in one request (50 on the free plan). Use the Workers Paid plan.", [], { retryAfter: 60 });
+  return null;
 }
 
 /** Methods registered for a path (route handlers only, not middleware), for 405 answers. */

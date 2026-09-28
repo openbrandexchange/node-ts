@@ -151,7 +151,7 @@ async function maintenanceStep(ctx: Ctx, job: JobRow, deadline: number): Promise
   st.after ??= "";
   st.done ??= 0;
   if (input.task === "rights") {
-    while (ctx.now() < deadline) {
+    while (!ctx.overBudget(deadline)) {
       const rows = await ctx.db.all<{ id: string; rep_hash: string }>("SELECT id, rep_hash FROM assets WHERE id > ? ORDER BY id LIMIT 50", [st.after]);
       if (!rows.length) return { done: true, state: st, progressDone: st.done };
       const s = await new CatalogSession(ctx, { allowedBrands: null, canDelete: false }).init();

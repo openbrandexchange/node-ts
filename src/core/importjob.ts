@@ -174,7 +174,7 @@ async function step(ctx: Ctx, job: JobRow, deadline: number): Promise<StepOutcom
     return { done: true, failed: true, state: st, summary: summaryOf(st), error: e.toProblem() };
   };
   try {
-    while (ctx.now() < deadline) {
+    while (!ctx.overBudget(deadline)) {
       switch (st.phase) {
         case "fetch": {
           const src = await ctx.db.first<SourceRow>("SELECT * FROM import_sources WHERE id = ?", [input.source_id ?? null]);
@@ -209,7 +209,7 @@ async function step(ctx: Ctx, job: JobRow, deadline: number): Promise<StepOutcom
           }
           const overrides = await loadOverrides(ctx, st, input, sink);
           for (const it of items) {
-            if (ctx.now() >= deadline) break;
+            if (ctx.overBudget(deadline)) break;
             await processImage(ctx, job, st, input, it.item, overrides, sink);
             st.imgIdx = it.idx;
           }
@@ -254,7 +254,7 @@ async function step(ctx: Ctx, job: JobRow, deadline: number): Promise<StepOutcom
             st.phase = "orphans";
             break;
           }
-          while (st.groupIdx < groups.length && ctx.now() < deadline) {
+          while (st.groupIdx < groups.length && !ctx.overBudget(deadline)) {
             await applyGroup(ctx, job, st, input, groups[st.groupIdx], sink);
             st.groupIdx++;
           }
@@ -268,7 +268,7 @@ async function step(ctx: Ctx, job: JobRow, deadline: number): Promise<StepOutcom
             const rows = await ctx.db.all<{ kind: string }>("SELECT DISTINCT kind FROM job_items WHERE job_id = ? AND kind LIKE 'img:%'", [job.id]);
             st.orphanStyles = rows.map((r) => r.kind.slice(4)).filter((s) => !inCsv.has(s)).sort();
           }
-          while (st.orphanIdx < st.orphanStyles.length && ctx.now() < deadline) {
+          while (st.orphanIdx < st.orphanStyles.length && !ctx.overBudget(deadline)) {
             await applyOrphans(ctx, job, st, input, st.orphanStyles[st.orphanIdx], sink);
             st.orphanIdx++;
           }
@@ -283,7 +283,7 @@ async function step(ctx: Ctx, job: JobRow, deadline: number): Promise<StepOutcom
             break;
           }
           for (const it of items) {
-            if (ctx.now() >= deadline) break;
+            if (ctx.overBudget(deadline)) break;
             if (!input.dry_run) {
               const s = await new CatalogSession(ctx, { allowedBrands: input.allowed_brands, canDelete: false }).init();
               const r = await s.apply("unpublish", "product", it.item, null);
@@ -409,7 +409,7 @@ async function prepare(ctx: Ctx, job: JobRow, st: State, input: ImportInput, sin
       const txt = await readText(ctx, inp.manifest.key, inp.manifest.offset, inp.manifest.length);
       const list = safeJsonParse<unknown>(txt, null);
       if (!Array.isArray(list)) throw new ObxError("invalid_request", "images_manifest must be a JSON array.");
-      while ((st.manifestDone ?? 0) < list.length && ctx.now() < deadline) {
+      while ((st.manifestDone ?? 0) < list.length && !ctx.overBudget(deadline)) {
         const chunk = list.slice(st.manifestDone, (st.manifestDone ?? 0) + 200);
         const stmts: Stmt[] = [];
         for (const m of chunk) {

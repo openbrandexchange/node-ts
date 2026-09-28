@@ -102,6 +102,13 @@ export class Ctx {
   now(): number {
     return this.p.now();
   }
+  /**
+   * True when a background step should checkpoint now: its time is up, or (on Workers) this
+   * invocation is close to D1's cap on queries per invocation (1,000 on Workers Paid).
+   */
+  overBudget(deadline: number): boolean {
+    return this.p.now() >= deadline || (this.p.queryBudgetLeft?.() ?? Infinity) <= 0;
+  }
   iso(offsetMs = 0): string {
     return isoNow(this.p.now() + offsetMs);
   }

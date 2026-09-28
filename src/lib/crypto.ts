@@ -1,5 +1,5 @@
 // Hashing, HMAC signing, constant-time comparison and encryption at rest.
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { b64url, fromB64url, fromUtf8, randomBytes, toHex, utf8 } from "./util";
 
 export async function sha256Hex(data: Uint8Array | string): Promise<string> {
@@ -28,23 +28,16 @@ export function timingSafeEqualStr(a: string, b: string): boolean {
   return diff === 0;
 }
 
-const keyCache = new Map<string, CryptoKey>();
-
-async function hmacKey(secret: string | Uint8Array): Promise<CryptoKey> {
-  const raw = typeof secret === "string" ? utf8(secret) : secret;
-  const cacheKey = typeof secret === "string" ? "s:" + secret : "b:" + b64url(secret);
-  const hit = keyCache.get(cacheKey);
-  if (hit) return hit;
-  const k = await crypto.subtle.importKey("raw", raw as BufferSource, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  if (keyCache.size > 64) keyCache.clear();
-  keyCache.set(cacheKey, k);
-  return k;
+/**
+ * HMAC-SHA256 with node:crypto (Bun, and Workers with nodejs_compat). Synchronous under the hood:
+ * WebCrypto's async sign costs ~20 µs per call, which dominated catalog pages with many signed URLs.
+ */
+export function hmacSha256Sync(secret: string | Uint8Array, message: string | Uint8Array): Uint8Array {
+  return new Uint8Array(createHmac("sha256", secret).update(message).digest());
 }
 
 export async function hmacSha256(secret: string | Uint8Array, message: string | Uint8Array): Promise<Uint8Array> {
-  const k = await hmacKey(secret);
-  const sig = await crypto.subtle.sign("HMAC", k, (typeof message === "string" ? utf8(message) : message) as BufferSource);
-  return new Uint8Array(sig);
+  return hmacSha256Sync(secret, message);
 }
 
 export async function hmacHex(secret: string | Uint8Array, message: string): Promise<string> {

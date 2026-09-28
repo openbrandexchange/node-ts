@@ -110,7 +110,7 @@ async function downloadStep(ctx: Ctx, job: JobRow, deadline: number): Promise<St
   const input = safeJsonParse<DownloadInput>(job.input, {} as DownloadInput);
   const st = safeJsonParse<DownloadState>(job.state, { phase: "plan", planOffset: 0, fileCount: 0, fi: 0, zip: null, csv: null });
   if (!st.phase) Object.assign(st, { phase: "plan", planOffset: 0, fileCount: 0, fi: 0, zip: null, csv: null });
-  while (ctx.now() < deadline) {
+  while (!ctx.overBudget(deadline)) {
     if (st.phase === "plan") {
       const ids = await planProducts(ctx, input, st.planOffset, 100);
       if (!ids.length) {
@@ -163,7 +163,7 @@ async function downloadStep(ctx: Ctx, job: JobRow, deadline: number): Promise<St
         const items = await jobItems<{ path: string; sha256: string; size: number; crc: number }>(ctx, job.id, "f", st.fi, 50);
         if (!items.length) break;
         for (const it of items) {
-          if (ctx.now() >= deadline) {
+          if (ctx.overBudget(deadline)) {
             stop = true;
             break;
           }
@@ -303,7 +303,7 @@ async function exportStep(ctx: Ctx, job: JobRow, deadline: number): Promise<Step
     }
   }
   const settings = await ctx.settings();
-  while (ctx.now() < deadline) {
+  while (!ctx.overBudget(deadline)) {
     if (st.phase === "plan") {
       const ids = await exportProductIds(ctx, input, st.planOffset, 50);
       if (!ids.length) {
@@ -351,7 +351,7 @@ async function exportStep(ctx: Ctx, job: JobRow, deadline: number): Promise<Step
         const items = await jobItems<{ path: string; sha256: string; size: number; crc: number; asset_id: string; rendition: string }>(ctx, job.id, "f", st.fi, 50);
         if (!items.length) break;
         for (const it of items) {
-          if (ctx.now() >= deadline) {
+          if (ctx.overBudget(deadline)) {
             stop = true;
             break;
           }

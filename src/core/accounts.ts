@@ -27,11 +27,18 @@ export function userJson(u: UserRow) {
   };
 }
 
-export async function retailerJson(ctx: Ctx, r: RetailerRow) {
-  const counts = await ctx.db.first<{ users: number; clients: number }>(
-    "SELECT (SELECT COUNT(*) FROM users WHERE retailer_id = ?) AS users, (SELECT COUNT(*) FROM api_clients WHERE retailer_id = ? AND status = 'active') AS clients",
-    [r.id, r.id],
-  );
+/** User and active API key counts for many retailers in two queries (lists avoid one query per row). */
+export async function retailerCounts(ctx: Ctx, ids: string[]): Promise<Map<string, { users: number; clients: number }>> {
+  const out = new Map(ids.map((id) => [id, { users: 0, clients: 0 }]));
+  if (!ids.length) return out;
+  const ph = ids.map(() => "?").join(",");
+  for (const r of await ctx.db.all<{ id: string; n: number }>(`SELECT retailer_id AS id, COUNT(*) AS n FROM users WHERE retailer_id IN (${ph}) GROUP BY retailer_id`, ids)) out.get(r.id)!.users = r.n;
+  for (const r of await ctx.db.all<{ id: string; n: number }>(`SELECT retailer_id AS id, COUNT(*) AS n FROM api_clients WHERE retailer_id IN (${ph}) AND status = 'active' GROUP BY retailer_id`, ids)) out.get(r.id)!.clients = r.n;
+  return out;
+}
+
+export async function retailerJson(ctx: Ctx, r: RetailerRow, known?: { users: number; clients: number }) {
+  const counts = known ?? (await retailerCounts(ctx, [r.id])).get(r.id);
   return {
     id: r.id,
     name: r.name,
