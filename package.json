@@ -1,0 +1,45 @@
+{
+  "name": "obx-node-ts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open Brand Exchange node in TypeScript (Hono) for Cloudflare Workers and Bun",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/adapters/bun/main.ts",
+    "start": "bun src/adapters/bun/main.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dev:workers": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "smoke:workers": "bun scripts/workers-smoke.ts"
+  },
+  "dependencies": {
+    "aws4fetch": "^1.0.20",
+    "bcryptjs": "^3.0.3",
+    "hono": "^4.13.10"
+  },
+  "optionalDependencies": {
+    "ssh2-sftp-client": "^12.1.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260928.1",
+    "@types/bun": "latest",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.142.0"
+  },
+  "cloudflare": {
+    "label": "Open Brand Exchange node",
+    "products": ["Workers", "D1", "R2"],
+    "categories": ["storage"],
+    "docs_url": "https://github.com/openbrandexchange/node-ts#readme",
+    "bindings": {
+      "OBX_SECRET_KEY": {
+        "description": "A long random string (at least 32 characters). It encrypts stored credentials and signs download links. Generate one with: openssl rand -base64 48"
+      },
+      "OBX_SETUP_CODE": {
+        "description": "A code you choose (6+ characters). You type it once in the setup wizard, so nobody else can claim your new node."
+      }
+    }
+  }
+}
