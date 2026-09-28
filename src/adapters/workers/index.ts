@@ -134,6 +134,8 @@ function makePlatform(env: Env, ctx: ExecutionContext): Platform {
     },
     sftp: null,
     resolveHost: dohResolver,
+    // Workers cannot reach private networks and cannot set a TLS server name for an IP target.
+    pinConnections: false,
     defer(p) {
       ctx.waitUntil(p.catch((err) => log("error", "background task failed", { error: err instanceof Error ? err.message : String(err) })));
     },

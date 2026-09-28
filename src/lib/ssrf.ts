@@ -109,12 +109,33 @@ export interface UrlPolicy {
   allowPrivate: boolean;
   resolve: Resolver | null;
   schemes?: string[];
+  /**
+   * Connect to the address that was checked instead of resolving the name again (closes the DNS
+   * rebinding window between check and connect). Used on Bun; Workers cannot reach private networks.
+   */
+  pin?: boolean;
+}
+
+export interface CheckedUrl {
+  url: URL;
+  /** The checked address to connect to, or null for IP literals and when nothing was resolved. */
+  address: string | null;
 }
 
 const LOCAL_NAMES = /^(localhost|localhost\.localdomain|ip6-localhost|ip6-loopback)$|\.(localhost|local|internal|intranet|home\.arpa|lan)$/i;
 
+/** IPv4 first: it is reachable from every container network; IPv6 often is not. */
+function preferV4(ips: string[]): string | null {
+  return ips.find((ip) => !ip.includes(":")) ?? ips[0] ?? null;
+}
+
 /** Throws 422 unsafe_url unless the URL is allowed. */
 export async function assertSafeUrl(raw: string, policy: UrlPolicy): Promise<URL> {
+  return (await checkUrl(raw, policy)).url;
+}
+
+/** Checks a URL like assertSafeUrl and returns the resolved address that passed the check. */
+export async function checkUrl(raw: string, policy: UrlPolicy): Promise<CheckedUrl> {
   let u: URL;
   try {
     u = new URL(raw);
@@ -132,17 +153,20 @@ export async function assertSafeUrl(raw: string, policy: UrlPolicy): Promise<URL
     if (METADATA_NAMES.test(host)) throw new ObxError("unsafe_url", unsafe);
     if (/^[\d.]+$/.test(host) || host.includes(":")) {
       if (isAlwaysBlockedIp(host)) throw new ObxError("unsafe_url", unsafe);
-    } else if (policy.resolve) {
+      return { url: u, address: null };
+    }
+    if (policy.resolve) {
       const ips = await policy.resolve(host).catch(() => [] as string[]);
       if (ips.some(isAlwaysBlockedIp)) throw new ObxError("unsafe_url", unsafe);
+      return { url: u, address: preferV4(ips) };
     }
-    return u;
+    return { url: u, address: null };
   }
   if (LOCAL_NAMES.test(host)) throw new ObxError("unsafe_url", "Addresses on a local or private network are not allowed.");
   const literal = /^[\d.]+$/.test(host) || host.includes(":");
   if (literal) {
     if (isBlockedIp(host)) throw new ObxError("unsafe_url", "Addresses on a local or private network are not allowed.");
-    return u;
+    return { url: u, address: null };
   }
   if (policy.resolve) {
     let ips: string[] = [];
@@ -153,8 +177,22 @@ export async function assertSafeUrl(raw: string, policy: UrlPolicy): Promise<URL
     }
     if (!ips.length) throw new ObxError("unsafe_url", "The host name could not be resolved.");
     if (ips.some(isBlockedIp)) throw new ObxError("unsafe_url", "This address points to a local or private network.");
+    return { url: u, address: preferV4(ips) };
   }
-  return u;
+  return { url: u, address: null };
+}
+
+/**
+ * The request to send for a checked URL. With pinning, the URL's host is replaced by the checked
+ * address; the Host header and (for https) the TLS server name keep the original name, so virtual
+ * hosting and certificate verification work exactly as before.
+ */
+export function pinnedRequest(checked: CheckedUrl, pin: boolean): { url: string; host: string | null; serverName: string | null } {
+  const u = checked.url;
+  if (!pin || !checked.address) return { url: u.toString(), host: null, serverName: null };
+  const target = new URL(u.toString());
+  target.hostname = checked.address.includes(":") ? `[${checked.address}]` : checked.address;
+  return { url: target.toString(), host: u.host, serverName: u.protocol === "https:" ? u.hostname : null };
 }
 
 /** fetch() with the SSRF policy applied to the URL and to every redirect hop (max 5). */
@@ -166,12 +204,17 @@ export async function safeFetch(
   let current = url;
   const follow = init.followRedirects ?? true;
   for (let hop = 0; hop <= 5; hop++) {
-    await assertSafeUrl(current, policy);
-    const res = await fetch(current, {
+    const target = pinnedRequest(await checkUrl(current, policy), !!policy.pin);
+    const headers = new Headers(init.headers);
+    if (target.host) headers.set("host", target.host);
+    const req: RequestInit & { tls?: { serverName?: string } } = {
       ...init,
+      headers,
       redirect: "manual",
       signal: init.signal ?? AbortSignal.timeout(init.timeoutMs ?? 15_000),
-    });
+    };
+    if (target.serverName) req.tls = { serverName: target.serverName };
+    const res = await fetch(target.url, req);
     if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
       if (!follow) return res;
       current = new URL(res.headers.get("location")!, current).toString();

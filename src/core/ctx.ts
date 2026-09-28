@@ -172,7 +172,7 @@ export class Ctx {
   }
 
   urlPolicy(schemes?: string[]): UrlPolicy {
-    return { allowPrivate: this.config.allowPrivateUrls, resolve: this.p.resolveHost, schemes };
+    return { allowPrivate: this.config.allowPrivateUrls, resolve: this.p.resolveHost, schemes, pin: this.p.pinConnections };
   }
 
   log(level: "info" | "warn" | "error", msg: string, extra?: Record<string, unknown>) {

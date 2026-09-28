@@ -93,6 +93,7 @@ export function createBunPlatform(o: BunPlatformOptions): Platform & { pending: 
     },
     sftp: bunSftp,
     resolveHost: async (host) => (await lookup(host, { all: true })).map((a) => a.address),
+    pinConnections: true,
     defer(p) {
       const q = p.catch((e) => log("error", "background task failed", { error: e instanceof Error ? e.message : String(e) })).finally(() => pending.delete(q));
       pending.add(q);

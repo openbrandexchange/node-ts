@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { parseCsv, writeCsv, normHeader } from "../src/lib/csv";
 import { parseIngestGtin, normaliseLookupGtin } from "../src/lib/gtin";
 import { parseImageName, parseMaterials, parseProductsCsv } from "../src/core/importformat";
-import { isBlockedIp, assertSafeUrl } from "../src/lib/ssrf";
+import { isBlockedIp, assertSafeUrl, safeFetch, checkUrl, pinnedRequest } from "../src/lib/ssrf";
 import { readZipDirectory, readZipEntry, zipBytes, unsafeEntryReason, zipStream, zipSize } from "../src/lib/zip";
 import { bytesReader, scanMultipart } from "../src/lib/multipart";
 import { crc32 } from "../src/lib/crypto";
@@ -80,6 +80,33 @@ describe("SSRF protection", () => {
     expect((await assertSafeUrl("https://files.local/x", pol)).host).toBe("files.local");
     for (const url of ["https://169.254.169.254/latest/meta-data", "https://[fe80::1]/hook", "https://[::ffff:169.254.169.254]/", "http://metadata.google.internal/", "https://meta.example/x"])
       await expect(assertSafeUrl(url, pol)).rejects.toMatchObject({ code: "unsafe_url" });
+  });
+});
+
+describe("SSRF: connections go to the checked address", () => {
+  test("the request connects to the resolved address and keeps the name in the Host header", async () => {
+    const seen: string[] = [];
+    const srv = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (req) => (seen.push(req.headers.get("host") ?? ""), new Response("pinned")) });
+    try {
+      // "rebind.test" does not exist in any DNS: the request can only succeed by using the checked address.
+      const pol = { allowPrivate: true, resolve: async () => ["127.0.0.1"], pin: true };
+      const res = await safeFetch(`http://rebind.test:${srv.port}/feed.csv`, { timeoutMs: 5000 }, pol);
+      expect(await res.text()).toBe("pinned");
+      expect(seen).toEqual([`rebind.test:${srv.port}`]);
+    } finally {
+      srv.stop(true);
+    }
+  });
+  test("a name that resolves to a metadata address is refused before connecting, also with pinning", async () => {
+    const pol = { allowPrivate: true, resolve: async () => ["169.254.169.254"], pin: true };
+    await expect(safeFetch("http://rebind.test/latest/meta-data", { timeoutMs: 2000 }, pol)).rejects.toMatchObject({ code: "unsafe_url" });
+  });
+  test("https keeps the original name for certificate checks; IPv4 is preferred; IPv6 is bracketed", async () => {
+    const both = await checkUrl("https://files.example.com/a.csv", { allowPrivate: false, resolve: async () => ["2606:4700::1111", "93.184.216.34"] });
+    expect(pinnedRequest(both, true)).toEqual({ url: "https://93.184.216.34/a.csv", host: "files.example.com", serverName: "files.example.com" });
+    const v6 = await checkUrl("https://files.example.com:8443/a.csv", { allowPrivate: false, resolve: async () => ["2606:4700::1111"] });
+    expect(pinnedRequest(v6, true)).toEqual({ url: "https://[2606:4700::1111]:8443/a.csv", host: "files.example.com:8443", serverName: "files.example.com" });
+    expect(pinnedRequest(v6, false).url).toBe("https://files.example.com:8443/a.csv");
   });
 });
 

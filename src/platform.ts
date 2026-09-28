@@ -110,6 +110,8 @@ export interface Platform {
   sftp: SftpClient | null;
   /** Host name → IP addresses, for SSRF checks (null: rely on the runtime's own network isolation). */
   resolveHost: ((host: string) => Promise<string[]>) | null;
+  /** Connect outbound requests to the address the SSRF check resolved (true on Bun). */
+  pinConnections: boolean;
   /** Keep a promise alive after the response (Workers waitUntil); Bun just runs it. */
   defer(p: Promise<unknown>): void;
   /** Ask the runtime to run background jobs soon (queue message / in-process timer). */

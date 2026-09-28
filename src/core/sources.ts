@@ -2,7 +2,7 @@
 import { AwsClient } from "aws4fetch";
 import type { Ctx } from "./ctx";
 import { ObxError } from "../lib/problem";
-import { safeFetch, assertSafeUrl } from "../lib/ssrf";
+import { safeFetch, checkUrl } from "../lib/ssrf";
 import { safeJsonParse } from "../lib/util";
 import { sha256Hex } from "../lib/crypto";
 import { streamToStore } from "./storeio";
@@ -138,8 +138,7 @@ async function listFolder(ctx: Ctx, src: SourceRow): Promise<{ files: Listed[]; 
   }
   if (src.kind === "sftp") {
     if (!ctx.p.sftp) throw new ObxError("not_implemented", "SFTP imports need the self-hosted (Bun/Docker) edition. On Cloudflare, use a web address or an S3/R2 bucket.");
-    await assertSafeUrl(`https://${String(cfg.host)}/`, ctx.urlPolicy());
-    const r = await ctx.p.sftp.list(sftpConfig(cfg, cred), String(cfg.path ?? "/"));
+    const r = await ctx.p.sftp.list(await pinnedSftpConfig(ctx, cfg, cred), String(cfg.path ?? "/"));
     return { files: r.files.map((f) => ({ path: f.path, size: f.size, version: `${f.size}:${f.modifiedAt ?? ""}`, modified: f.modifiedAt })), hostKey: r.hostKeyFingerprint };
   }
   throw new ObxError("invalid_request", "Not a folder source.");
@@ -156,6 +155,14 @@ function sftpConfig(cfg: Record<string, unknown>, cred: Credentials) {
   };
 }
 
+/** SFTP settings with the host checked against the SSRF policy and, when pinning, replaced by the checked address. */
+async function pinnedSftpConfig(ctx: Ctx, cfg: Record<string, unknown>, cred: Credentials) {
+  const policy = ctx.urlPolicy();
+  const checked = await checkUrl(`https://${String(cfg.host)}/`, policy);
+  const base = sftpConfig(cfg, cred);
+  return policy.pin && checked.address ? { ...base, host: checked.address } : base;
+}
+
 export async function readRemoteFile(ctx: Ctx, sourceId: string, path: string, max: number): Promise<Uint8Array> {
   const src = await ctx.db.first<SourceRow>("SELECT * FROM import_sources WHERE id = ?", [sourceId]);
   if (!src) throw new ObxError("not_found", "The scheduled import was deleted.");
@@ -169,8 +176,7 @@ export async function readRemoteFile(ctx: Ctx, sourceId: string, path: string, m
   }
   if (src.kind === "sftp") {
     if (!ctx.p.sftp) throw new ObxError("not_implemented", "SFTP needs the self-hosted edition.");
-    await assertSafeUrl(`https://${String(cfg.host)}/`, ctx.urlPolicy());
-    return ctx.p.sftp.read(sftpConfig(cfg, cred), path);
+    return ctx.p.sftp.read(await pinnedSftpConfig(ctx, cfg, cred), path);
   }
   throw new ObxError("invalid_request", "Not a folder source.");
 }
