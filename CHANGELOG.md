@@ -9,7 +9,7 @@ always forward-only and applied automatically.
 
 ### Changed
 
-- The web interface is admin-ui main after 0.1.1 (commit fed075a): the zip dialog downloads the
+- The web interface is admin-ui main after 0.1.1 (commit fe1a1ad): the zip dialog downloads the
   version you picked, website fields accept an address without `https://`, and an approved API key
   can be shown when the retailer asked on the web form.
 - The start-up log and the setup-code line name the address to open (`OBX_PUBLIC_URL`), not only the
