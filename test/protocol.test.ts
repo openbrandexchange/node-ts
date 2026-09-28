@@ -240,6 +240,23 @@ describe("access requests (P-ACC-1, A-RET-1)", () => {
   });
 });
 
+describe("access request from the web form: the brand shows the key", () => {
+  test("renewing the secret in the admin retires the pending one, so software never gets a dead secret", async () => {
+    const req = await node.request("POST", "/obx/v1/access-requests", {
+      headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.9" },
+      body: JSON.stringify({ retailer: { name: "Web Form Shop" }, contact: { name: "Wim", email: "wim@webform.example" }, access: ["api"] }),
+    });
+    const ap = await admin.req("POST", `/admin/api/access-requests/${req.json.id}/approve`, { json: {} });
+    const rotated = await admin.req("POST", `/admin/api/api-clients/${ap.json.api_client.id}/rotate`);
+    expect(rotated.status).toBe(200);
+    const status = (await node.api(req.json.request_token, "GET", `/obx/v1/access-requests/${req.json.id}`)).json;
+    expect(status.credentials.client_secret).toBeNull();
+    expect(status.credentials.claimed).toBe(true);
+    const tok = await node.accessToken(rotated.json.client.client_id, rotated.json.client_secret);
+    expect((await node.api(tok, "GET", "/obx/v1/grant")).json.retailer.name).toBe("Web Form Shop");
+  });
+});
+
 describe("exports, usage, rate limits (P-EXP-1, P-USE-1, P-RATE-1, P-ERR-1)", () => {
   test("export of brand kestrel with web renditions: manifest and zip parts agree", async () => {
     const r = await node.api(at, "POST", "/obx/v1/exports", { json: { filter: { brand_ids: [brandIds["kestrel"]] }, renditions: ["web"] } });

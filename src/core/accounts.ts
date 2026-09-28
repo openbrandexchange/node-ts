@@ -146,6 +146,9 @@ export async function createClient(ctx: Ctx, retailer: RetailerRow, name: string
 export async function rotateClient(ctx: Ctx, cl: ClientRow) {
   const { secret, hash } = await newClientCredentials();
   await ctx.db.run("UPDATE api_clients SET secret_hash = ?, secret_version = secret_version + 1 WHERE id = ?", [hash, cl.id]);
+  // A key made on approval waits for the requester's software. Once the brand renews it (to hand it
+  // over itself, e.g. when the retailer asked on the web form), that waiting secret no longer works.
+  await ctx.db.run("UPDATE access_requests SET pending_secret = NULL, claimed = 1 WHERE api_client_id = ? AND pending_secret IS NOT NULL", [cl.id]);
   return { row: (await ctx.db.first<ClientRow>("SELECT * FROM api_clients WHERE id = ?", [cl.id]))!, secret };
 }
 
