@@ -73,6 +73,8 @@ async function settingsJson(c: C, s: SettingsData) {
       email_configured: ctx.p.mailer.configured,
       renditions_server_generated: false,
       max_upload_bytes: ctx.config.maxUploadBytes,
+      // Workers cannot open SFTP connections; the admin then offers only the other two.
+      source_kinds: ctx.p.sftp ? ["https_url", "sftp", "s3"] : ["https_url", "s3"],
       custom_domain_help: ctx.config.customDomainHelp,
     },
   };

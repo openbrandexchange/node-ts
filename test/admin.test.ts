@@ -138,6 +138,17 @@ describe("admin catalog = ingest semantics (A-CAT-1)", () => {
   });
 });
 
+describe("settings: what this node can do", () => {
+  test("source_kinds lists SFTP only where the platform can open it", async () => {
+    const node = new TestNode();
+    const admin = await node.setup();
+    expect((await admin.req("GET", "/admin/api/settings")).json.node.source_kinds).toEqual(["https_url", "sftp", "s3"]);
+    // As on Cloudflare Workers, where the platform has no SFTP.
+    (node.platform as { sftp: unknown }).sftp = null;
+    expect((await admin.req("GET", "/admin/api/settings")).json.node.source_kinds).toEqual(["https_url", "s3"]);
+  });
+});
+
 describe("settings effects", () => {
   test("changing default rights writes asset upserts; toggling originals writes grant entries", async () => {
     const node = new TestNode();
