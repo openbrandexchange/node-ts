@@ -5,7 +5,7 @@ import { ctxOf, json, noContent, readObject, clientIp } from "./common";
 import { ObxError, fieldError } from "../lib/problem";
 import { loadSession, createSession, parseCookies, cookieFlags, newCsrf, SESSION_TTL_MS, type UserRow, type RetailerRow, type SessionInfo } from "../core/auth";
 import { hashPassword, passwordProblem, verifyPassword } from "../lib/password";
-import { dbLimit, enforce, limitHeaders } from "../core/ratelimit";
+import { dbLimit, dbPeek, enforce, limitHeaders } from "../core/ratelimit";
 import { sha256Hex, timingSafeEqualStr, tokenHash } from "../lib/crypto";
 import { b64url, canonicalJson, newId, randomBytes, slugify } from "../lib/util";
 import { V, LANG_RE } from "../core/validate";
@@ -232,15 +232,21 @@ adminAuth.post("/admin/api/session/login", async (c) => {
   const body = await readObject(c);
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const password = typeof body.password === "string" ? body.password : "";
-  const ipl = await dbLimit(ctx, `login:${clientIp(c)}`, 10, 900);
-  enforce(ipl, "login attempts");
-  const el = await dbLimit(ctx, `login:${await sha256Hex(email)}`, 10, 900);
-  enforce(el, "login attempts for this account");
+  // Only failed attempts count: 10 per 15 minutes per address and per account. Colleagues behind
+  // one office connection can sign in as often as they like.
+  const ipKey = `login:${clientIp(c)}`;
+  const accountKey = `login:${await sha256Hex(email)}`;
+  enforce(await dbPeek(ctx, ipKey, 10, 900), "login attempts");
+  enforce(await dbPeek(ctx, accountKey, 10, 900), "login attempts for this account");
   const user = email ? await ctx.db.first<UserRow>("SELECT * FROM users WHERE email = ?", [email]) : null;
   c.set("auditActor", user ? actorOf(user) : { type: "anonymous", id: null, name: null, role: null });
   if (!user) c.set("auditDetails", { unknown_account: true });
   const ok = await verifyPassword(password.slice(0, 200), user?.password_hash);
-  if (!user || !ok) throw new ObxError("invalid_credentials", "E-mail address or password is wrong.");
+  if (!user || !ok) {
+    await dbLimit(ctx, ipKey, 10, 900);
+    await dbLimit(ctx, accountKey, 10, 900);
+    throw new ObxError("invalid_credentials", "E-mail address or password is wrong.");
+  }
   if (user.status === "blocked") throw new ObxError("account_blocked", "This account is blocked. Contact the brand.");
   if (user.status !== "active") throw new ObxError("invalid_credentials", "E-mail address or password is wrong.");
   if (user.retailer_id) {

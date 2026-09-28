@@ -36,6 +36,15 @@ export async function dbLimit(ctx: Ctx, key: string, limit: number, windowS: num
   return { limit, remaining: Math.max(0, limit - count), reset: start + windowS - now, ok: count <= limit };
 }
 
+/** The current window's count without counting this request (for limits that only count failures). */
+export async function dbPeek(ctx: Ctx, key: string, limit: number, windowS: number): Promise<Limit> {
+  const now = Math.floor(ctx.now() / 1000);
+  const start = Math.floor(now / windowS) * windowS;
+  const row = await ctx.db.first<{ count: number; window_start: number }>("SELECT count, window_start FROM rate_limits WHERE key = ?", [key]);
+  const count = row && row.window_start === start ? row.count : 0;
+  return { limit, remaining: Math.max(0, limit - count), reset: start + windowS - now, ok: count < limit };
+}
+
 export function limitHeaders(l: Limit): Record<string, string> {
   return { "ratelimit-limit": String(l.limit), "ratelimit-remaining": String(l.remaining), "ratelimit-reset": String(l.reset) };
 }

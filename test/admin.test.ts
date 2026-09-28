@@ -314,3 +314,19 @@ describe("scheduled pull import (https URL)", () => {
     }
   });
 });
+
+describe("sign-in throttling", () => {
+  test("successful sign-ins are not limited; ten failures lock the account and the address for a while", async () => {
+    const node = new TestNode();
+    await node.setup();
+    const login = async (password: string) => (await node.browser()).req("POST", "/admin/api/session/login", { json: { email: "admin@kestrel.example", password } });
+    for (let i = 0; i < 12; i++) expect((await login("correct horse battery staple")).status).toBe(200);
+    for (let i = 0; i < 10; i++) expect((await login("wrong password " + i)).status).toBe(401);
+    const locked = await login("correct horse battery staple");
+    expect(locked.status).toBe(429);
+    expect(locked.json.obx_error).toBe("rate_limited");
+    expect(Number(locked.headers.get("retry-after"))).toBeGreaterThan(0);
+    node.clock.offset = 16 * 60_000;
+    expect((await login("correct horse battery staple")).status).toBe(200);
+  });
+});

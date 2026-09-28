@@ -1,0 +1,13 @@
+{
+  "name": "obx-node-ts-e2e",
+  "private": true,
+  "description": "Browser walk-through, accessibility (axe) and keyboard checks of the vendored admin-ui against a running node-ts",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0"
+  }
+}
