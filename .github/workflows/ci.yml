@@ -3,26 +3,161 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  check:
+    name: Lint, types, tests, audit, licences, Workers build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.3"
+          bun-version: "1.3.14"
       - run: bun install --frozen-lockfile
-      - run: bun scripts/gen-migrations.ts && git diff --exit-code src/db/migrations.gen.ts
+      - name: Migrations embedded
+        run: bun scripts/gen-migrations.ts && git diff --exit-code src/db/migrations.gen.ts
+      - run: bun run lint
       - run: bun run typecheck
       - run: bun run test
-      - run: bunx wrangler deploy --dry-run --outdir dist
-      - run: bun run smoke:workers
-  docker:
+      - name: Dependency audit
+        run: bun run audit
+      - name: Licences of shipped dependencies
+        run: bun run licenses
+      - name: Workers bundle
+        run: bunx wrangler deploy --dry-run --outdir dist/workers
+      - name: Whole flow in the local Workers runtime (D1 + R2)
+        run: bun run smoke:workers
+      - name: Shell scripts
+        run: shellcheck deploy/*.sh deploy/cloudrun/*.sh scripts/*.sh e2e/run.sh
+
+  conformance:
+    # obx-conformance comes from the obx-go repository. While the repositories are private, the
+    # owner adds a fine-grained token with read access to openbrandexchange/obx-go as the
+    # repository secret OBX_READ_TOKEN (see docs/operations.md, "CI secrets").
+    name: OBX conformance (${{ matrix.runtime }})
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [bun, workers]
+    env:
+      OBX_READ_TOKEN: ${{ secrets.OBX_READ_TOKEN }}
+    steps:
+      - name: Without the token the suite cannot be fetched
+        if: env.OBX_READ_TOKEN == ''
+        run: echo "::warning::OBX_READ_TOKEN is not set, so obx-conformance could not be checked out. Add the secret to run the conformance suite."
+      - uses: actions/checkout@v4
+        if: env.OBX_READ_TOKEN != ''
+        with:
+          path: node-ts
+      - uses: actions/checkout@v4
+        if: env.OBX_READ_TOKEN != ''
+        with:
+          repository: openbrandexchange/obx-go
+          token: ${{ secrets.OBX_READ_TOKEN }}
+          path: obx-go
+      - uses: actions/setup-go@v5
+        if: env.OBX_READ_TOKEN != ''
+        with:
+          go-version: "1.26"
+          cache-dependency-path: obx-go/go.sum
+      - uses: oven-sh/setup-bun@v2
+        if: env.OBX_READ_TOKEN != ''
+        with:
+          bun-version: "1.3.14"
+      - name: Build obx-conformance
+        if: env.OBX_READ_TOKEN != ''
+        working-directory: obx-go
+        run: go build -o "$RUNNER_TEMP/obx-conformance" ./cmd/obx-conformance
+      - name: Start a fresh node
+        if: env.OBX_READ_TOKEN != ''
+        working-directory: node-ts
+        run: |
+          bun install --frozen-lockfile
+          if [ "${{ matrix.runtime }}" = bun ]; then
+            mkdir -p "$RUNNER_TEMP/data"
+            OBX_DATA_DIR="$RUNNER_TEMP/data" OBX_SETUP_CODE=CONFORMANCE-1 OBX_ALLOW_PRIVATE_URLS=true OBX_MAIL_PROVIDER=console \
+              PORT=8080 HOST=127.0.0.1 nohup bun src/adapters/bun/main.ts >"$RUNNER_TEMP/node.log" 2>&1 &
+          else
+            nohup bunx wrangler dev --local --port 8080 --ip 127.0.0.1 --test-scheduled --persist-to "$RUNNER_TEMP/wrangler" \
+              --var OBX_SECRET_KEY:ci-conformance-secret-key-0123456789abcdef --var OBX_SETUP_CODE:CONFORMANCE-1 \
+              --var OBX_ALLOW_PRIVATE_URLS:true --var OBX_MAIL_PROVIDER:console --var OBX_MAIL_FROM:portal@kestrel.example \
+              >"$RUNNER_TEMP/node.log" 2>&1 &
+            # The Workers runtime runs background jobs from the minute cron; trigger it every few seconds.
+            nohup sh -c 'while sleep 3; do curl -s "http://127.0.0.1:8080/__scheduled?cron=*+*+*+*+*" >/dev/null; done' >/dev/null 2>&1 &
+          fi
+          for i in $(seq 1 90); do curl -fs http://127.0.0.1:8080/readyz >/dev/null && break; sleep 1; done
+          curl -fs http://127.0.0.1:8080/readyz
+      - name: obx-conformance all
+        if: env.OBX_READ_TOKEN != ''
+        run: "$RUNNER_TEMP/obx-conformance" all --url http://127.0.0.1:8080 --setup-code CONFORMANCE-1
+      - name: Node log
+        if: failure() && env.OBX_READ_TOKEN != ''
+        run: tail -n 300 "$RUNNER_TEMP/node.log"
+
+  e2e:
+    name: Browser tests (Playwright, axe, keyboard)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t brand-portal .
-      - run: |
-          docker run -d --name portal -p 8080:8080 -e OBX_SECRET_KEY=ci-secret-key-0123456789abcdefghijkl brand-portal
-          for i in $(seq 1 30); do curl -fs http://localhost:8080/healthz && break; sleep 1; done
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: bun install --frozen-lockfile
+      - name: Install Playwright
+        working-directory: e2e
+        run: npm ci && npx playwright install --with-deps chromium
+      - run: sh e2e/run.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-results
+          path: |
+            e2e/screenshots
+            e2e/test-results
+            e2e/report
+            e2e/tmp/node.log
+          retention-days: 14
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t brand-portal:ci .
+      - name: Starts, answers health and readiness, runs as non-root
+        run: |
+          docker run -d --name portal -p 8080:8080 -e OBX_SECRET_KEY=ci-secret-key-0123456789abcdefghijkl brand-portal:ci
+          for i in $(seq 1 30); do curl -fs http://localhost:8080/readyz >/dev/null && break; sleep 1; done
+          curl -fs http://localhost:8080/healthz
+          curl -fs http://localhost:8080/readyz
           curl -fs http://localhost:8080/admin/api/setup | grep -q '"required":true'
+          test "$(docker exec portal id -u)" != "0"
+          docker stop -t 30 portal
+          docker logs portal 2>&1 | grep -q '"msg":"shutting down"'
+      - name: Refuses a broken configuration with a clear message
+        run: |
+          set +e
+          docker run --rm -e PORT=http -e OBX_MAIL_PROVIDER=pigeon brand-portal:ci >out.txt 2>&1
+          code=$?
+          set -e
+          cat out.txt
+          test "$code" = 78
+          grep -q "PORT must be a whole number" out.txt
+      - name: Backup and restore
+        run: sh scripts/backup-restore-test.sh brand-portal:ci

@@ -67,14 +67,16 @@ export class TestNode {
   worker: ReturnType<typeof createWorker>;
   mails: MailMessage[] = [];
   clock: { offset: number } = { offset: 0 };
+  dataDir: string;
 
-  constructor(env: Record<string, string> = {}) {
-    const dir = mkdtempSync(join(tmpdir(), "obx-node-ts-"));
+  constructor(env: Record<string, string> = {}, o: { dataDir?: string; dbPath?: string } = {}) {
+    const dir = o.dataDir ?? mkdtempSync(join(tmpdir(), "obx-node-ts-"));
+    this.dataDir = dir;
     this.platform = createBunPlatform({
       env: { OBX_SECRET_KEY: "test-secret-key-that-is-long-enough-0123456789", OBX_SETUP_CODE: SETUP_CODE, OBX_ALLOW_PRIVATE_URLS: "true", ...env },
       dataDir: dir,
       uiDir: join(import.meta.dir, "..", "public"),
-      dbPath: ":memory:",
+      dbPath: o.dbPath ?? ":memory:",
       quiet: process.env.OBX_TEST_LOG ? false : true,
       now: () => Date.now() + this.clock.offset,
     });
