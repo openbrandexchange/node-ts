@@ -18,27 +18,25 @@ Decisions taken where the spec (v0.1.0-draft) was silent, ambiguous or in tensio
 
 ## Admin and portal API
 
-12. **Settings extension:** `branding.portal_word` (LocalizedText or null) lets a brand override the local word in "<Brand> · <word>". Default words per language are in `src/core/mail.ts` (`PORTAL_WORD`, all 25 languages); a vendored locale key `glossary.portal` takes precedence over the built-in word.
+12. **Settings extension:** `branding.portal_name` (LocalizedText or null, in Settings and PublicBranding) lets a brand override the local word in "<Brand> · <word>"; it is the field the admin UI edits (admin-ui NOTES item 2). Fallback per language: the brand's text for the language, then its `en`, then its first text, then the vendored `glossary.portal`, then `PORTAL_WORD` in `src/core/mail.ts`.
 13. **Public logo** is served at `/admin/api/public/logo?v=<hash>` and used in discovery and branding. A brand's `logo_url` from ingest is published as given (not mirrored).
 14. **Portal product list** accepts `cursor` and `limit` (default 48, max 200), ordered by style number. Facet counts exclude the facet's own filter (so several values of one facet can be combined).
 15. **EAN paste** (`text`) splits on every non-digit, including spaces (as the admin spec says); the protocol lookup (`gtins`) keeps inner spaces inside one code.
 16. **Admin product list** `visibility=pending_files` = products with images that miss an original or a web version.
 17. **Cookies:** `obx_session` and `obx_csrf` are `Secure` when the request came over HTTPS (on Bun, `X-Forwarded-Proto` counts only with `OBX_TRUST_PROXY=true`). A portal served over plain `http://` on a LAN would otherwise be unable to log in.
-18. **Download-ready e-mails** link to the portal home (the UI shows the user's downloads there).
+18. **Links in e-mails** go to real UI routes: `/invite/{token}`, `/reset-password/{token}`, `/downloads` (zip ready), `/admin/requests` (new access request), `/login` (approved without a portal invitation; with one, the invitation e-mail is the way in).
 
 ## E-mail strings
 
-The node renders e-mails from the vendored admin-ui locale files `public/locales/<lang>.json` (flat or nested keys) and falls back to built-in English, Dutch, German and French. Keys used (placeholders in braces):
+The node renders e-mails from the vendored admin-ui locale files `public/locales/<lang>.json` (the admin-ui owns the texts; `scripts/update-ui.sh` refreshes them), then the English file, then a built-in copy of the English strings. Placeholders are `{{name}}`. Templates and the keys used, all under `email.`:
 
-- `email.common.greeting` {name}, `email.common.greeting_anonymous`, `email.common.footer` {portal}, `email.common.ignore`
-- `email.invite.subject|body|button` {portal} {brand} {expires}
-- `email.password_reset.subject|body|button` {portal}
-- `email.access_request.subject|body|button` {portal} {retailer} {contact} (to the brand's admins)
-- `email.access_approved.subject|body|body_portal|body_api|button` {portal} {brand}
-- `email.access_rejected.subject|body|reason` {portal} {brand} {reason}
-- `email.zip_ready.subject|body|button` {portal} {files}
+- common: `greeting` / `greetingNoName`, `signoff`, `footer`, `linkFallback`
+- `invite` (heading, body, button, expiry, ignore), `passwordReset` (same)
+- `accessRequestReceived` (to the requester), `accessRequestNew` (to the brand's admins)
+- `accessApproved` (heading, body, button, apiNote when an API key was created), `accessRejected` (heading, body, reason when given, contact)
+- `zipReady` (heading, body, button, expiry)
 
-The recipient's language is the user's language, the requester's `contact.language`, or the portal's default language.
+The recipient's language is the user's language, the requester's `contact.language` (or, when the request did not send one, the best match of its `Accept-Language` header), or the portal's default language.
 
 ## Runtime differences
 
@@ -49,3 +47,9 @@ The recipient's language is the user's language, the requester's `contact.langua
 23. **SFTP** scheduled imports need the Bun build (`ssh2-sftp-client`, optional dependency); the Workers build answers `not_implemented` for SFTP sources.
 24. **Setup code on Workers** is generated and logged on the first request when `OBX_SETUP_CODE` is not set (view it with `wrangler tail` or in the dashboard logs). On Bun a fresh code is printed at every start until setup is done.
 25. **D1 batches** larger than 500 statements are split (each part atomic). Catalog writes stay well below that; brand cascades are set-based.
+
+## Integration (2026-09-28)
+
+- Walked with Playwright against the vendored admin-ui on Bun, Docker Compose and `wrangler dev`: setup wizard, zip import, access request → approve → invitation → retailer login, catalog, article page, single-image download, EAN list, selection zip + CSV, background zip, API key and access key creation, scheduled import from a web address (run now and by the schedule).
+- Found and fixed on the way: zip downloads stalled after the first file on Bun (a stream `pull()` that returned without output); a repeated `PUT /blobs/{sha256}` hung on Bun because the request body was cancelled (now read and hash-checked); link-local and metadata addresses were allowed in development mode; header import problems used row 0 (now null).
+- `obx-conformance all` passes 47/47 on Bun and on `wrangler dev`. `obx push` of `fixtures/kestrel` then a second push (nothing uploaded, all unchanged) and `obx pull` (originals byte-identical, deletes mirrored) work.

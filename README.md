@@ -43,8 +43,16 @@ bunx wrangler deploy                          # creates D1 + R2 on first deploy
 ### Try it on your computer
 
 ```sh
+git clone https://github.com/openbrandexchange/node-ts && cd node-ts
 bun install
 bun start            # http://localhost:8080 — the setup code is printed in the terminal
+```
+
+Or in the Cloudflare runtime itself (local D1 and R2, nothing leaves your computer):
+
+```sh
+echo "OBX_SECRET_KEY=$(openssl rand -hex 32)" > .dev.vars
+bunx wrangler dev    # http://localhost:8787 — the setup code is printed in the terminal
 ```
 
 Data is stored in `./data` (SQLite database + files).
@@ -59,14 +67,14 @@ In the admin you find, in plain words:
 
 | Screen | What you do there |
 |---|---|
-| **Products** | See what is published, what is offline and which images still miss web versions. Publish/unpublish, edit, reorder images. |
-| **Imports** | Upload a CSV and images by hand, or add a **scheduled import** (web address, S3/R2 bucket; SFTP on the self-hosted build) that runs hourly, daily or weekly. Download the CSV template. |
-| **Retailers** | Approve or reject access requests (with a reason), invite retailer users by e-mail, block a retailer, choose which brands they see and whether they may download originals. |
-| **API keys for software** | Create a key for a retailer's shop or PIM. The secret is shown once; rotate or revoke it at any time. |
-| **Automatic upload** | Create an upload token for your PIM/ERP/CLI (shown once, can be limited to one brand). |
-| **Webhooks** | Let your own systems know when an import finished or a retailer asked for access. |
-| **Statistics** | Downloads per retailer, per product and per day; usage reported by retailers' software. |
-| **Settings** | Logo, accent colour, welcome text, languages, default image rights, original downloads on/off, article data export on/off, custom domain. |
+| **Overview** | What needs attention: waiting access requests, articles still waiting for images, recent retailer activity. |
+| **Catalog** | Your articles with their sizes (EANs) and images. Publish or take offline, edit, reorder images, add an article by hand. |
+| **Imports** | Upload a CSV and images (or one zip) by hand, check first without changing anything, download the CSV template. |
+| **Automatic upload** | *Scheduled imports* (a web address or an S3/R2 bucket; SFTP on the self-hosted build) that run hourly, daily or weekly; *Access keys* for your PIM, ERP or the `obx` tool (shown once); *Ready-made recipes*; *Notifications* to your own systems. |
+| **Retailers** | Invite people by e-mail, choose which brands they see and whether they may download originals, block a retailer, and create an *API key for their software* (the secret is shown once; renew or switch it off at any time). |
+| **Access requests** | Approve (with a portal account, an API key or both) or decline with a short reason. |
+| **Statistics** | Downloads per retailer, per article and per day. |
+| **Settings** | Logo, accent colour, welcome text, the name of your portal, languages, default image rights, original downloads on/off, article data export on/off, your team. |
 
 Retailers use the same address. They see only what you published, for the brands you allowed them.
 
@@ -94,9 +102,9 @@ Everything below works against **any** Open Brand Exchange portal, because it on
 
 **The CSV:** one row per size, product columns repeated; images named `{style}_{colour}_{position}.jpg`, e.g. `KO-1001_NVY_1.jpg`, `KO-1001_NVY_2_back.jpg`. Download the template in **Imports**.
 
-**Scheduled import (no code):** Imports → Scheduled imports → Add → web address of your `products.csv` or zip, or an S3/R2 bucket. Choose *Only add and update* or *Mirror* (also takes products offline that disappeared from the file — refused when more than half would disappear, so a broken export never empties your catalog).
+**Scheduled import (no code):** Automatic upload → Scheduled imports → Add scheduled import → web address of your `products.csv` or zip, or an S3/R2 bucket. Choose *Only add and update* or *Mirror* (also takes products offline that disappeared from the file — refused when more than half would disappear, so a broken export never empties your catalog).
 
-**The `obx` tool:** create a token in **Automatic upload**, then
+**The `obx` tool:** create a key in **Automatic upload → Access keys** (or run `obx login https://brands.yourbrand.com` and sign in), then
 
 ```sh
 export OBX_URL=https://brands.yourbrand.com OBX_TOKEN=obxi_…
@@ -127,10 +135,12 @@ The same code runs on [Bun](https://bun.sh), with SQLite and files on disk or in
 ### Docker / your own server
 
 ```sh
-cp .env.example .env          # set OBX_SECRET_KEY (openssl rand -base64 48) and OBX_SETUP_CODE
-docker compose up -d          # http://localhost:8080 — data in the "portal-data" volume
-docker compose --profile s3 up -d   # same, with images in a bundled S3 server (set OBX_STORAGE=s3)
+git clone https://github.com/openbrandexchange/node-ts && cd node-ts
+docker compose up -d              # http://localhost:8080 — data in the "portal-data" volume
+docker compose logs portal        # shows the setup code for the wizard
 ```
+
+Optional settings (e-mail, your own setup code, public address) go in a `.env` file: `cp .env.example .env`. Without `OBX_SECRET_KEY` a key is generated into the volume on first start. For images in a bundled S3 server: set `OBX_STORAGE=s3` in `.env` and run `docker compose --profile s3 up -d`.
 
 Put HTTPS in front (Caddy, Traefik, nginx) and set `OBX_PUBLIC_URL` and `OBX_TRUST_PROXY=true`. Back up the `portal-data` volume (database + files + generated secret key).
 
