@@ -30,6 +30,8 @@ always forward-only and applied automatically.
   and AI label, also when those were set in the admin. Before, every such import reset them to the
   defaults, which lifted embargoes.
 - Discovery reports `spec_version` 0.1.0 instead of 0.1.0-draft.
+- `Settings.retention.download_stats_days` is now `download_events_days`, the name the other two
+  portals use; a value stored under the old name is read as the new one.
 - Renewing the secret of an API key that was created on approval retires the secret still waiting
   for the requester's software, so that software gets "already collected" instead of a dead secret.
 

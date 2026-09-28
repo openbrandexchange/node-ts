@@ -49,7 +49,7 @@ export interface SettingsData {
   /** How long personal and usage data is kept (days). See docs/privacy-notice-template.md. */
   retention: {
     /** Download statistics (per retailer, per article). Names of the people who downloaded are removed after 400 days or sooner. */
-    download_stats_days: number;
+    download_events_days: number;
     /** Audit log of admin actions. */
     audit_log_days: number;
     /** IP addresses in the audit log (at most 30 days, security.md §9). */
@@ -61,7 +61,7 @@ export interface SettingsData {
 
 /** Allowed ranges in days, the same in every node edition. */
 export const RETENTION_LIMITS: Record<keyof SettingsData["retention"], [number, number]> = {
-  download_stats_days: [30, 3650],
+  download_events_days: [30, 3650],
   audit_log_days: [30, 3650],
   ip_days: [1, 30],
   access_requests_days: [30, 3650],
@@ -80,7 +80,7 @@ export function defaultSettings(): SettingsData {
       default_language: "en",
     },
     defaults: { rights: { ...SPEC_DEFAULT_RIGHTS }, ingest_status: "published" },
-    retention: { download_stats_days: 730, audit_log_days: 365, ip_days: 30, access_requests_days: 365 },
+    retention: { download_events_days: 730, audit_log_days: 365, ip_days: 30, access_requests_days: 365 },
   };
 }
 
@@ -163,6 +163,13 @@ export class Ctx {
     const raw = await this.meta("settings");
     const base = defaultSettings();
     const stored = safeJsonParse<Partial<SettingsData>>(raw, {});
+    // Until 0.1.0 the download-statistics retention was stored as download_stats_days; the other
+    // portals (and the settings API now) call it download_events_days.
+    const ret = stored.retention as (Partial<SettingsData["retention"]> & { download_stats_days?: number }) | undefined;
+    if (ret && ret.download_stats_days !== undefined) {
+      ret.download_events_days ??= ret.download_stats_days;
+      delete ret.download_stats_days;
+    }
     const merged = mergePatch(base, stored) as SettingsData;
     if (!isPlainObject(merged.defaults.rights)) merged.defaults.rights = { ...SPEC_DEFAULT_RIGHTS };
     this.settingsCache = merged;

@@ -157,7 +157,7 @@ Settings → the `retention` group (admin API `PATCH /admin/api/settings`):
 
 | Setting | Default | What is removed |
 |---|---|---|
-| `download_stats_days` | 730 | download statistics older than this; names of the people who downloaded are removed after 400 days (or sooner) |
+| `download_events_days` | 730 | download statistics older than this; names of the people who downloaded are removed after 400 days (or sooner) |
 | `audit_log_days` | 365 | audit entries |
 | `ip_days` | 30 (1–30) | IP addresses in audit entries |
 | `access_requests_days` | 365 | approved or declined access requests with their contact details |

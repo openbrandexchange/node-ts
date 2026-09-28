@@ -83,7 +83,7 @@ describe("personal data: export and erasure", () => {
     expect(d.users.map((u: any) => u.email)).toEqual(["sam@outdoorshop.example"]);
     expect(d.api_clients.map((k: any) => k.name)).toEqual(["Shop sync"]);
     expect(d.audit_log.some((e: any) => e.action === "invites.accept")).toBe(true);
-    expect(d.retention).toEqual({ download_stats_days: 730, audit_log_days: 365, ip_days: 30, access_requests_days: 365 });
+    expect(d.retention).toEqual({ download_events_days: 730, audit_log_days: 365, ip_days: 30, access_requests_days: 365 });
     expect(r.text).not.toContain(secret);
     expect(r.text).not.toContain("password_hash");
     expect(r.text).not.toContain("argon2");
@@ -134,17 +134,29 @@ describe("retention", () => {
     const bad = await admin.req("PATCH", "/admin/api/settings", { json: { retention: { audit_log_days: 5 } } });
     expect(bad.status).toBe(422);
     expect(bad.json.errors[0].pointer).toBe("/retention/audit_log_days");
-    const ok = await admin.req("PATCH", "/admin/api/settings", { json: { retention: { download_stats_days: 90 } } });
-    expect(ok.json.retention).toEqual({ download_stats_days: 90, audit_log_days: 365, ip_days: 30, access_requests_days: 365 });
+    const ok = await admin.req("PATCH", "/admin/api/settings", { json: { retention: { download_events_days: 90 } } });
+    expect(ok.json.retention).toEqual({ download_events_days: 90, audit_log_days: 365, ip_days: 30, access_requests_days: 365 });
     const unknown = await admin.req("PATCH", "/admin/api/settings", { json: { retention: { forever: 1 } } });
     expect(unknown.status).toBe(422);
     expect(unknown.json.errors[0].pointer).toBe("/retention/forever");
   });
 
+  test("a download_stats_days stored before 0.1.0 is read as download_events_days", async () => {
+    const node = new TestNode();
+    const admin = await node.setup();
+    const row = await node.platform.db.first<{ value: string }>("SELECT value FROM meta WHERE key = 'settings'");
+    const stored = JSON.parse(row!.value);
+    stored.retention = { download_stats_days: 120 };
+    await node.platform.db.run("UPDATE meta SET value = ? WHERE key = 'settings'", [JSON.stringify(stored)]);
+    const s = await admin.req("GET", "/admin/api/settings");
+    expect(s.json.retention.download_events_days).toBe(120);
+    expect(s.json.retention).not.toHaveProperty("download_stats_days");
+  });
+
   test("housekeeping deletes old statistics, old audit entries, decided requests and clears IPs after ip_days", async () => {
     const node = new TestNode();
     const admin = await node.setup();
-    await admin.req("PATCH", "/admin/api/settings", { json: { retention: { download_stats_days: 60, audit_log_days: 90, ip_days: 7, access_requests_days: 30 } } });
+    await admin.req("PATCH", "/admin/api/settings", { json: { retention: { download_events_days: 60, audit_log_days: 90, ip_days: 7, access_requests_days: 30 } } });
     const db = node.platform.db;
     const ago = (days: number) => new Date(Date.now() - days * 86400_000).toISOString();
     await db.run("INSERT INTO download_events (id, at, kind, retailer_id, retailer_name, actor_type, actor_name, files) VALUES ('old', ?, 'image', NULL, 'Shop', 'user', 'Old Name', 1), ('new', ?, 'image', NULL, 'Shop', 'user', 'New Name', 1)", [ago(61), ago(1)]);
