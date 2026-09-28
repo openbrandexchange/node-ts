@@ -275,7 +275,8 @@ for (const [path, kind] of [
 }
 ingest.put("/products/:external_id/asset-order", async (c) => handleAssetOrder(c, await writer(c)));
 ingest.put("/assets/:external_id/files/:rendition", async (c) => handleFilePut(c, await writer(c)));
-ingest.on("HEAD", "/blobs/:sha256", async (c) => handleBlobHead(c, await writer(c)));
+// Hono answers HEAD with the GET route (body stripped).
+ingest.get("/blobs/:sha256", async (c) => handleBlobHead(c, await writer(c)));
 ingest.put("/blobs/:sha256", async (c) => handleBlobPut(c, await writer(c)));
 
 ingest.post("/uploads", async (c) => {

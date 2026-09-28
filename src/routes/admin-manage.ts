@@ -180,7 +180,7 @@ for (const [path, kind] of [
 }
 adminManage.put("/admin/api/catalog/products/:external_id/asset-order", async (c) => (requireAdmin(c), handleAssetOrder(c, ADMIN_WRITER)));
 adminManage.put("/admin/api/catalog/assets/:external_id/files/:rendition", async (c) => (requireAdmin(c), handleFilePut(c, ADMIN_WRITER)));
-adminManage.on("HEAD", "/admin/api/catalog/blobs/:sha256", async (c) => (requireAdmin(c), handleBlobHead(c, ADMIN_WRITER)));
+adminManage.get("/admin/api/catalog/blobs/:sha256", async (c) => (requireAdmin(c), handleBlobHead(c, ADMIN_WRITER)));
 adminManage.put("/admin/api/catalog/blobs/:sha256", async (c) => (requireAdmin(c), handleBlobPut(c, ADMIN_WRITER)));
 
 adminManage.get("/admin/api/catalog/products", async (c) => {
