@@ -68,6 +68,21 @@ export async function promoteStaged(ctx: Ctx) {
   }
 }
 
+const DAY = 24 * 3600 * 1000;
+
+/** Deletes or anonymises personal and usage data past the brand's retention settings. */
+export async function retentionStmts(ctx: Ctx) {
+  const r = (await ctx.settings()).retention;
+  return [
+    { sql: "DELETE FROM download_events WHERE at < ?", params: [ctx.iso(-r.download_events_days * DAY)] },
+    { sql: "UPDATE download_events SET actor_name = NULL WHERE at < ? AND actor_name IS NOT NULL AND actor_type = 'user'", params: [ctx.iso(-Math.min(400, r.download_events_days) * DAY)] },
+    { sql: "DELETE FROM audit_log WHERE at < ?", params: [ctx.iso(-r.audit_log_days * DAY)] },
+    // IP addresses are for abuse investigation only (security.md §9: at most 30 days).
+    { sql: "UPDATE audit_log SET ip = NULL WHERE ip IS NOT NULL AND at < ?", params: [ctx.iso(-30 * DAY)] },
+    { sql: "DELETE FROM access_requests WHERE status != 'pending' AND COALESCE(decided_at, created_at) < ?", params: [ctx.iso(-r.access_requests_days * DAY)] },
+  ];
+}
+
 export async function housekeeping(ctx: Ctx) {
   const now = ctx.iso();
   await ctx.db.batch([
@@ -76,7 +91,7 @@ export async function housekeeping(ctx: Ctx) {
     { sql: "DELETE FROM idempotency WHERE created_at < ?", params: [ctx.iso(-24 * 3600 * 1000)] },
     { sql: "DELETE FROM rate_limits WHERE window_start < ?", params: [Math.floor(ctx.now() / 1000) - 7200] },
     { sql: "DELETE FROM webhook_deliveries WHERE created_at < ? AND state != 'pending'", params: [ctx.iso(-7 * 24 * 3600 * 1000)] },
-    { sql: "UPDATE download_events SET actor_name = NULL WHERE at < ? AND actor_name IS NOT NULL AND actor_type = 'user'", params: [ctx.iso(-400 * 24 * 3600 * 1000)] },
+    ...(await retentionStmts(ctx)),
   ]);
   // Expired upload sessions.
   const ups = await ctx.db.all<{ id: string; parts_total: number }>("SELECT id, parts_total FROM uploads WHERE status = 'open' AND expires_at < ? LIMIT 20", [now]);

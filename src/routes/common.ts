@@ -9,6 +9,10 @@ export type AppEnv = {
     ctx: Ctx;
     session: SessionInfo | null;
     rl: Record<string, string> | null;
+    /** Set by sign-in handlers: who the audit entry is about when there was no session yet. */
+    auditActor?: import("../core/audit").AuditActor;
+    /** Extra facts for the audit entry (never secrets or passwords). */
+    auditDetails?: Record<string, unknown>;
   };
 };
 

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { TestNode } from "./helpers";
 import { validateEnv } from "../src/adapters/shared/config";
 import { migrate, resetMigrationCache, SchemaTooNewError } from "../src/db/migrate";
+import { MIGRATIONS } from "../src/db/migrations.gen";
 import { sqliteDb } from "../src/adapters/bun/sqlite";
 import { Ctx } from "../src/core/ctx";
 import { enqueueJob, getJob } from "../src/core/jobs";
@@ -20,7 +21,7 @@ describe("health, readiness and request ids", () => {
     const r = await node.request("GET", "/readyz");
     expect(r.status).toBe(200);
     expect(r.json.ok).toBe(true);
-    expect(r.json.checks.database).toEqual({ ok: true, detail: "0001_init.sql" });
+    expect(r.json.checks.database).toEqual({ ok: true, detail: MIGRATIONS.at(-1)!.name });
     expect(r.json.checks.storage.ok).toBe(true);
   });
 
@@ -162,10 +163,10 @@ describe("schema versions", () => {
     resetMigrationCache();
     const db = sqliteDb(":memory:");
     await migrate(db);
-    expect((await db.all<{ name: string }>("SELECT name FROM d1_migrations")).map((r) => r.name)).toEqual(["0001_init.sql"]);
+    expect((await db.all<{ name: string }>("SELECT name FROM d1_migrations ORDER BY id")).map((r) => r.name)).toEqual(MIGRATIONS.map((m) => m.name));
     resetMigrationCache();
     await migrate(db);
-    expect((await db.first<{ n: number }>("SELECT COUNT(*) AS n FROM d1_migrations"))!.n).toBe(1);
+    expect((await db.first<{ n: number }>("SELECT COUNT(*) AS n FROM d1_migrations"))!.n).toBe(MIGRATIONS.length);
   });
 
   test("databases from before v0.1.0 (schema_migrations) are recognised", async () => {
@@ -177,7 +178,8 @@ describe("schema versions", () => {
     await db.run("INSERT INTO schema_migrations VALUES ('0001_init.sql', '2026-09-01T00:00:00Z')");
     resetMigrationCache();
     await migrate(db);
-    expect((await db.first<{ n: number }>("SELECT COUNT(*) AS n FROM d1_migrations"))!.n).toBe(0);
+    // 0001 is known from the old table; only the later ones are applied (and recorded) again.
+    expect((await db.all<{ name: string }>("SELECT name FROM d1_migrations ORDER BY id")).map((r) => r.name)).toEqual(MIGRATIONS.slice(1).map((m) => m.name));
   });
 
   test("a database upgraded by a newer release is refused with a clear message", async () => {

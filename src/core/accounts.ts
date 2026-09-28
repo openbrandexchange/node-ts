@@ -112,17 +112,10 @@ export async function patchRetailer(ctx: Ctx, r: RetailerRow, p: Record<string, 
   return updated;
 }
 
+/** Deletes a retailer and erases the personal data of its people (see core/privacy.ts). */
 export async function deleteRetailer(ctx: Ctx, r: RetailerRow) {
-  await ctx.db.batch([
-    { sql: "DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE retailer_id = ?)", params: [r.id] },
-    { sql: "DELETE FROM selections WHERE user_id IN (SELECT id FROM users WHERE retailer_id = ?)", params: [r.id] },
-    { sql: "DELETE FROM users WHERE retailer_id = ?", params: [r.id] },
-    { sql: "DELETE FROM webhooks WHERE api_client_id IN (SELECT id FROM api_clients WHERE retailer_id = ?)", params: [r.id] },
-    { sql: "DELETE FROM api_clients WHERE retailer_id = ?", params: [r.id] },
-    { sql: "UPDATE download_events SET retailer_id = NULL, actor_name = NULL WHERE retailer_id = ?", params: [r.id] },
-    { sql: "UPDATE access_requests SET retailer_id = NULL WHERE retailer_id = ?", params: [r.id] },
-    { sql: "DELETE FROM retailers WHERE id = ?", params: [r.id] },
-  ]);
+  const { eraseRetailerStmts } = await import("./privacy");
+  await ctx.db.batch(await eraseRetailerStmts(ctx, r));
 }
 
 export function defaultScopes(originalAllowed: boolean): string[] {

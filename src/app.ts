@@ -9,6 +9,7 @@ import { ingest } from "./routes/ingest";
 import { adminAuth, adminMiddleware, ensureSetupCode } from "./routes/admin-auth";
 import { adminManage } from "./routes/admin-manage";
 import { portal } from "./routes/portal";
+import { adminPrivacy } from "./routes/admin-privacy";
 import { tick } from "./core/cron";
 import { runJobs } from "./core/jobs";
 import { isShuttingDown, metricsAuthorized, metricsText, readiness, recordRequest, requestIdFrom } from "./core/ops";
@@ -117,6 +118,7 @@ export function createApp(platform: Platform) {
   app.route("/obx/v1/ingest", ingest);
   app.use("/admin/api/*", adminMiddleware);
   app.route("/", adminAuth);
+  app.route("/", adminPrivacy);
   app.route("/", adminManage);
   app.route("/", portal);
 

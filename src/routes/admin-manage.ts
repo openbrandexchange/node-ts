@@ -5,7 +5,7 @@ import type { AppEnv, C } from "./common";
 import { ctxOf, json, noContent, readObject, readOptionalObject, intQuery, idParam, encodeListCursor, decodeListCursor } from "./common";
 import { requireAdmin } from "./admin-auth";
 import { ObxError, fieldError } from "../lib/problem";
-import { SPEC_DEFAULT_RIGHTS, type SettingsData } from "../core/ctx";
+import { SPEC_DEFAULT_RIGHTS, RETENTION_LIMITS, defaultSettings, type SettingsData } from "../core/ctx";
 import { V, LANG_RE, CHANNELS, COUNTRY_RE, INGEST_SCOPES, PROTOCOL_SCOPES, validExternalId } from "../core/validate";
 import { isPlainObject, mergePatch, newId, safeJsonParse, canonicalJson } from "../lib/util";
 import { grantChangeAllStmt } from "../core/changes";
@@ -41,6 +41,7 @@ import {
 import { newIngestToken, grantOf, type ClientRow, type IngestTokenRow, type RetailerRow, type UserRow } from "../core/auth";
 import { createWebhook, deliveryJson, emitClientEvent, testWebhook, webhookJson, BRAND_EVENTS, type DeliveryRow, type WebhookRow } from "../core/notify";
 import { stats } from "../core/stats";
+import { eraseUserStmts } from "../core/privacy";
 import { sniffType } from "../lib/image";
 
 export const adminManage = new Hono<AppEnv>();
@@ -62,6 +63,7 @@ async function settingsJson(c: C, s: SettingsData) {
     },
     portal: s.portal,
     defaults: s.defaults,
+    retention: s.retention,
     node: {
       public_url: base,
       discovery_url: `${base}/.well-known/obx`,
@@ -86,7 +88,7 @@ adminManage.patch("/admin/api/settings", async (c) => {
   const body = await readObject(c);
   const cur = await ctx.settings();
   const patch: Record<string, unknown> = {};
-  for (const k of ["company", "branding", "portal", "defaults"]) if (k in body) patch[k] = body[k];
+  for (const k of ["company", "branding", "portal", "defaults", "retention"]) if (k in body) patch[k] = body[k];
   if (isPlainObject(patch.branding)) delete (patch.branding as Record<string, unknown>).logo_url;
   const next = mergePatch(cur, patch) as SettingsData;
   const v = new V();
@@ -104,6 +106,14 @@ adminManage.patch("/admin/api/settings", async (c) => {
   if (typeof next.portal.default_language !== "string" || !LANG_RE.test(next.portal.default_language)) v.err("/portal/default_language", "Use a language tag.");
   else if (Array.isArray(next.portal.languages) && !next.portal.languages.includes(next.portal.default_language)) next.portal.languages = [next.portal.default_language, ...next.portal.languages];
   if (!["published", "unpublished"].includes(next.defaults.ingest_status)) v.err("/defaults/ingest_status", 'Use "published" or "unpublished".');
+  const rdef = defaultSettings().retention;
+  const ret = isPlainObject(next.retention) ? (next.retention as Record<string, unknown>) : {};
+  next.retention = { ...rdef };
+  for (const k of Object.keys(rdef) as (keyof SettingsData["retention"])[]) {
+    const val = ret[k] ?? rdef[k];
+    if (typeof val !== "number" || !Number.isInteger(val) || val < RETENTION_LIMITS.min || val > RETENTION_LIMITS.max) v.err(`/retention/${k}`, `A whole number of days from ${RETENTION_LIMITS.min} to ${RETENTION_LIMITS.max}.`);
+    else next.retention[k] = val;
+  }
   const r = isPlainObject(next.defaults.rights) ? (next.defaults.rights as Record<string, unknown>) : { ...SPEC_DEFAULT_RIGHTS };
   if (!["retailer-use", "custom"].includes(r.license as string)) v.err("/defaults/rights/license", 'Use "retailer-use" or "custom".');
   if (!Array.isArray(r.channels) || r.channels.some((ch) => !CHANNELS.includes(ch as string))) v.err("/defaults/rights/channels", `Channels are: ${CHANNELS.join(", ")}.`);
@@ -770,13 +780,7 @@ adminManage.delete("/admin/api/users/:id", async (c) => {
   const ctx = ctxOf(c);
   const u = await userRow(c);
   await assertNotLastAdmin(c, u);
-  await ctx.db.batch([
-    { sql: "DELETE FROM sessions WHERE user_id = ?", params: [u.id] },
-    { sql: "DELETE FROM selections WHERE user_id = ?", params: [u.id] },
-    { sql: "DELETE FROM password_resets WHERE user_id = ?", params: [u.id] },
-    { sql: "UPDATE download_events SET actor_name = NULL WHERE actor_name = ? AND retailer_id IS ?", params: [u.name, u.retailer_id] },
-    { sql: "DELETE FROM users WHERE id = ?", params: [u.id] },
-  ]);
+  await ctx.db.batch(eraseUserStmts(u));
   return noContent(c);
 });
 

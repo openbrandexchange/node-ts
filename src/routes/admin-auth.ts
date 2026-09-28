@@ -17,6 +17,8 @@ import { logoUrl } from "./protocol";
 import { serveStored } from "./files";
 import { blobKey } from "../core/blobs";
 import type { Ctx } from "../core/ctx";
+import { isAudited, writeAudit, type AuditActor } from "../core/audit";
+import { matchedRoutes } from "hono/route";
 
 export const adminAuth = new Hono<AppEnv>();
 
@@ -72,7 +74,29 @@ export const adminMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
     if (!ok) throw new ObxError("csrf_failed", "Missing or wrong X-CSRF-Token. Reload the page and try again.");
   }
   await next();
+  if (isAudited(c.req.method, path)) await audit(c);
 };
+
+export function actorOf(u: UserRow): AuditActor {
+  return { type: "user", id: u.id, name: u.name || u.email, role: u.role };
+}
+
+/** One audit entry for this request (after the handler ran, with its status). Never fails the request. */
+async function audit(c: C) {
+  const ctx = ctxOf(c);
+  const route = matchedRoutes(c).filter((r) => r.method !== "ALL").at(-1)?.path ?? c.req.path;
+  const s = c.get("session");
+  const actor: AuditActor = c.get("auditActor") ?? (s ? actorOf(s.user) : { type: "anonymous", id: null, name: null, role: null });
+  const params = c.req.param() as Record<string, string>;
+  const targetId = params.id ?? params.external_id ?? params.sha256 ?? null;
+  const details: Record<string, unknown> = { ...(c.get("auditDetails") ?? {}) };
+  if (s?.retailer) details.retailer_id = s.retailer.id;
+  try {
+    await writeAudit(ctx, { actor, method: c.req.method, route, targetId, status: c.res.status, requestId: ctx.requestId, ip: clientIp(c), details });
+  } catch (e) {
+    ctx.log("error", "audit log write failed", { error: e instanceof Error ? e.message : String(e) });
+  }
+}
 
 export function requireUser(c: C): SessionInfo {
   const s = c.get("session");
@@ -181,6 +205,7 @@ adminAuth.post("/admin/api/setup", async (c) => {
   const { sid, csrf } = await createSession(ctx, userId);
   setSessionCookies(c, sid, csrf);
   const user = (await ctx.db.first<UserRow>("SELECT * FROM users WHERE id = ?", [userId]))!;
+  c.set("auditActor", actorOf(user));
   return json(c, sessionJson(false, csrf, { user, retailer: null }), 201);
 });
 
@@ -195,6 +220,7 @@ adminAuth.get("/admin/api/session", async (c) => {
 
 async function loginAs(c: C, user: UserRow) {
   const ctx = ctxOf(c);
+  c.set("auditActor", actorOf(user));
   const { sid, csrf } = await createSession(ctx, user.id);
   setSessionCookies(c, sid, csrf);
   const retailer = user.retailer_id ? await ctx.db.first<RetailerRow>("SELECT * FROM retailers WHERE id = ?", [user.retailer_id]) : null;
@@ -211,6 +237,8 @@ adminAuth.post("/admin/api/session/login", async (c) => {
   const el = await dbLimit(ctx, `login:${await sha256Hex(email)}`, 10, 900);
   enforce(el, "login attempts for this account");
   const user = email ? await ctx.db.first<UserRow>("SELECT * FROM users WHERE email = ?", [email]) : null;
+  c.set("auditActor", user ? actorOf(user) : { type: "anonymous", id: null, name: null, role: null });
+  if (!user) c.set("auditDetails", { unknown_account: true });
   const ok = await verifyPassword(password.slice(0, 200), user?.password_hash);
   if (!user || !ok) throw new ObxError("invalid_credentials", "E-mail address or password is wrong.");
   if (user.status === "blocked") throw new ObxError("account_blocked", "This account is blocked. Contact the brand.");
