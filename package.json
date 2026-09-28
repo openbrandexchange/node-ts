@@ -9,7 +9,7 @@
     "dev": "bun --watch src/adapters/bun/main.ts",
     "start": "bun src/adapters/bun/main.ts",
     "gen": "bun scripts/gen-migrations.ts",
-    "test": "bun scripts/gen-migrations.ts && bun test --timeout 120000",
+    "test": "bun scripts/gen-migrations.ts && bun test --timeout 120000 ./test/",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "dev:workers": "wrangler dev",
     "deploy": "wrangler deploy && wrangler d1 migrations apply DB --remote",
@@ -17,10 +17,11 @@
     "update-ui": "sh scripts/update-ui.sh",
     "sync-fixtures": "sh scripts/sync-fixtures.sh",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
-    "lint": "oxlint --deny-warnings src scripts test",
+    "lint": "oxlint --deny-warnings src scripts test e2e",
     "licenses": "bun scripts/check-licenses.ts",
     "audit": "bun audit --audit-level=moderate",
-    "loadtest": "bun scripts/loadtest.ts"
+    "loadtest": "bun scripts/loadtest.ts",
+    "e2e": "sh e2e/run.sh"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",

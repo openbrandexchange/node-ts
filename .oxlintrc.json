@@ -1,12 +1,28 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "categories": { "correctness": "error" },
+  "categories": {
+    "correctness": "error"
+  },
   "rules": {
     "no-control-regex": "off",
     "unicorn/no-useless-fallback-in-spread": "off",
     "unicorn/no-useless-spread": "off",
     "unicorn/prefer-string-starts-ends-with": "off",
-    "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }]
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_"
+      }
+    ]
   },
-  "ignorePatterns": ["dist", "public", "node_modules", "src/db/migrations.gen.ts"]
+  "ignorePatterns": [
+    "dist",
+    "public",
+    "node_modules",
+    "e2e/node_modules",
+    "e2e/report",
+    "e2e/test-results",
+    "src/db/migrations.gen.ts"
+  ]
 }
