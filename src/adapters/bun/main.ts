@@ -4,6 +4,7 @@ import { serverFetch } from "./serve";
 import { createBunPlatform, ensureBucketFromEnv } from "./platform";
 import { staticHandler } from "./static";
 import { validateEnv } from "../shared/config";
+import { dirname, join } from "node:path";
 import { markShuttingDown } from "../../core/ops";
 import { requestJobsStop } from "../../core/jobs";
 
@@ -19,7 +20,8 @@ if (problems.length) {
 
 const port = Number(env.PORT?.trim() || 8080);
 const dataDir = env.OBX_DATA_DIR?.trim() || "./data";
-const uiDir = env.OBX_UI_DIR?.trim() || new URL("../../../public", import.meta.url).pathname;
+// The UI folder: OBX_UI_DIR, else public/ of the source tree, else (standalone binary) public/ next to the executable.
+const uiDir = env.OBX_UI_DIR?.trim() || (import.meta.url.includes("$bunfs") ? join(dirname(process.execPath), "public") : new URL("../../../public", import.meta.url).pathname);
 const trustProxy = /^(1|true|yes|on)$/i.test(env.OBX_TRUST_PROXY ?? "");
 
 let kicked: ReturnType<typeof setTimeout> | null = null;

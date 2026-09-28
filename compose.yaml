@@ -25,6 +25,22 @@ services:
       OBX_S3_SECRET_ACCESS_KEY: ${OBX_S3_SECRET_ACCESS_KEY:-portal-secret-change-me}
     volumes:
       - portal-data:/data
+    # Graceful stop: the portal finishes running requests and job steps (OBX_SHUTDOWN_TIMEOUT_MS, 20 s).
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1g
+        reservations:
+          memory: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
 
   # Optional local S3-compatible storage (RustFS): `docker compose --profile s3 up -d` with OBX_STORAGE=s3.
   s3:

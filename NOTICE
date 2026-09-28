@@ -1,0 +1,37 @@
+Open Brand Exchange · Portal for Cloudflare (node-ts)
+Copyright 2026 Richard Lindhout and contributors
+
+An initiative of Richard Lindhout · Open Brand Exchange Foundation (in formation)
+Contact: hello@openbrandexchange.com · Security reports: security@openbrandexchange.com
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License, version 3 only (see
+LICENSE). If you run a modified version for others over a network, you must
+offer them its source code (AGPL-3.0 section 13).
+
+The copyright of the publisher and the name "Open Brand Exchange" are to be
+transferred to the Open Brand Exchange Foundation, a Dutch stichting that is
+being set up (see https://github.com/openbrandexchange/spec/blob/main/docs/governance.md).
+Contributions by others remain the copyright of their authors and are licensed
+under the same licence (Developer Certificate of Origin, see CONTRIBUTING.md).
+
+This product includes:
+
+- The Open Brand Exchange admin UI (public/), Apache-2.0,
+  https://github.com/openbrandexchange/admin-ui. Its own third-party notices are
+  shipped with it in public/.
+- Fixtures of the Open Brand Exchange specification (test/fixtures), CC-BY-4.0,
+  "Open Brand Exchange specification, © Richard Lindhout and contributors",
+  https://github.com/openbrandexchange/spec.
+- Third-party packages bundled into the releases (production dependencies; run
+  `bun scripts/check-licenses.ts --list` for the exact versions):
+    hono (MIT), aws4fetch (MIT), bcryptjs (BSD-3-Clause),
+    ssh2-sftp-client (Apache-2.0), ssh2 (MIT), asn1 (MIT),
+    bcrypt-pbkdf (BSD-3-Clause), tweetnacl (Unlicense), cpu-features (MIT),
+    nan (MIT), buildcheck (MIT), concat-stream (MIT), readable-stream (MIT),
+    string_decoder (MIT), safe-buffer (MIT), safer-buffer (MIT), inherits (ISC),
+    typedarray (MIT), util-deprecate (MIT), buffer-from (MIT).
+- The standalone binaries embed the Bun runtime (MIT, https://bun.sh; Bun
+  includes JavaScriptCore, LGPL-2.1, whose source is available from WebKit).
+- The Docker image contains Litestream (Apache-2.0, https://litestream.io) and
+  the oven/bun base image (Debian packages under their own licences).

@@ -21,7 +21,9 @@
     "licenses": "bun scripts/check-licenses.ts",
     "audit": "bun audit --audit-level=moderate",
     "loadtest": "bun scripts/loadtest.ts",
-    "e2e": "sh e2e/run.sh"
+    "e2e": "sh e2e/run.sh",
+    "release:build": "sh scripts/build-release.sh",
+    "backup": "bun src/adapters/bun/backup.ts"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",
