@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeAll } from "bun:test";
 import { TestNode, importKestrel, addRenditions, type Browser } from "./helpers";
-import { readZipDirectory } from "../src/lib/zip";
+import { readZipDirectory, readZipEntry } from "../src/lib/zip";
 import { bytesReader } from "../src/lib/multipart";
 import { parseCsv } from "../src/lib/csv";
 
@@ -94,9 +94,18 @@ describe("retailer portal (A-INV-1, A-PORT-1, A-PORT-2)", () => {
     expect(zip.status).toBe(200);
     expect(zip.headers.get("content-type")).toBe("application/zip");
     expect(Number(zip.headers.get("content-length"))).toBe(zip.bytes.length);
-    const entries = await readZipDirectory(bytesReader(zip.bytes), zip.bytes.length);
+    const all = await readZipDirectory(bytesReader(zip.bytes), zip.bytes.length);
+    // The rights, embargo and AI provenance travel with the files: one assets.csv row per image.
+    const assetsCsv = all.find((e) => e.name === "assets.csv");
+    expect(assetsCsv).toBeTruthy();
+    const csvText = new TextDecoder().decode(await readZipEntry(bytesReader(zip.bytes), assetsCsv!, 1_000_000));
+    const entries = all.filter((e) => e.name !== "assets.csv");
     expect(entries.length).toBe(sel.json.image_count);
     expect(entries.every((e) => /^[A-Z]{2}-\d{4}\/.+_web\.jpg$/.test(e.name))).toBe(true);
+    const lines = csvText.trim().split("\r\n");
+    expect(lines[0].startsWith("file,style_number,color_code,position,role,view")).toBe(true);
+    expect(lines.length).toBe(1 + entries.length);
+    for (const e of entries) expect(lines.some((l) => l.startsWith(e.name.split("/").pop()! + ","))).toBe(true);
     const pz = await retailer.req("GET", `/admin/api/portal/products/${ids[0]}/download.zip`);
     const pe = await readZipDirectory(bytesReader(pz.bytes), pz.bytes.length);
     expect(pe.every((e) => !e.name.includes("/"))).toBe(true);
@@ -138,7 +147,8 @@ describe("retailer portal (A-INV-1, A-PORT-1, A-PORT-2)", () => {
     const file = await retailer.req("GET", done.json.file_url);
     expect(file.status).toBe(200);
     const entries = await readZipDirectory(bytesReader(file.bytes), file.bytes.length);
-    expect(entries.some((e) => e.name === "products.csv")).toBe(true);
+    expect(entries.some((e) => e.name === "data.csv")).toBe(true);
+    expect(entries.some((e) => e.name === "assets.csv")).toBe(true);
     expect(entries.filter((e) => e.name.endsWith("_square.jpg")).length).toBe(done.json.files);
     expect((await restricted.req("GET", `/admin/api/portal/download-jobs/${job.json.id}`)).status).toBe(404);
     expect(node.mails.some((m) => m.to === "rita@fictional.example" && m.text.includes(String(done.json.files)))).toBe(true);

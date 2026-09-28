@@ -5,7 +5,7 @@ import { writeCsv } from "../lib/csv";
 import { formatMaterials } from "./importformat";
 import { assetVisibleSql, placeholders, productVisibleSql, type AssetRow, type ProductRow, type VariantRow } from "./read";
 import { safeJsonParse } from "../lib/util";
-import { assetFilename, type Files } from "./reps";
+import { assetCore, assetFilename, type Files } from "./reps";
 
 export async function articleCsv(ctx: Ctx, viewer: Viewer, productIds: string[], delimiter: string): Promise<{ csv: string; rows: number }> {
   const settings = await ctx.settings();
@@ -117,4 +117,42 @@ export async function articleCsv(ctx: Ctx, viewer: Viewer, productIds: string[],
     }
   }
   return { csv: writeCsv(rows, delimiter), rows: rows.length - 1 };
+}
+
+// ------------------------------------------------------------------ assets.csv in portal downloads
+
+/** Columns of the assets.csv in a portal download (spec import-format.md §2.3). */
+export function downloadAssetsHeader(langs: string[]): string[] {
+  return [
+    "file", "style_number", "color_code", "position", "role", "view",
+    ...langs.map((l) => `alt_text:${l}`),
+    "license", "license_text", "channels", "territories", "embargo_until", "expires_at", "credit",
+    "model_release", "ai_generated", "ai_edited", "source", "c2pa", "generator",
+  ];
+}
+
+/** One row: the image's file name in the zip and its effective rights, embargo and AI provenance. */
+export function downloadAssetsRow(file: string, styleNumber: string, rep: Record<string, unknown>, langs: string[]): unknown[] {
+  const r = (rep.rights ?? {}) as Record<string, unknown>;
+  const p = { ai_generated: false, ai_edited: false, source: "photo", c2pa: "none", generator: null, ...((rep.provenance ?? {}) as Record<string, unknown>) };
+  const alt = (rep.alt_text ?? {}) as Record<string, string>;
+  const list = (v: unknown) => (Array.isArray(v) ? v.join("|") : "");
+  const bool = (v: unknown) => (v === null || v === undefined ? "" : v ? "true" : "false");
+  return [
+    file, styleNumber, rep.color_code ?? "", rep.position ?? "", rep.role ?? "", rep.view ?? "",
+    ...langs.map((l) => alt[l] ?? ""),
+    r.license ?? "", r.license_text ?? "", list(r.channels), list(r.territories), r.embargo_until ?? "", r.expires_at ?? "", r.credit ?? "",
+    bool(r.model_release), bool(p.ai_generated), bool(p.ai_edited), p.source ?? "", p.c2pa ?? "", p.generator ?? "",
+  ];
+}
+
+/** The whole assets.csv for the images of a streamed zip (formula-escaped, no BOM). */
+export async function downloadAssetsCsv(ctx: Ctx, images: { file: string; styleNumber: string; row: AssetRow }[]): Promise<Uint8Array> {
+  const settings = await ctx.settings();
+  const reps = images.map((im) => ({ ...im, rep: assetCore(im.row, settings, null) }));
+  const langSet = new Set<string>();
+  for (const im of reps) for (const l of Object.keys((im.rep.alt_text as Record<string, string> | null) ?? {})) langSet.add(l);
+  const langs = [...langSet].sort();
+  const rows: unknown[][] = [downloadAssetsHeader(langs), ...reps.map((im) => downloadAssetsRow(im.file, im.styleNumber, im.rep, langs))];
+  return new TextEncoder().encode(writeCsv(rows, ",", false));
 }

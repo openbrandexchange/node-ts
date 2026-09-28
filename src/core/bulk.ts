@@ -4,10 +4,11 @@ import type { Viewer } from "./auth";
 import { registerJob, jobItemStmt, jobItems, type JobRow, type StepOutcome } from "./jobs";
 import { ZipWriter, newZipState, type ZipWriterState } from "./zipwriter";
 import { assetVisibleSql, placeholders, productVisibleSql, productDetails, visibleBrands, type AssetRow, type ProductRow } from "./read";
-import { renditionFilename, renditionMeta, assetFilename, type Files } from "./reps";
+import { renditionFilename, renditionMeta, assetCore, assetFilename, type Files } from "./reps";
 import { safeJsonParse, sanitizeFilename, isoNow } from "../lib/util";
 import { crc32 } from "../lib/crypto";
-import { articleCsv } from "./csvexport";
+import { articleCsv, downloadAssetsHeader, downloadAssetsRow } from "./csvexport";
+import { writeCsv } from "../lib/csv";
 import { liveCursorAt, maxSeq } from "./changes";
 import { sendEmail } from "./mail";
 import { emitClientEvent } from "./notify";
@@ -97,6 +98,8 @@ interface DownloadState {
   fi: number;
   zip: ZipWriterState | null;
   csv: { key: string; size: number; crc: number } | null;
+  /** alt_text columns of assets.csv (the portal's content languages when planning started). */
+  assetLangs?: string[];
 }
 
 async function planProducts(ctx: Ctx, input: DownloadInput, afterIdx: number, limit: number): Promise<string[]> {
@@ -124,7 +127,7 @@ async function downloadStep(ctx: Ctx, job: JobRow, deadline: number): Promise<St
           }
           const { csv } = await articleCsv(ctx, input.viewer, all, input.lang === "nl" ? ";" : ",");
           const bytes = new TextEncoder().encode(csv);
-          const key = `jobs/${job.id}/products.csv`;
+          const key = `jobs/${job.id}/data.csv`;
           await ctx.blobs.put(key, bytes, "text/csv");
           st.csv = { key, size: bytes.length, crc: crc32(bytes) };
         }
@@ -140,6 +143,12 @@ async function downloadStep(ctx: Ctx, job: JobRow, deadline: number): Promise<St
         [...ids, ctx.iso()],
       );
       const byId = new Map(prods.map((p) => [p.id, p]));
+      const settings = await ctx.settings();
+      st.assetLangs ??= settings.portal.languages.length ? settings.portal.languages : ["en"];
+      // Names are made unique here (a style folder's images are all in this batch), so the rows of
+      // assets.csv name the files as they are in the zip.
+      const used = new Set<string>();
+      const csvRows: unknown[][] = [];
       for (const a of assets) {
         const p = byId.get(a.product_id);
         if (!p) continue;
@@ -147,9 +156,14 @@ async function downloadStep(ctx: Ctx, job: JobRow, deadline: number): Promise<St
         const pick = pickFile(files, input.variant);
         if (!pick) continue;
         const fname = assetFilename(a.external_id, safeJsonParse(a.stored, {}), files);
-        const path = `${sanitizeFilename(p.style_number)}/${zipEntryName(fname, input.variant, pick.fallback)}`;
+        let path = `${sanitizeFilename(p.style_number)}/${zipEntryName(fname, input.variant, pick.fallback)}`;
+        if (used.has(path.toLowerCase())) path = path.replace(/(\.[^./]+)$/, ` (${st.fileCount + 1})$1`);
+        used.add(path.toLowerCase());
         stmts.push(jobItemStmt(job.id, "f", ++st.fileCount, { path, sha256: pick.ref.sha256, size: pick.ref.bytes, crc: pick.ref.crc32, product_id: p.id, asset_id: a.id }));
+        csvRows.push(downloadAssetsRow(path.split("/").pop()!, p.style_number, assetCore(a, settings, null), st.assetLangs));
       }
+      // The rights, embargo and AI provenance travel with the files (spec import-format.md §2.3).
+      if (csvRows.length) stmts.push(jobItemStmt(job.id, "c", st.planOffset + 1, writeCsv(csvRows, ",", false)));
       for (let i = 0; i < stmts.length; i += 200) await ctx.db.batch(stmts.slice(i, i + 200));
       st.planOffset += ids.length;
       continue;
@@ -178,9 +192,20 @@ async function downloadStep(ctx: Ctx, job: JobRow, deadline: number): Promise<St
         await w.checkpoint();
         return { done: false, state: st, progressDone: st.fi, progressTotal: st.fileCount };
       }
+      const chunks: string[] = [];
+      for (let after = 0; ; ) {
+        const more = await jobItems<string>(ctx, job.id, "c", after, 200);
+        chunks.push(...more.map((m) => m.item));
+        if (more.length < 200) break;
+        after = more[more.length - 1].idx;
+      }
+      if (chunks.length) {
+        const bytes = new TextEncoder().encode(writeCsv([downloadAssetsHeader(st.assetLangs ?? ["en"])], ",", false) + chunks.join(""));
+        await w.add("assets.csv", bytes.length, crc32(bytes), { bytes });
+      }
       if (st.csv) {
         const bytes = (await ctx.blobs.getRange(st.csv.key, 0, st.csv.size))!;
-        await w.add("products.csv", st.csv.size, st.csv.crc, { bytes });
+        await w.add("data.csv", st.csv.size, st.csv.crc, { bytes });
       }
       const r = await w.finish();
       return {

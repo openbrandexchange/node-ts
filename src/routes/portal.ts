@@ -16,7 +16,8 @@ import { blobKey } from "../core/blobs";
 import { serveStored } from "./files";
 import { logDownload } from "../core/stats";
 import { zipSize, zipStream, uniqueNamer, type StreamEntry } from "../lib/zip";
-import { articleCsv } from "../core/csvexport";
+import { articleCsv, downloadAssetsCsv } from "../core/csvexport";
+import { crc32 } from "../lib/crypto";
 import { enqueueJob, getJob, type JobRow } from "../core/jobs";
 import { clientJson, clientWithSecret, createClient, rotateClient } from "../core/accounts";
 import { V } from "../core/validate";
@@ -329,6 +330,7 @@ portal.get("/admin/api/portal/assets/:id/download", async (c) => {
 async function zipOf(c: C, viewer: Viewer, productIds: string[], variant: "original" | "web" | "square", folders: boolean, max: number | null) {
   const ctx = ctxOf(c);
   const entries: StreamEntry[] = [];
+  const images: { file: string; styleNumber: string; row: AssetRow }[] = [];
   const unique = uniqueNamer();
   for (let i = 0; i < productIds.length; i += 200) {
     const chunk = productIds.slice(i, i + 200);
@@ -350,11 +352,18 @@ async function zipOf(c: C, viewer: Viewer, productIds: string[], variant: "origi
         const name = unique(folders ? `${sanitizeFilename(p.style_number)}/${base}` : base);
         const sha = pick.ref.sha256;
         entries.push({ name, size: pick.ref.bytes, crc: pick.ref.crc32, open: async () => (await ctx.blobs.get(blobKey(sha))) ?? new Uint8Array(0) });
+        images.push({ file: name.split("/").pop()!, styleNumber: p.style_number, row: a });
         if (max !== null && entries.length > max) throw new ObxError("limit_exceeded", `This download has more than ${max} images. Start a background download instead; you get a link when it is ready.`);
       }
     }
   }
-  return entries;
+  const imageCount = entries.length;
+  if (images.length) {
+    // The rights, embargo and AI provenance travel with the files (spec import-format.md §2.3).
+    const bytes = await downloadAssetsCsv(ctx, images);
+    entries.push({ name: unique("assets.csv"), size: bytes.length, crc: crc32(bytes), open: async () => bytes });
+  }
+  return { entries, imageCount };
 }
 
 function zipResponse(entries: StreamEntry[], filename: string) {
@@ -379,8 +388,8 @@ portal.get("/admin/api/portal/products/:id/download.zip", async (c) => {
     [id, ...productVisibleSql(viewer).params],
   );
   if (!p) throw new ObxError("not_found", "Unknown product.");
-  const entries = await zipOf(c, viewer, [id], variant, false, null);
-  logDownload(ctx, { kind: "product_zip", viewer, variant, productId: id, files: entries.length, bytes: zipSize(entries) });
+  const { entries, imageCount } = await zipOf(c, viewer, [id], variant, false, null);
+  logDownload(ctx, { kind: "product_zip", viewer, variant, productId: id, files: imageCount, bytes: zipSize(entries) });
   return zipResponse(entries, `${sanitizeFilename(p.style_number)}_${variant}.zip`);
 });
 
@@ -390,8 +399,8 @@ portal.get("/admin/api/portal/selection/download.zip", async (c) => {
   const variant = variantParam(c, viewer);
   const ids = await visibleIds(c, viewer, await selectionIds(c, session.user.id));
   if (!ids.length) throw new ObxError("invalid_request", "Your selection is empty.");
-  const entries = await zipOf(c, viewer, ids, variant, true, SYNC_ZIP_MAX);
-  logDownload(ctx, { kind: "selection_zip", viewer, variant, files: entries.length, bytes: zipSize(entries) });
+  const { entries, imageCount } = await zipOf(c, viewer, ids, variant, true, SYNC_ZIP_MAX);
+  logDownload(ctx, { kind: "selection_zip", viewer, variant, files: imageCount, bytes: zipSize(entries) });
   return zipResponse(entries, `selection_${variant}.zip`);
 });
 
