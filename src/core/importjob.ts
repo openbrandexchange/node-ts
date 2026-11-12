@@ -5,7 +5,9 @@ import { CatalogSession, type IngestResult } from "./catalog";
 import { enqueueJob, jobItemStmt, jobItems, registerJob, type JobRow, type StepOutcome } from "./jobs";
 import { ObxError } from "../lib/problem";
 import { getBlob, storeBlob, fileRef, blobKey } from "./blobs";
-import { ignoredEntry, readZipDirectory, readZipEntry, unsafeEntryReason, ZipError, type ZipReadEntry } from "../lib/zip";
+import { ignoredEntry, readZipDirectory, readZipEntry, unsafeEntryReason, ZipError, type RangeReader, type ZipReadEntry } from "../lib/zip";
+import { convertWorkbook, excelRowError, memoryReader, WorkbookError, WORKBOOK_ROLES, type WorkbookRole } from "../lib/xlsx";
+import { normHeader } from "../lib/csv";
 import { storeReader, readText, streamToStore } from "./storeio";
 import { keepAbsentColumns, parseAssetsCsv, parseImageName, parseProductsCsv, IMAGE_EXT, PRODUCT_COLUMN_FIELDS, VARIANT_COLUMN_FIELDS, type AssetOverride, type ProductGroup, type RowError } from "./importformat";
 import { isPlainObject, safeJsonParse, slugify } from "../lib/util";
@@ -26,9 +28,12 @@ export interface Loc {
   length: number;
 }
 
+/** An uploaded products.csv / assets.csv; `workbook` when it is an Excel workbook (import-format.md §5). */
+export type CsvLoc = Loc & { name: string; workbook?: boolean };
+
 export interface ImportInputs {
-  csv: (Loc & { name: string }) | null;
-  assets: (Loc & { name: string }) | null;
+  csv: CsvLoc | null;
+  assets: CsvLoc | null;
   zips: (Loc & { name: string })[];
   files: (Loc & { name: string })[];
   manifest: Loc | null;
@@ -90,6 +95,10 @@ interface State {
   csvName?: string;
   assetsKey?: string | null;
   assetsName?: string;
+  /** Header texts (row 1) of the workbooks the CSVs were converted from, for Excel row numbers in errors. */
+  xlsx?: { csv?: string[]; assets?: string[] };
+  /** A workbook could not be imported (its one error is recorded); the rest of the import goes on. */
+  workbookFailed?: boolean;
   prepStep?: number;
   manifestDone?: number;
   imgCount: number;
@@ -135,7 +144,13 @@ class ErrSink {
     private job: JobRow,
     private st: State,
   ) {}
+  /** Errors of the CSV import of a converted workbook get Excel row numbers and a cell locator (§5.5). */
   add(e: RowError) {
+    const wb = this.st.xlsx;
+    const header = wb && (e.file === this.st.csvName ? wb.csv : e.file === this.st.assetsName ? wb.assets : undefined);
+    this.addRaw(header ? excelRowError(e, header, normHeader) : e);
+  }
+  addRaw(e: RowError) {
     this.stmts.push(jobItemStmt(this.job.id, "row", ++this.st.errIdx, e, e.severity === "error"));
     if (e.severity === "error") this.st.counts.errors++;
     else this.st.counts.warnings++;
@@ -333,8 +348,26 @@ async function prepare(ctx: Ctx, job: JobRow, st: State, input: ImportInput, sin
   st.prepStep ??= 0;
   if (st.prepStep === 0) {
     // Zip directories: validate every entry first (zip-slip → nothing is written).
-    let csvLoc: (Loc & { name: string }) | null = inp.csv;
-    let assetsLoc: (Loc & { name: string }) | null = inp.assets;
+    let csvLoc: CsvLoc | null = null;
+    let assetsLoc: CsvLoc | null = null;
+    // A workbook is converted to its canonical CSV here (import-format.md §5); a workbook that cannot
+    // be imported gives one ImportRowError and nothing of that file is imported.
+    const take = async (which: "csv" | "assets", loc: CsvLoc, read: RangeReader | null): Promise<CsvLoc | null> => {
+      if (!loc.workbook) return loc;
+      const role: WorkbookRole = which === "csv" ? "products" : "assets";
+      const conv = await workbookToCsv(ctx, job, st, sink, role, read ?? storeReader(ctx, loc.key, loc.offset), loc.length, loc.name);
+      return conv;
+    };
+    let csvDone = false;
+    let assetsDone = false;
+    if (inp.csv) {
+      csvLoc = await take("csv", inp.csv, null);
+      csvDone = true;
+    }
+    if (inp.assets) {
+      assetsLoc = await take("assets", inp.assets, null);
+      assetsDone = true;
+    }
     const zipImages: ImgItem[] = [];
     for (const z of inp.zips) {
       const read = storeReader(ctx, z.key, z.offset);
@@ -348,14 +381,34 @@ async function prepare(ctx: Ctx, job: JobRow, st: State, input: ImportInput, sin
       if (total > 10 * 2 * 1024 * 1048576) throw new ObxError("import_invalid", "The zip unpacks to more than 20 GB. Split it into smaller packages.");
       const csvs = entries.filter((e) => !e.isDir && !ignoredEntry(e.name) && /\.csv$/i.test(e.name));
       const base = (n: string) => n.replace(/\\/g, "/").split("/").pop()!.toLowerCase();
-      const prod = csvs.find((e) => base(e.name) === "products.csv") ?? (csvs.filter((e) => base(e.name) !== "assets.csv").length === 1 ? csvs.find((e) => base(e.name) !== "assets.csv") : undefined);
-      const ass = csvs.find((e) => base(e.name) === "assets.csv");
+      // products.xlsx / assets.xlsx take the place of products.csv / assets.csv (§5.1); both is an error.
+      const books = entries.filter((e) => !e.isDir && !ignoredEntry(e.name) && /^(products|assets)\.xlsx$/.test(base(e.name)));
+      const prodBook = books.find((e) => base(e.name) === "products.xlsx");
+      const assBook = books.find((e) => base(e.name) === "assets.xlsx");
+      for (const [b, csvName] of [
+        [prodBook, "products.csv"],
+        [assBook, "assets.csv"],
+      ] as const)
+        if (b && csvs.some((e) => base(e.name) === csvName)) throw new ObxError("import_invalid", `${z.name} has both ${csvName} and ${base(b.name)}; send one of them. Nothing was imported.`);
+      const prod = prodBook ?? csvs.find((e) => base(e.name) === "products.csv") ?? (csvs.filter((e) => base(e.name) !== "assets.csv").length === 1 ? csvs.find((e) => base(e.name) !== "assets.csv") : undefined);
+      const ass = assBook ?? csvs.find((e) => base(e.name) === "assets.csv");
       for (const [e, which] of [
         [prod, "csv"],
         [ass, "assets"],
       ] as const) {
         if (!e) continue;
-        if ((which === "csv" && csvLoc) || (which === "assets" && assetsLoc)) continue;
+        if ((which === "csv" && csvDone) || (which === "assets" && assetsDone)) continue;
+        if (which === "csv") csvDone = true;
+        else assetsDone = true;
+        if (e === prodBook || e === assBook) {
+          if (e.size > CSV_MAX) throw new ObxError("payload_too_large", `${base(e.name)} may be at most ${CSV_MAX / 1048576} MB.`);
+          // The workbook is read from memory; its parts are never written anywhere.
+          const book = await readZipEntry(read, e, CSV_MAX);
+          const loc = await take(which, { key: "", offset: 0, length: book.length, name: e.name.replace(/\\/g, "/").split("/").pop()!, workbook: true }, memoryReader(book));
+          if (which === "csv") csvLoc = loc;
+          else assetsLoc = loc;
+          continue;
+        }
         const bytes = await readZipEntry(read, e, 64 * 1048576);
         const key = `jobs/${job.id}/${which}.csv`;
         await ctx.blobs.put(key, bytes, "text/csv");
@@ -364,7 +417,7 @@ async function prepare(ctx: Ctx, job: JobRow, st: State, input: ImportInput, sin
         else assetsLoc = loc;
       }
       for (const e of entries) {
-        if (e.isDir || ignoredEntry(e.name) || /\.csv$/i.test(e.name)) continue;
+        if (e.isDir || ignoredEntry(e.name) || /\.csv$/i.test(e.name) || books.includes(e)) continue;
         const name = e.name.replace(/\\/g, "/").split("/").pop()!;
         if (/\.zip$/i.test(name)) {
           sink.add({ file: z.name, row: null, column: null, severity: "warning", obx_error: "import_invalid", detail: `Nested zip "${e.name}" was not opened.`, value: null });
@@ -395,7 +448,7 @@ async function prepare(ctx: Ctx, job: JobRow, st: State, input: ImportInput, sin
         st.csvKey = key;
       }
       st.csvName = csvLoc.name;
-      if (!st.files.some((f) => f.name === csvLoc!.name)) st.files.push({ name: csvLoc.name, bytes: csvLoc.length, sha256: null });
+      if (!csvLoc.workbook && !st.files.some((f) => f.name === csvLoc!.name)) st.files.push({ name: csvLoc.name, bytes: csvLoc.length, sha256: null });
     }
     if (assetsLoc) {
       st.assetsKey = assetsLoc.key;
@@ -406,7 +459,7 @@ async function prepare(ctx: Ctx, job: JobRow, st: State, input: ImportInput, sin
         st.assetsKey = key;
       }
       st.assetsName = assetsLoc.name;
-      if (!st.files.some((f) => f.name === assetsLoc!.name)) st.files.push({ name: assetsLoc.name, bytes: assetsLoc.length, sha256: null });
+      if (!assetsLoc.workbook && !st.files.some((f) => f.name === assetsLoc!.name)) st.files.push({ name: assetsLoc.name, bytes: assetsLoc.length, sha256: null });
     }
     for (const z of inp.zips) if (!st.files.some((f) => f.name === z.name)) st.files.push({ name: z.name, bytes: z.length, sha256: null });
     st.prepStep = 1;
@@ -437,7 +490,7 @@ async function prepare(ctx: Ctx, job: JobRow, st: State, input: ImportInput, sin
     st.prepStep = 2;
   }
   // Nothing to import at all?
-  if (!st.csvKey && !st.imgCount) throw new ObxError("import_invalid", "The import contains no products.csv and no images.");
+  if (!st.csvKey && !st.imgCount && !st.workbookFailed) throw new ObxError("import_invalid", "The import contains no products.csv and no images.");
   // Parse CSVs once to count rows and record their errors.
   if (st.csvKey) {
     const groups = await loadGroups(ctx, st, input, sink);
@@ -445,6 +498,45 @@ async function prepare(ctx: Ctx, job: JobRow, st: State, input: ImportInput, sin
   }
   if (st.assetsKey) await loadOverrides(ctx, st, input, sink, true);
   return true;
+}
+
+/** The upload limit for a CSV, and so for a workbook (import-format.md §5.6 step 1). */
+const CSV_MAX = 64 * 1048576;
+
+/**
+ * Converts a workbook (products.xlsx / assets.xlsx) to its canonical CSV (import-format.md §5), stores
+ * that CSV for the later phases and records the conversion errors and warnings. Returns the CSV's
+ * location, or null when the workbook cannot be imported (one ImportRowError with its code).
+ */
+async function workbookToCsv(ctx: Ctx, job: JobRow, st: State, sink: ErrSink, role: WorkbookRole, read: RangeReader, size: number, uploadedName: string): Promise<CsvLoc | null> {
+  const file = WORKBOOK_ROLES[role].file;
+  if (!st.files.some((f) => f.name === uploadedName)) st.files.push({ name: uploadedName, bytes: size, sha256: null });
+  if (size > CSV_MAX) throw new ObxError("payload_too_large", `${file} may be at most ${CSV_MAX / 1048576} MB.`);
+  try {
+    const out = await convertWorkbook(read, size, role);
+    const which = role === "products" ? "csv" : "assets";
+    st.xlsx = { ...st.xlsx, [which]: out.header };
+    for (const e of out.errors) sink.addRaw(e);
+    for (const w of out.warnings) sink.addRaw(w);
+    const key = `jobs/${job.id}/${which}.csv`;
+    // The chunks are handed over one by one and dropped, so the CSV is in memory only once.
+    const chunks = out.csv;
+    out.csv = [];
+    const stream = new ReadableStream<Uint8Array>({
+      pull(c) {
+        const next = chunks.shift();
+        if (next) c.enqueue(next);
+        else c.close();
+      },
+    });
+    const stored = await streamToStore(ctx, key, stream, Number.MAX_SAFE_INTEGER, "text/csv");
+    return { key, offset: 0, length: stored.size, name: file, workbook: true };
+  } catch (e) {
+    if (!(e instanceof WorkbookError)) throw e;
+    sink.addRaw({ file, row: null, column: null, severity: "error", obx_error: e.code, detail: `${e.detail}.`, value: null });
+    st.workbookFailed = true;
+    return null;
+  }
 }
 
 const groupCache = new WeakMap<object, ProductGroup[]>();
@@ -456,7 +548,7 @@ async function loadGroups(ctx: Ctx, st: State, input: ImportInput, sink?: ErrSin
   const head = await ctx.blobs.head(st.csvKey);
   const txt = await readText(ctx, st.csvKey, 0, head?.size ?? 0);
   const lang = input.default_language ?? (await ctx.settings()).portal.default_language;
-  const parsed = parseProductsCsv(txt, st.csvName ?? "products.csv", lang);
+  const parsed = parseProductsCsv(txt, st.csvName ?? "products.csv", lang, st.xlsx?.csv ? "," : undefined);
   if (sink) {
     st.counts.rows = parsed.rows;
     for (const e of parsed.errors) {
@@ -477,7 +569,7 @@ async function loadOverrides(ctx: Ctx, st: State, input: ImportInput, sink: ErrS
   const head = await ctx.blobs.head(st.assetsKey);
   const txt = await readText(ctx, st.assetsKey, 0, head?.size ?? 0);
   const lang = input.default_language ?? (await ctx.settings()).portal.default_language;
-  const parsed = parseAssetsCsv(txt, st.assetsName ?? "assets.csv", lang);
+  const parsed = parseAssetsCsv(txt, st.assetsName ?? "assets.csv", lang, st.xlsx?.assets ? "," : undefined);
   if (report) for (const e of parsed.errors) sink.add(e);
   const m = new Map<string, AssetOverride>();
   for (const r of parsed.rows) m.set(r.file.toLowerCase(), r);

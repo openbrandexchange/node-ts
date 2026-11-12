@@ -1,6 +1,6 @@
 // Smoke test of the Cloudflare edition in the local Workers runtime (`wrangler dev`, D1 + R2 simulated).
 // Usage: bun scripts/workers-smoke.ts
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fakeJpeg } from "../src/lib/image";
@@ -162,6 +162,23 @@ try {
   check(status === "succeeded", "import job finished via the scheduled handler");
   const job = await call("GET", `/obx/v1/ingest/jobs/${imp.json.id}`, { bearer: it });
   check(job.json.import_run.counts.created === 3, "import created product, variant and image");
+  // An Excel workbook (spec import-format.md §5): read from R2 by ranges, inflated with DecompressionStream.
+  const xlsx = new Uint8Array(readFileSync(join(import.meta.dir, "..", "test", "fixtures", "imports", "xlsx", "products-template.xlsx")));
+  const xbody = new Uint8Array([
+    ...enc.encode(`--${boundary}\r\nContent-Disposition: form-data; name="csv"; filename="products.xlsx"\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n`),
+    ...xlsx,
+    ...enc.encode(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="options"\r\n\r\n{"dry_run":true}\r\n--${boundary}--\r\n`),
+  ]);
+  const ximp = await call("POST", "/obx/v1/ingest/imports", { bearer: it, body: xbody as BodyInit, headers: { "content-type": `multipart/form-data; boundary=${boundary}` } });
+  check(ximp.status === 202, "workbook import accepted (202)");
+  let xstatus = "";
+  for (let i = 0; i < 40 && xstatus !== "succeeded" && xstatus !== "failed"; i++) {
+    await fetch(`${base}/cdn-cgi/handler/scheduled?cron=*+*+*+*+*`);
+    await Bun.sleep(500);
+    xstatus = (await call("GET", `/obx/v1/ingest/jobs/${ximp.json.id}`, { bearer: it })).json?.status;
+  }
+  const xjob = await call("GET", `/obx/v1/ingest/jobs/${ximp.json.id}`, { bearer: it });
+  check(xstatus === "succeeded" && xjob.json.import_run.counts.rows === 46 && xjob.json.import_run.counts.errors === 0, "products.xlsx (the template) converts and imports in the Workers runtime");
   const ui = await fetch(`${base}/some/portal/route`, { headers: { accept: "text/html" } });
   check(ui.status === 200 && (await ui.text()).includes("<html"), "static UI with SPA fallback");
   check((ui.headers.get("content-security-policy") ?? "").includes("frame-ancestors 'none'"), "static UI carries the Content-Security-Policy from public/_headers");

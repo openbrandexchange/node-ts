@@ -112,7 +112,7 @@ Without e-mail the portal still works: the admin copies invitation links by hand
 
 Everything below works against **any** Open Brand Exchange portal, because it only uses the standard upload API and the standard CSV format. Full recipes (cron, Windows Task Scheduler, GitHub Action, n8n/Make/Zapier): [spec/docs/automation.md](https://github.com/openbrandexchange/spec/blob/main/docs/automation.md).
 
-**The CSV:** one row per size, product columns repeated; images named `{style}_{colour}_{position}.jpg`, e.g. `KO-1001_NVY_1.jpg`, `KO-1001_NVY_2_back.jpg`. Download the template in **Imports**.
+**The CSV (or Excel):** one row per size, product columns repeated; images named `{style}_{colour}_{position}.jpg`, e.g. `KO-1001_NVY_1.jpg`, `KO-1001_NVY_2_back.jpg`. Download the template in **Imports**.
 Article data has one plain column each (spec import format 0.2): `item_subtype`, `contains_animal_origin` (`yes`/`no`),
 `footwear_materials` (`upper: leather; lining_and_sock: textile; outer_sole: other`), `certifications`
 (`gots:CU 123456; rws:CU 200101 (material)`), `feature:<key>` (`feature:wheels` = `4`), and per size `size_length`,
@@ -122,7 +122,13 @@ is (per feature and per measurement). The import warns, without blocking anythin
 requires: the fibre composition, whether there are non-textile parts of animal origin, the footwear materials, or
 percentages that do not add up to 100.
 
-**Scheduled import (no code):** Automatic upload → Scheduled imports → Add scheduled import → web address of your `products.csv` or zip, or an S3/R2 bucket. Choose *Only add and update* or *Mirror* (also takes products offline that disappeared from the file — refused when more than half would disappear, so a broken export never empties your catalog).
+**Excel:** upload the workbook (`.xlsx`) instead of the CSV — the template from the spec works as it is.
+The sheet named `Products` (or `Assets` for image data) is read, otherwise the first visible sheet with a
+`style_number` (`file`) column; formulas are not calculated (their saved result is used), GTINs typed as
+numbers keep every digit, and problems name Excel's row and column (`row 12, column ean (C): …`). Save
+the file as "Excel Workbook (.xlsx)": workbooks with macros or links to other files are refused.
+
+**Scheduled import (no code):** Automatic upload → Scheduled imports → Add scheduled import → web address of your `products.csv`, `products.xlsx` or zip, or an S3/R2 bucket (a folder may hold `products.xlsx` and `assets.xlsx` in the place of the CSVs). Choose *Only add and update* or *Mirror* (also takes products offline that disappeared from the file — refused when more than half would disappear, so a broken export never empties your catalog).
 
 **The `obx` tool:** create a key in **Automatic upload → Access keys** (or run `obx login https://brands.yourbrand.com` and sign in), then
 

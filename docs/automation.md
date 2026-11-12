@@ -20,6 +20,10 @@ work only on the upload API (`/obx/v1/ingest`), never on the admin screens or th
 | S3-compatible bucket (S3, R2, MinIO, B2 …) | yes | yes |
 | SFTP folder (password or key; server key pinned on first connection) | no (Workers cannot open SSH connections) | yes |
 
+What a run reads: a web address points at a `products.csv`, a package zip or a `products.xlsx` (the file
+name decides); a bucket or folder is read like an unpacked package: `products.csv` or `products.xlsx`
+(not both), optional `assets.csv` or `assets.xlsx`, and the images below it (spec import-format.md §3, §5).
+
 Frequencies: hourly, daily at a time, weekly on a day at a time (in the brand's time zone), or manual.
 Runs start from the minute timer (the Cron Trigger on Cloudflare); an unchanged file is not imported
 again. **Mirror** mode refuses to take more than half of the catalog offline unless you allow it.

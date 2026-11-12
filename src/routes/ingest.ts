@@ -11,6 +11,7 @@ import { readBody, storeBlob, getBlob, blobJson, fileRef, createUpload, getUploa
 import { ACCEPTED_TYPES } from "../lib/image";
 import { parseOps, runOp, summarize, type BatchOptions } from "../core/batch";
 import { enqueueJob, getJob, jobItems, type JobRow } from "../core/jobs";
+import { workbookKind } from "../lib/xlsx";
 import { importRunOf, startImport, storeRequestBody, type ImportInputs } from "../core/importjob";
 import { boundaryOf, scanMultipart } from "../lib/multipart";
 import { storeReader, readText } from "../core/storeio";
@@ -193,8 +194,16 @@ export async function handleImport(c: C, w: Writer, trigger: Writer["trigger"]) 
       if (!isPlainObject(o)) throw new ObxError("invalid_request", "options must be a JSON object.");
       options = o;
     } else if (p.name === "images_manifest") inputs.manifest = { key, offset: p.offset, length: p.length };
-    else if (p.name === "csv" || p.name === "products_csv") inputs.csv = { ...loc, name: p.filename ?? "products.csv" };
-    else if (p.name === "assets_csv") inputs.assets = { ...loc, name: p.filename ?? "assets.csv" };
+    else if (p.name === "csv" || p.name === "products_csv" || p.name === "assets_csv") {
+      // An Excel workbook in the place of the CSV (import-format.md §5.1): the file name decides.
+      const products = p.name !== "assets_csv";
+      const kind = workbookKind(p.filename, p.contentType);
+      if (kind === "other") throw new ObxError("unsupported_media_type", `${p.filename} is not a CSV file or an Excel workbook (.xlsx). Save it as CSV (UTF-8) or as an Excel Workbook (.xlsx).`);
+      const workbook = kind === "xlsx";
+      const name = p.filename ?? (workbook ? (products ? "products.xlsx" : "assets.xlsx") : products ? "products.csv" : "assets.csv");
+      if (products) inputs.csv = { ...loc, name, workbook };
+      else inputs.assets = { ...loc, name, workbook };
+    }
     else if (p.name === "package") inputs.zips.push({ ...loc, name: p.filename ?? "package.zip" });
     else if (p.name === "images" || p.name === "images[]") {
       const head = await ctx.blobs.getRange(key, p.offset, 4);

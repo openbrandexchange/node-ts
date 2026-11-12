@@ -341,11 +341,11 @@ export interface ParsedProducts {
  * an error is skipped as a whole (its product and its variant), so a value outside the rules never
  * reaches the catalog.
  */
-export function parseProductsCsv(text: string, file: string, defaultLanguage: string): ParsedProducts {
+export function parseProductsCsv(text: string, file: string, defaultLanguage: string, delimiter?: string): ParsedProducts {
   const errors: RowError[] = [];
   const err = (row: number | null, column: string | null, detail: string, value: string | null = null, code = "validation_failed", severity: "error" | "warning" = "error") =>
     errors.push({ file, row, column, severity, obx_error: code, detail, value: value === null ? null : value.slice(0, 500) });
-  const csv = parseCsv(text);
+  const csv = parseCsv(text, delimiter);
   if (!csv.header.length || csv.header.every((h) => h === "")) {
     err(null, null, "The file has no header row.", null, "import_invalid");
     return { groups: [], errors, rows: 0 };
@@ -646,11 +646,11 @@ export interface AssetOverride {
   status?: string;
 }
 
-export function parseAssetsCsv(text: string, file: string, defaultLanguage: string): { rows: AssetOverride[]; errors: RowError[] } {
+export function parseAssetsCsv(text: string, file: string, defaultLanguage: string, delimiter?: string): { rows: AssetOverride[]; errors: RowError[] } {
   const errors: RowError[] = [];
   const err = (row: number | null, column: string | null, detail: string, value: string | null = null, severity: "error" | "warning" = "error") =>
     errors.push({ file, row, column, severity, obx_error: "validation_failed", detail, value });
-  const csv = parseCsv(text);
+  const csv = parseCsv(text, delimiter);
   const cols = csv.header.map(normHeader);
   const fi = cols.indexOf("file");
   if (fi < 0) {

@@ -5,6 +5,23 @@ All notable changes to the Portal for Cloudflare (`node-ts`) are listed here. Th
 than replacing the software (see [docs/upgrading.md](docs/upgrading.md)); database migrations are
 always forward-only and applied automatically.
 
+## [Unreleased]
+
+### Added
+- **Excel import** (spec import-format.md §5, a node feature; conformance I-IMP-9 and I-IMP-10): an
+  Excel workbook (`.xlsx`) is accepted wherever a CSV is: the admin upload and the Ingest API's `csv` /
+  `assets_csv` parts (a file name ending in `.xlsx`, or a part without a name with the xlsx content type),
+  `products.xlsx` / `assets.xlsx` in a package zip and in a scheduled pull folder, and a web address ending
+  in `.xlsx`. The sheet `Products` (`Assets`) is read, else the first visible sheet with the key column;
+  only stored values (no formula is calculated), numbers exactly as stored (GTINs keep every digit), dates
+  as ISO dates; the rows are then imported as `products.csv` / `assets.csv`, unchanged. Errors carry
+  Excel's row numbers and a `row 12, column ean (C): ` locator. The templates import as they are.
+- New error codes `workbook_invalid`, `workbook_unsafe` (macros, ActiveX, external links, data
+  connections), `workbook_sheet_missing` and `workbook_too_large` (fixed limits against zip bombs and
+  oversized sheets), each as one ImportRowError of the import; `.xlsm`, `.xls`, `.xlsb`, `.ods` and
+  `.numbers` uploads are answered with `unsupported_media_type`. A package or folder with both
+  `products.csv` and `products.xlsx` (or both assets files) is `import_invalid`.
+
 ## [0.2.0] - 2026-11-12
 
 Implements Open Brand Exchange spec 0.2.0: article data for fashion, shoes, bags and luggage (spec

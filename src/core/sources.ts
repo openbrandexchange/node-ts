@@ -7,6 +7,7 @@ import { safeJsonParse } from "../lib/util";
 import { sha256Hex } from "../lib/crypto";
 import { streamToStore } from "./storeio";
 import { IMAGE_EXT } from "./importformat";
+import { workbookKind, XLSX_CONTENT_TYPE } from "../lib/xlsx";
 import type { ImportInputs } from "./importjob";
 
 export interface SourceRow {
@@ -208,7 +209,11 @@ export async function fetchSource(ctx: Ctx, src: SourceRow, jobId: string, force
     const head = await ctx.blobs.getRange(`jobs/${jobId}/source`, 0, 4);
     const name = decodeURIComponent(new URL(String(cfg.url)).pathname.split("/").pop() || "download");
     const isZip = !!head && head[0] === 0x50 && head[1] === 0x4b;
-    if (isZip) inputs.zips.push({ key: `jobs/${jobId}/source`, offset: 0, length: main.size, name });
+    // The file name decides whether a download is an Excel workbook (import-format.md §5.1).
+    const book = workbookKind(name);
+    if (book === "other") throw new ObxError("unsupported_media_type", `${name} is not a CSV file, a zip or an Excel workbook (.xlsx).`);
+    if (book === "xlsx") inputs.csv = { key: `jobs/${jobId}/source`, offset: 0, length: main.size, name, workbook: true };
+    else if (isZip) inputs.zips.push({ key: `jobs/${jobId}/source`, offset: 0, length: main.size, name });
     else inputs.csv = { key: `jobs/${jobId}/source`, offset: 0, length: main.size, name: name.endsWith(".csv") ? name : "products.csv" };
     files.push({ name, bytes: main.size, sha256: main.sha256 });
     let fp = main.sha256;
@@ -227,6 +232,13 @@ export async function fetchSource(ctx: Ctx, src: SourceRow, jobId: string, force
   const csvs = listed.filter((f) => base(f.path).endsWith(".csv"));
   const prod = csvs.filter((f) => base(f.path) === "products.csv").sort((a, b) => a.path.split("/").length - b.path.split("/").length)[0] ?? (csvs.filter((f) => base(f.path) !== "assets.csv").length === 1 ? csvs.find((f) => base(f.path) !== "assets.csv") : undefined);
   const ass = csvs.find((f) => base(f.path) === "assets.csv");
+  // products.xlsx / assets.xlsx take the place of products.csv / assets.csv (import-format.md §5.1);
+  // the "only *.csv" fallback does not extend to workbooks, and a folder with both is refused.
+  const shallowest = (n: string) => listed.filter((f) => base(f.path) === n).sort((a, b) => a.path.split("/").length - b.path.split("/").length)[0];
+  const prodBook = shallowest("products.xlsx");
+  const assBook = shallowest("assets.xlsx");
+  if (prodBook && csvs.some((f) => base(f.path) === "products.csv")) throw new ObxError("import_invalid", "The folder has both products.csv and products.xlsx; keep one of them.");
+  if (assBook && ass) throw new ObxError("import_invalid", "The folder has both assets.csv and assets.xlsx; keep one of them.");
   const images = listed.filter((f) => IMAGE_EXT.test(f.path) && !base(f.path).startsWith("."));
   const fingerprint = await sha256Hex(
     listed
@@ -237,14 +249,16 @@ export async function fetchSource(ctx: Ctx, src: SourceRow, jobId: string, force
   const unchanged = !force && src.fingerprint === fingerprint;
   if (unchanged) return { inputs, files: [], fingerprint, unchanged, remoteImages: [] };
   for (const [f, which] of [
-    [prod, "csv"],
-    [ass, "assets"],
+    [prodBook ?? prod, "csv"],
+    [assBook ?? ass, "assets"],
   ] as const) {
     if (!f) continue;
+    const workbook = f === prodBook || f === assBook;
     const bytes = await readRemoteFile(ctx, src.id, f.path, 64 * 1048576);
-    const key = `jobs/${jobId}/${which}.csv`;
-    await ctx.blobs.put(key, bytes, "text/csv");
-    const loc = { key, offset: 0, length: bytes.length, name: base(f.path) };
+    // A workbook is stored as the file it is (never its parts) and converted by the import job.
+    const key = `jobs/${jobId}/${which}.${workbook ? "xlsx" : "csv"}`;
+    await ctx.blobs.put(key, bytes, workbook ? XLSX_CONTENT_TYPE : "text/csv");
+    const loc = { key, offset: 0, length: bytes.length, name: base(f.path), workbook };
     if (which === "csv") inputs.csv = loc;
     else inputs.assets = loc;
     files.push({ name: f.path, bytes: bytes.length, sha256: await sha256Hex(bytes) });
@@ -271,10 +285,10 @@ export async function testSource(ctx: Ctx, src: SourceRow) {
       return { ok: true, message: null, host_key_fingerprint: null, files: [{ name, bytes: len, modified_at: res.headers.get("last-modified") ? new Date(res.headers.get("last-modified")!).toISOString() : null }] };
     }
     const r = await listFolder(ctx, src);
-    const relevant = r.files.filter((f) => /\.csv$/i.test(f.path) || IMAGE_EXT.test(f.path));
+    const relevant = r.files.filter((f) => /\.(csv|xlsx)$/i.test(f.path) || IMAGE_EXT.test(f.path));
     return {
       ok: true,
-      message: relevant.length ? null : "The folder is reachable but contains no products.csv or images.",
+      message: relevant.length ? null : "The folder is reachable but contains no products.csv, products.xlsx or images.",
       host_key_fingerprint: r.hostKey,
       files: relevant.slice(0, 100).map((f) => ({ name: f.path, bytes: f.size, modified_at: f.modified })),
     };

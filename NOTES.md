@@ -133,6 +133,35 @@ The recipient's language is the user's language, the requester's `contact.langua
   `loading="lazy"`; the image check scrolls them into view. A new walk opens KO-1010 as a Dutch retailer and
   checks the footwear materials and heel height (with axe).
 
+## Excel import (spec import-format.md §5, unreleased)
+
+- Code: `src/lib/xlsx.ts` (the conversion, a port of the spec's reference `tools/xlsx.mjs`),
+  `src/lib/xml.ts` (a streaming XML tokenizer), wiring in `src/core/importjob.ts` (`workbookToCsv`,
+  Excel row numbers in `ErrSink.add`), `src/routes/ingest.ts` (upload parts) and `src/core/sources.ts`
+  (pull folders, web addresses). Tests: `test/xlsx.test.ts` runs every case of the vendored
+  `test/fixtures/imports/xlsx/expected.json` and the number/date/format vectors.
+- No dependency: the zip is read with the existing `src/lib/zip.ts` reader (range reads, so a stored
+  workbook is never loaded whole) and inflated with `DecompressionStream("deflate-raw")`; the XML is
+  tokenized as bytes while it inflates (no DOCTYPE, only the five XML entities and character references,
+  well-formedness checked). The chosen worksheet is never held as text: converted rows go straight into
+  ~1 MiB UTF-8 chunks of the canonical CSV, which is streamed to storage (`jobs/<id>/csv.csv`) and then
+  imported by the unchanged CSV import. Workbook parts are never written anywhere; a workbook inside a
+  package zip is inflated into memory (at most the 64 MB CSV limit).
+- Merged ranges come after the cells in the sheet XML, so a sheet that has merges is streamed twice (the
+  second pass knows which cells to hide); rows or cells out of order (Excel never writes them) fall back to
+  the reference algorithm in memory. A part read twice counts once toward the 256 MiB inflated limit.
+- Measured (generated workbook, 100 000 data rows; Node 26 / V8, the engine of Workers): 30 columns
+  (107 MB sheet XML, 12 MB file) convert in 3.6 s CPU with a JS heap peak of ~16 MB (plus the 37 MB CSV
+  output in byte chunks and the file); 12 columns (45 MB XML) in 1.6 s CPU, heap peak ~22 MB. In
+  `wrangler dev` (workerd, R2 simulated) they convert in 6.6 s and 3.3 s wall, and the whole import job succeeds. The template converts
+  in a few milliseconds. The CSV import of such a file afterwards costs what the same CSV costs.
+- Choices where the spec leaves room: a workbook that cannot be imported is one ImportRowError and the job
+  still succeeds (also when nothing else was sent), as I-IMP-10 asks; a workbook above the CSV limit fails
+  the job with `payload_too_large`, as a CSV does. `.xlsm`, `.xls`, `.xlsb`, `.xltx`, `.xltm`, `.ods` and
+  `.numbers` uploads are answered 415. CDATA sections count as text (the reference ignores them; Excel
+  never writes them). Zip CRCs are not checked (a corrupt deflate stream still fails). The ImportRun
+  `files` list shows the uploaded file name; ImportRowErrors use `products.xlsx` / `assets.xlsx`.
+
 ## Production hardening (2026-09-28)
 
 - Ops: `/readyz`, request ids in every log line, Bun access log, Prometheus `/metrics` behind

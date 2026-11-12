@@ -22,9 +22,10 @@ export function detectDelimiter(text: string): string {
   return ",";
 }
 
-export function parseCsv(input: string): ParsedCsv {
+/** `delimiter` skips the detection (the canonical CSV of a converted workbook is always ","). */
+export function parseCsv(input: string, delimiter?: string): ParsedCsv {
   const text = input.charCodeAt(0) === 0xfeff ? input.slice(1) : input;
-  const delimiter = detectDelimiter(text);
+  delimiter ??= detectDelimiter(text);
   const records: string[][] = [];
   let field = "";
   let rec: string[] = [];
