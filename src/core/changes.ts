@@ -28,13 +28,22 @@ interface CursorPayload {
   h: number; // high-water seq
   s?: number; // live: last seq
   ts: number; // created (ms), snapshot expiry
+  e?: number; // cursor epoch (CURSOR_EPOCH when issued); absent in cursors issued before 0.3
 }
+
+/**
+ * Cursor epoch (protocol.md §6.4, conformance P-FEED-7). Every cursor this node issues carries it; a cursor
+ * from another epoch is `410 cursor_expired`, so consumers restart with a snapshot in the current shapes.
+ * Bump it only when an upgrade changes object shapes incompatibly. Epoch 1 is spec 0.3 (materials and care as
+ * terms); cursors issued by 0.1/0.2 have no epoch (0) and expire on the upgrade to 0.3.
+ */
+export const CURSOR_EPOCH = 1;
 
 const SNAPSHOT_TTL_MS = 24 * 3600 * 1000;
 export const RETENTION_DAYS = 90;
 
 async function encodeCursor(ctx: Ctx, p: CursorPayload): Promise<string> {
-  return await ctx.keys.seal("cursor", p);
+  return await ctx.keys.seal("cursor", { ...p, e: CURSOR_EPOCH });
 }
 
 async function decodeCursor(ctx: Ctx, raw: string): Promise<CursorPayload> {
@@ -42,6 +51,7 @@ async function decodeCursor(ctx: Ctx, raw: string): Promise<CursorPayload> {
   const p = await ctx.keys.unseal<CursorPayload>("cursor", raw);
   if (!p || typeof p !== "object" || (p.p !== "s" && p.p !== "l")) throw new ObxError("cursor_invalid", "This cursor is not valid (malformed or from another node). Restart without a cursor.");
   if (p.n !== (await ctx.nodeId())) throw new ObxError("cursor_invalid", "This cursor belongs to another node. Restart without a cursor.");
+  if ((p.e ?? 0) !== CURSOR_EPOCH) throw new ObxError("cursor_expired", "This cursor was issued before this node upgraded its spec version. Restart without a cursor.");
   return p;
 }
 

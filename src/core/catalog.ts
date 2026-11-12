@@ -20,7 +20,7 @@ import {
   type FileRef,
   type Files,
 } from "./reps";
-import { labelWarnings, labelWarningText, normalizeStoredProduct } from "./article";
+import { expandProductTerms, labelWarnings, labelWarningText, normalizeStoredProduct } from "./article";
 
 export type Kind = "brand" | "product" | "variant" | "asset";
 export type Op = "upsert" | "patch" | "delete" | "publish" | "unpublish";
@@ -307,7 +307,9 @@ export class CatalogSession {
       case "brand":
         return { ...s, status: o.status };
       case "product":
-        return { brand_external_id: this.externalIdOf(o.parent), ...s, status: o.status };
+        // Materials and care with their names (0.3): PUTting this back is unchanged, the names of
+        // known codes are not stored.
+        return { brand_external_id: this.externalIdOf(o.parent), ...expandProductTerms(s), status: o.status };
       case "variant": {
         const { gtin_original, ...rest } = s;
         return { product_external_id: this.externalIdOf(o.parent), gtin: gtin_original ?? null, ...rest, status: o.status };

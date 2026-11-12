@@ -123,7 +123,7 @@ for (let p = 0; p < PRODUCTS; p++) {
       item_type: TYPES[p % TYPES.length],
       target_group: p % 2 ? "women" : "men",
       season: p % 3 ? "FW26" : "SS27",
-      materials: [{ part: "main", fibers: [{ fiber: "cotton", percentage: 100 }] }],
+      materials: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 100 }] }],
     },
   });
   for (let v = 0; v < VARIANTS_PER; v++) {

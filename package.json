@@ -1,6 +1,6 @@
 {
   "name": "obx-node-ts",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "description": "Open Brand Exchange node in TypeScript (Hono) for Cloudflare Workers and Bun",
   "license": "AGPL-3.0-only",

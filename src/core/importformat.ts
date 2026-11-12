@@ -6,8 +6,7 @@ import { normDateTime } from "../lib/util";
 import {
   FEATURE_REGISTRY,
   MEASUREMENT_KEYS,
-  normalizeFiber,
-  normalizeMaterials,
+  CARE_VOCAB,
   normKey,
   parseCertificationsCell,
   parseColorFamilyCell,
@@ -15,6 +14,7 @@ import {
   parseFootwearCell,
   parseMeasurementCell,
   parseStrapCell,
+  storeMaterials,
   type FeatureValue,
   type Fiber,
   type Materials,
@@ -32,15 +32,6 @@ export interface RowError {
 }
 
 export const IMAGE_EXT = /\.(jpe?g|png|webp|tiff?)$/i;
-
-export const CARE_CODES = new Set(
-  (
-    "wash_95 wash_70 wash_60 wash_60_mild wash_50 wash_50_mild wash_40 wash_40_mild wash_40_very_mild wash_30 wash_30_mild wash_30_very_mild hand_wash do_not_wash " +
-    "bleach_any bleach_oxygen_only do_not_bleach tumble_dry_normal tumble_dry_low do_not_tumble_dry line_dry drip_line_dry dry_flat drip_dry_flat line_dry_shade " +
-    "drip_line_dry_shade dry_flat_shade drip_dry_flat_shade iron_high iron_medium iron_low do_not_iron dry_clean_p dry_clean_p_mild dry_clean_p_very_mild dry_clean_f " +
-    "dry_clean_f_mild dry_clean_f_very_mild do_not_dry_clean wet_clean_w wet_clean_w_mild wet_clean_w_very_mild do_not_wet_clean"
-  ).split(" "),
-);
 
 // ------------------------------------------------------------------ image file names
 
@@ -101,9 +92,10 @@ export function parseImageName(file: string): ParsedImageName | { error: string 
 
 /**
  * The materials grammar (import-format.md §1.4): `part: 95% cotton, 5% elastane; lining: 100%
- * polyester (recycled)`. A flag `(recycled)` / `(organic)` sets that flag on the fibre, and the 0.1
- * keys recycled_<fibre> / organic_<fibre> give the same result. Percentages that do not add up to
- * 100 are not an error: the label warning fibre_percentages_not_100 reports them (rule 10).
+ * polyester (recycled)`. Codes only: the node adds the names from the vocabularies. One qualifier in
+ * brackets per fibre (two are an error); the 0.1 keys recycled_<material> / organic_<material> give
+ * the material with that qualifier. Percentages that do not add up to 100 are not an error: the label
+ * warning fibre_percentages_not_100 reports them (rule 10).
  */
 export function parseMaterials(s: string): { value: Materials } | { error: string } {
   const out: Materials = [];
@@ -114,10 +106,10 @@ export function parseMaterials(s: string): { value: Materials } | { error: strin
     let body = partStr;
     const colon = partStr.indexOf(":");
     if (colon >= 0) {
-      name = partStr.slice(0, colon).trim().toLowerCase().replace(/\s+/g, "_");
+      name = normKey(partStr.slice(0, colon));
       body = partStr.slice(colon + 1);
     }
-    if (!KEY_RE.test(name)) return { error: `"${name}" is not a valid part name (use e.g. main, outer, lining).` };
+    if (!KEY_RE.test(name)) return { error: `"${name}" is not a valid part code (use e.g. main, outer, lining).` };
     const fibers: Fiber[] = [];
     for (const f of body.split(",")) {
       const t = f.trim();
@@ -126,31 +118,33 @@ export function parseMaterials(s: string): { value: Materials } | { error: strin
       if (!m) return { error: `"${t}" should look like "95% cotton" or "100% polyester (recycled)".` };
       const pct = Number(m[1].replace(",", "."));
       let rest = m[2].trim();
-      let recycled = false;
-      let organic = false;
+      const qualifiers: string[] = [];
       for (;;) {
-        const fl = rest.match(/\s*\((recycled|organic)\)\s*$/i);
-        if (!fl) break;
-        if (fl[1].toLowerCase() === "recycled") recycled = true;
-        else organic = true;
-        rest = rest.slice(0, rest.length - fl[0].length);
+        const q = rest.match(/\s*\(([^()]*)\)\s*$/);
+        if (!q) break;
+        qualifiers.unshift(q[1]);
+        rest = rest.slice(0, rest.length - q[0].length);
       }
-      const key = rest.trim().toLowerCase().replace(/[\s-]+/g, "_");
-      if (!KEY_RE.test(key)) return { error: `"${rest.trim()}" is not a valid fibre name.` };
+      if (qualifiers.length > 1) return { error: `"${t}" has more than one qualifier; a fibre has one (organic, recycled, regenerative, …).` };
+      const key = normKey(rest);
+      if (!KEY_RE.test(key)) return { error: `"${rest.trim()}" is not a valid material code.` };
+      const qual = qualifiers.length ? normKey(qualifiers[0]) : null;
+      if (qual !== null && !KEY_RE.test(qual)) return { error: `"(${qualifiers[0]})" is not a valid qualifier code such as (organic) or (recycled).` };
       if (!(pct > 0) || pct > 100) return { error: `${m[1]}% is not a valid percentage.` };
-      fibers.push(normalizeFiber({ fiber: key, percentage: pct, recycled, organic }));
+      fibers.push({ material: { code: key }, percentage: pct, ...(qual ? { qualifier: { code: qual } } : {}) });
     }
     if (!fibers.length) return { error: `Part "${name}" has no fibres.` };
-    out.push({ part: name, fibers });
+    out.push({ part: { code: name }, fibers });
   }
   if (!out.length) return { error: "No materials found." };
-  return { value: out };
+  return { value: storeMaterials(out) };
 }
 
-export function formatMaterials(m: Materials | null | undefined): string {
-  if (!m?.length) return "";
-  return normalizeMaterials(m)
-    .map((p) => `${p.part}: ${p.fibers.map((f) => `${f.percentage}% ${f.fiber}${f.recycled ? " (recycled)" : ""}${f.organic ? " (organic)" : ""}`).join(", ")}`)
+/** Materials in the products.csv grammar (codes only). */
+export function formatMaterials(m: unknown): string {
+  if (!Array.isArray(m) || !m.length) return "";
+  return (m as Materials)
+    .map((p) => `${p.part?.code}: ${(p.fibers ?? []).map((f) => `${f.percentage}% ${f.material?.code}${f.qualifier?.code ? ` (${f.qualifier.code})` : ""}`).join(", ")}`)
     .join("; ");
 }
 
@@ -503,7 +497,7 @@ export function parseProductsCsv(text: string, file: string, defaultLanguage: st
         const k = c.toLowerCase();
         if (!KEY_RE.test(k)) fail("care", `"${c}" is not a valid care code.`, care);
         else {
-          if (!CARE_CODES.has(k)) warn("care", `Unknown care code "${c}" was kept.`, care);
+          if (!CARE_VOCAB.has(k)) warn("care", `Unknown care code "${c}" was kept.`, care);
           list.push({ code: k, text: null });
         }
       }

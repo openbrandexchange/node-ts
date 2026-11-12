@@ -82,18 +82,27 @@ describe("import format", () => {
     expect("error" in parseImageName("KO-1001_NVY_01.jpg")).toBe(true);
   });
   test("materials grammar", () => {
-    // 0.2: the 0.1 keys organic_* / recycled_* become the fibre with its flag, like the flag form.
-    expect(parseMaterials("100% organic cotton")).toEqual({ value: [{ part: "main", fibers: [{ fiber: "cotton", percentage: 100, organic: true }] }] });
+    // 0.3: codes only; one qualifier per fibre; the 0.1 keys organic_* / recycled_* give the qualifier.
+    expect(parseMaterials("100% organic cotton")).toEqual({ value: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 100, qualifier: { code: "organic" } }] }] });
     expect(parseMaterials("100% Cotton (Organic)")).toEqual(parseMaterials("100% organic_cotton"));
     expect(parseMaterials("outer: 100% polyester (recycled); lining: 88% polyamide, 12% elastane")).toEqual({
       value: [
-        { part: "outer", fibers: [{ fiber: "polyester", percentage: 100, recycled: true }] },
-        { part: "lining", fibers: [{ fiber: "polyamide", percentage: 88 }, { fiber: "elastane", percentage: 12 }] },
+        { part: { code: "outer" }, fibers: [{ material: { code: "polyester" }, percentage: 100, qualifier: { code: "recycled" } }] },
+        { part: { code: "lining" }, fibers: [{ material: { code: "polyamide" }, percentage: 88 }, { material: { code: "elastane" }, percentage: 12 }] },
       ],
     });
-    expect(formatMaterials([{ part: "main", fibers: [{ fiber: "recycled_cotton", percentage: 100 }] }])).toBe("main: 100% cotton (recycled)");
+    expect(parseMaterials("Pocket Lining: 100% cotton (regenerative)")).toEqual({
+      value: [{ part: { code: "pocket_lining" }, fibers: [{ material: { code: "cotton" }, percentage: 100, qualifier: { code: "regenerative" } }] }],
+    });
+    expect("error" in parseMaterials("100% cotton (organic) (recycled)")).toBe(true);
+    expect("error" in parseMaterials("100% cotton (organic!)")).toBe(true);
+    const r = parseMaterials("main: 100% recycled_cotton");
+    expect("value" in r && formatMaterials(r.value)).toBe("main: 100% cotton (recycled)");
+    expect(
+      formatMaterials([{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 70, qualifier: { code: "regenerative" } }, { material: { code: "hemp" }, percentage: 30 }] }]),
+    ).toBe("main: 70% cotton (regenerative), 30% hemp");
     const m = parseMaterials("outer: 65% cotton, 35% polyamide; lining: 100% polyester");
-    expect("value" in m && m.value.map((x) => x.part)).toEqual(["outer", "lining"]);
+    expect("value" in m && m.value.map((x) => x.part.code)).toEqual(["outer", "lining"]);
     expect("error" in parseMaterials("cotton")).toBe(true);
   });
   test("products.csv: aliases, language columns, first value wins with a warning", () => {
