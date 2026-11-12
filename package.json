@@ -28,7 +28,7 @@
   "dependencies": {
     "aws4fetch": "^1.0.20",
     "bcryptjs": "^3.0.3",
-    "hono": "^4.13.10"
+    "hono": "^4.13.18"
   },
   "optionalDependencies": {
     "ssh2-sftp-client": "^12.1.1"
@@ -37,10 +37,10 @@
     "@types/bun": "latest",
     "oxlint": "^1.86.0",
     "typescript": "^5.9.3",
-    "wrangler": "^4.142.0"
+    "wrangler": "^4.160.1"
   },
   "cloudflare": {
-    "label": "Open Brand Exchange \u00b7 Portal for Cloudflare",
+    "label": "Open Brand Exchange · Portal for Cloudflare",
     "products": [
       "Workers",
       "D1",
