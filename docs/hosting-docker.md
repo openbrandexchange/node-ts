@@ -14,7 +14,7 @@ Or use the published image (once releases are public) without cloning:
 docker volume create portal-data
 docker run -d --name portal --restart unless-stopped -p 8080:8080 -v portal-data:/data \
   -e OBX_PUBLIC_URL=https://brands.yourbrand.com -e OBX_TRUST_PROXY=true \
-  ghcr.io/openbrandexchange/node-ts:0.1
+  ghcr.io/openbrandexchange/node-ts:0.2
 ```
 
 The image runs as the unprivileged user `bun`, keeps everything under `/data` (database, files,

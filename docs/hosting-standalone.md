@@ -11,9 +11,9 @@ no Docker, Bun, Node.js or npm needed.
 | `obx-portal-<version>-windows-x64.zip` | Windows |
 
 ```sh
-curl -LO https://github.com/openbrandexchange/node-ts/releases/download/v0.1.0/obx-portal-0.1.0-linux-x64.tar.gz
+curl -LO https://github.com/openbrandexchange/node-ts/releases/download/v0.2.0/obx-portal-0.2.0-linux-x64.tar.gz
 shasum -a 256 -c SHA256SUMS --ignore-missing      # after downloading SHA256SUMS from the same release
-tar -xzf obx-portal-0.1.0-linux-x64.tar.gz && cd obx-portal-0.1.0-linux-x64
+tar -xzf obx-portal-0.2.0-linux-x64.tar.gz && cd obx-portal-0.2.0-linux-x64
 ./obx-portal                                       # http://localhost:8080, setup code in the output
 ```
 

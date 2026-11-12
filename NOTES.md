@@ -1,6 +1,6 @@
 # Implementation notes (node-ts)
 
-Decisions taken where the spec (v0.1.0) was silent, ambiguous or in tension with the project requirements. Each is the simplest reading that works on both runtimes; they are also reported to the spec maintainers.
+Decisions taken where the spec (v0.1.0, and since node-ts 0.2.0 spec v0.2.0) was silent, ambiguous or in tension with the project requirements. Each is the simplest reading that works on both runtimes; they are also reported to the spec maintainers.
 
 ## Protocol and ingest
 
@@ -15,6 +15,61 @@ Decisions taken where the spec (v0.1.0) was silent, ambiguous or in tension with
 9. **Images of all colours** (import-format.md, "all colours"): the colour part `ALL` in a file name, or an empty `color_code` in `assets.csv`, gives `color_code: null` and the external id `{style}_ALL_{position}`. File-name qualifiers follow the spec: two-part keys (`size_chart`, `tilted_left`, `tilted_right`) first, the rightmost role and view win, `other` is the view when the name also has another role.
 10. **`changes.available` webhooks** are sent at most every 30 seconds per subscription (minute tick plus right after writes). Retries: 1 min, 5 min, 30 min, 2 h, 6 h, 12 h, then given up; a subscription failing for 3 days is disabled.
 11. **Exports** keep one running export per API key; parts are ≤ 2 GiB, the manifest is streamed from stored lines (header counts are final). Exports expire 48 h after finishing.
+
+## Article data (spec 0.2.0)
+
+Article data: protocol.md §5.9, import-format.md §1.6 and rules 9 and 10, ingest.md §3.4. Code: `src/core/article.ts`.
+
+A1. **Storage.** The 0.2 fields live in the stored JSON document of the product or variant, like every other
+    field, so D1 and bun:sqlite need no new columns. They are stored only when stated (a 0.1 document and a
+    0.2 document without article data compare equal, so upgrading does not make every product "updated"),
+    and the representations return each of them, `null` when not stated, with `color.family` added to
+    every colour. `migrations/0005_fibre_flags.sql` rewrites the four documented 0.1 fibre keys
+    (`recycled_polyester`, `recycled_polyamide`, `recycled_cotton`, `organic_cotton`) in stored products;
+    any other `recycled_<fibre>` / `organic_<fibre>` is normalised when it is read (protocol, admin record,
+    CSV) and stored normalised on the next write. A re-import of a 0.1 file is therefore `unchanged`.
+A2. **A row with an error is skipped as a whole** (its product values and its variant). `fixtures/imports/5-invalid.csv`
+    needs this (a bad `height_cm` on a variant row leaves the product uncounted); in 0.1 this node still
+    applied the product part of a row whose variant part failed.
+A3. **Label warnings** (rule 10) are computed on every accepted product write on the product as stored (rule 9
+    kept values included): in an IngestResult as `warning_details` (only when there are any) and as
+    `"<code>: <detail>"` in `warnings`; in an import once per product, at its first row, with the code in
+    `obx_error` and the column of rule 10. They count in `counts.warnings` and are reported by dry runs too.
+    `fibre_percentages_not_100` is for textile item types only (spec 43fa091; the materials parser no longer
+    warns about the sum for every product). Animal fibres: rule 10's list plus every key ending in `_wool`
+    (as obx-go).
+A4. **Ingest API strictness.** The 0.2 sub-schemas are closed: an unknown member of `footwear_materials`, a
+    certification or `measurements` (other than `x-…`) is `422`, a registry list with a duplicate is `422`
+    (schema `uniqueItems`; the CSV drops duplicates instead), `color.family` must be one of the families
+    (`gray`/`multicolor` are accepted only in CSV cells), and `strap_length_cm` with `min` above `max` is `422`
+    (spec 43fa091). Empty `features`/`measurements` objects and an empty `certifications` list are stored as
+    `null`; so is a `footwear_materials` object without any part (see open question S2).
+A5. **Warnings without a code of their own** use `validation_failed` with severity `warning`: an unknown
+    `feature:<key>` column (once, on the header, `row: null`; its cells are stored as text), a `color_family`
+    that differs between rows of one colour, and a `color_family`, `size_length` or measurement cell on a row
+    without variant columns (ignored, one warning per cell). A feature that differs between rows of one product
+    keeps the first value with a warning, per key.
+A6. **Article data CSV** (portal `data.csv`, selection CSV, background zips) has the columns of import-format.md §1.2
+    in order: `item_subtype` after `item_type`; `contains_animal_origin` and `footwear_materials` after
+    `materials`; `certifications` after `country_of_origin`; after `status` a `feature:<key>` column for each
+    registry key and then the other keys the exported products have (sorted), then `attr:<key>`;
+    `color_family` after the colour names, `size_length` after `size`, the twelve measurement columns after
+    `size_system`. Booleans are `yes`/`no`, lists `|`-separated, `strap_length_cm` is `min-max` (one number when
+    equal). It keeps `product_id`, `status` and `variant_status` as in 0.1 (see S3). Re-importing it is unchanged.
+
+Open questions reported to the spec maintainers (0.2.0):
+
+- S1. **Whole-row rejection** (A2) follows from `fixtures/imports/expected.json` ("every row is skipped") but
+  import-format.md §1.6 only says "an error `validation_failed` for that row"; rule text for "a row with an
+  error writes nothing of that row" would make it explicit for every node.
+- S2. **`footwear_materials` with no part stated** (`{}` or all three `null`) via the Ingest API: protocol.md §5.9.2
+  says a part that is not stated is `null` and responses include all three parts, but not whether such an object
+  is `null` as a whole (as `measurements`/`features` are). This node stores `null`.
+- S3. **Export columns and status:** §1.2 says exports use "the same columns in the order of the tables", which
+  includes `status` and `variant_status`; obx-go's `canonicalcsv` export and the admin-ui mock leave them (and the
+  mock also `product_id`) out. This node keeps them (they are importable and were in 0.1).
+- S4. **`licence_number`** is not required by Certifications.json; this node always returns it (`null` when not
+  stated), as the expected fixtures show it.
 
 ## Admin and portal API
 
@@ -63,6 +118,20 @@ The recipient's language is the user's language, the requester's `contact.langua
 - Walked with Playwright against the vendored admin-ui on Bun, Docker Compose and `wrangler dev`: setup wizard, zip import, access request → approve → invitation → retailer login, catalog, article page, single-image download, EAN list, selection zip + CSV, background zip, API key and access key creation, scheduled import from a web address (run now and by the schedule).
 - Found and fixed on the way: zip downloads stalled after the first file on Bun (a stream `pull()` that returned without output); a repeated `PUT /blobs/{sha256}` hung on Bun because the request body was cancelled (now read and hash-checked); link-local and metadata addresses were allowed in development mode; header import problems used row 0 (now null).
 - `obx-conformance all` passed 47/47 on Bun and on `wrangler dev` then; after hardening (see below) 57/57 on both, 58/58 on Bun with `--rate-limit-test`. `obx push` of `fixtures/kestrel` then a second push (nothing uploaded, all unchanged) and `obx pull` (originals byte-identical, deletes mirrored) work.
+
+## Spec 0.2.0 (2026-11-12)
+
+- `obx-conformance all` built from obx-go 626b3a7 (spec 43fa091): 64 passed, 0 failed, 1 skipped (S-RATE-2,
+  optional, needs `--rate-limit-test`) on Bun and on `wrangler dev` with local D1 and R2; all 47 required
+  tests pass, including P-CAT-5, P-CAT-6, I-IMP-7 and I-IMP-8 and the 0.2 checks in P-CAT-1.
+- Found on the way: with wrangler 4.160 `GET /__scheduled` (the `--test-scheduled` trigger CI used) is
+  answered by the assets' `single-page-application` fallback, so the Cron handler never ran in `wrangler
+  dev` and the conformance import stalled after its last request-driven step. CI and the smoke test use
+  `/cdn-cgi/handler/scheduled`, which wrangler handles before the asset router; production is unaffected
+  (Cloudflare calls the Cron Trigger directly).
+- Browser tests: the admin-ui 0.2 article page shows the label information above the images, which are
+  `loading="lazy"`; the image check scrolls them into view. A new walk opens KO-1010 as a Dutch retailer and
+  checks the footwear materials and heel height (with axe).
 
 ## Production hardening (2026-09-28)
 

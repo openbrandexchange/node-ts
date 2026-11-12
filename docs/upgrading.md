@@ -7,7 +7,8 @@ Versions follow [Semantic Versioning](https://semver.org/):
   settings. Read the "Upgrading" notes of that version in [CHANGELOG.md](../CHANGELOG.md).
 - **Major** (0.x → 1.0): may need a manual step; the changelog says which.
 
-Protocol compatibility is separate: every 0.1.x portal speaks OBX protocol 0.1, and retailers' software
+Protocol compatibility is separate: every 0.2.x portal speaks OBX protocol 0.2 (0.1.x spoke 0.1; 0.2 only adds
+fields, so software written for 0.1 keeps working), and retailers' software
 keeps working across portal updates.
 
 ## Before every upgrade
@@ -20,9 +21,9 @@ keeps working across portal updates.
 
 ## Cloudflare
 
-- **Deploy button copy:** merge the release into your repository (`git pull https://github.com/openbrandexchange/node-ts v0.1.1`)
+- **Deploy button copy:** merge the release into your repository (`git pull https://github.com/openbrandexchange/node-ts v0.2.0`)
   and push; Workers Builds runs `npm run deploy` (deploy, then migrations).
-- **From your computer:** `git fetch --tags && git checkout v0.1.1 && bun install && bun run deploy`.
+- **From your computer:** `git fetch --tags && git checkout v0.2.0 && bun install && bun run deploy`.
 - **Prebuilt bundle:** unpack the new `obx-node-ts-cloudflare-<version>.tar.gz` over the old folder and run `npm run deploy`.
 
 Rolling back the code: `bunx wrangler rollback` (Workers keeps earlier versions). If the new version
@@ -33,20 +34,20 @@ the upgrade), because an older version refuses a database migrated by a newer on
 
 ```sh
 docker compose pull && docker compose up -d                 # published image
-git pull && git checkout v0.1.1 && docker compose up -d --build   # built from source
+git pull && git checkout v0.2.0 && docker compose up -d --build   # built from source
 docker compose logs -f portal                               # migrations and "listening"
 curl -fs http://localhost:8080/readyz
 ```
 
-Pin a version in production (`ghcr.io/openbrandexchange/node-ts:0.1.1` or `:0.1` for patches only)
+Pin a version in production (`ghcr.io/openbrandexchange/node-ts:0.2.0` or `:0.2` for patches only)
 rather than `latest`.
 
 ## Standalone binary and systemd
 
 ```sh
 sudo systemctl stop brand-portal
-sudo -u portal ./obx-portal-backup backup /var/backups/portal/before-0.1.1   # with OBX_DATA_DIR set
-sudo tar -xzf obx-portal-0.1.1-linux-x64.tar.gz -C /opt && sudo ln -sfn /opt/obx-portal-0.1.1-linux-x64 /opt/brand-portal
+sudo -u portal ./obx-portal-backup backup /var/backups/portal/before-0.2.0   # with OBX_DATA_DIR set
+sudo tar -xzf obx-portal-0.2.0-linux-x64.tar.gz -C /opt && sudo ln -sfn /opt/obx-portal-0.2.0-linux-x64 /opt/brand-portal
 sudo systemctl start brand-portal
 ```
 

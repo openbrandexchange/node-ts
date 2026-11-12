@@ -32,7 +32,7 @@ The Portal for Cloudflare runs as one Cloudflare Worker with:
 > The button can only copy a **public** repository. While `openbrandexchange/node-ts` is private, use option B.
 
 Every later push to your copy of the repository deploys again (Workers Builds). To take a new
-release, merge the upstream tag into your copy (`git pull https://github.com/openbrandexchange/node-ts v0.1.1`)
+release, merge the upstream tag into your copy (`git pull https://github.com/openbrandexchange/node-ts v0.2.0`)
 and push; read [upgrading.md](upgrading.md) first.
 
 ## Option B: from your computer
