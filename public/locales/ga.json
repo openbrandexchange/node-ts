@@ -1654,5 +1654,17 @@
       "why": "Ní ionann céatadáin na coda seo agus 100%. Tugtar an comhdhéanamh mar chion de mheáchan iomlán na snáithíní.",
       "law": "Rialachán (AE) Uimh. 1007/2011, Airteagail 9 agus 11"
     }
+  },
+  "demo": {
+    "banner": "Taispeántas, sonraí bréige",
+    "bannerNote": "Cealaítear athruithe go huathoibríoch.",
+    "title": "Breathnaigh thart gan chuntas",
+    "intro": "Branda bréige le sonraí tástála. Roghnaigh conas is mian leat breathnú air.",
+    "asRetailer": "Féach mar mhiondíoltóir",
+    "asRetailerHint": "Cuardach, liosta EAN, leathanaigh táirge, íoslódálacha",
+    "asBrand": "Féach mar bhranda",
+    "asBrandHint": "Catalóg, iompórtáil Excel, rochtain de réir miondíoltóra, staitisticí",
+    "refused": "Ní féidir é seo a dhéanamh sa taispeántas.",
+    "api": "Eochair API inléite amháin d'fhorbróirí"
   }
 }

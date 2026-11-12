@@ -315,3 +315,15 @@ describe("exports, usage, rate limits (P-EXP-1, P-USE-1, P-RATE-1, P-ERR-1)", ()
     expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
   });
 });
+
+describe("conditional product reads", () => {
+  test("If-None-Match uses the weak comparison (a CDN that compresses sends W/\"…\" back)", async () => {
+    const id = await productId("KO-1001");
+    const first = await node.api(at, "GET", `/obx/v1/products/${id}`);
+    const etag = first.headers.get("etag")!;
+    expect(etag).toMatch(/^"[0-9a-f]{64}"$/);
+    expect((await node.api(at, "GET", `/obx/v1/products/${id}`, { headers: { "if-none-match": etag } })).status).toBe(304);
+    expect((await node.api(at, "GET", `/obx/v1/products/${id}`, { headers: { "if-none-match": `W/${etag}` } })).status).toBe(304);
+    expect((await node.api(at, "GET", `/obx/v1/products/${id}`, { headers: { "if-none-match": '"other"' } })).status).toBe(200);
+  });
+});

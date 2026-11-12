@@ -1624,5 +1624,17 @@
       "why": "Šios dalies procentai nesudaro 100 %. Sudėtis nurodoma kaip bendro pluoštų svorio dalis.",
       "law": "Reglamentas (ES) Nr. 1007/2011, 9 ir 11 straipsniai"
     }
+  },
+  "demo": {
+    "banner": "Demonstracinė versija, išgalvoti duomenys",
+    "bannerNote": "Pakeitimai atšaukiami automatiškai.",
+    "title": "Apsižvalgykite be paskyros",
+    "intro": "Išgalvotas prekės ženklas su bandomaisiais duomenimis. Pasirinkite, kaip norite jį peržiūrėti.",
+    "asRetailer": "Žiūrėti kaip prekybininkas",
+    "asRetailerHint": "Paieška, EAN sąrašas, produktų puslapiai, atsisiuntimai",
+    "asBrand": "Žiūrėti kaip prekės ženklas",
+    "asBrandHint": "Katalogas, Excel importas, prieiga pagal prekybininką, statistika",
+    "refused": "Demonstracinėje versijoje to padaryti negalima.",
+    "api": "Tik skaitymo API raktas kūrėjams"
   }
 }

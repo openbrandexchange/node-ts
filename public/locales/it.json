@@ -1594,5 +1594,17 @@
       "why": "Le percentuali di questa parte non arrivano a 100%. La composizione si esprime come quota del peso totale delle fibre.",
       "law": "Regolamento (UE) n. 1007/2011, artt. 9 e 11"
     }
+  },
+  "demo": {
+    "banner": "Demo, dati fittizi",
+    "bannerNote": "Le modifiche vengono annullate automaticamente.",
+    "title": "Dai un'occhiata senza account",
+    "intro": "Un marchio fittizio con dati di prova. Scegli come vuoi guardarlo.",
+    "asRetailer": "Visualizza come rivenditore",
+    "asRetailerHint": "Ricerca, elenco EAN, schede prodotto, download",
+    "asBrand": "Visualizza come marchio",
+    "asBrandHint": "Catalogo, importazione Excel, accesso per rivenditore, statistiche",
+    "refused": "Non è possibile nella demo.",
+    "api": "Chiave API di sola lettura per sviluppatori"
   }
 }

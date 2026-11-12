@@ -10,6 +10,7 @@ import { adminAuth, adminMiddleware, ensureSetupCode } from "./routes/admin-auth
 import { adminManage } from "./routes/admin-manage";
 import { portal } from "./routes/portal";
 import { adminPrivacy } from "./routes/admin-privacy";
+import { demo, demoGuard } from "./routes/demo";
 import { tick } from "./core/cron";
 import { runJobs } from "./core/jobs";
 import { isShuttingDown, metricsAuthorized, metricsText, readiness, recordRequest, requestIdFrom } from "./core/ops";
@@ -53,7 +54,14 @@ function applyHeaders(res: Response, req: Request, path: string, requestId: stri
   if (path.startsWith("/obx/") || path.startsWith("/.well-known/")) res.headers.set("obx-version", OBX_VERSION);
 }
 
+/** Demo mode never sends e-mail, whatever is configured. */
+function demoPlatform(platform: Platform): Platform {
+  if (platform.config.demo) platform.mailer = { configured: false, send: async () => {} };
+  return platform;
+}
+
 export function createApp(platform: Platform) {
+  demoPlatform(platform);
   const app = new Hono<AppEnv>();
 
   // Liveness: the process answers. No database access, so a slow database never restarts healthy instances.
@@ -117,9 +125,11 @@ export function createApp(platform: Platform) {
     return c.body(await metricsText(ctx), 200, { "content-type": "text/plain; version=0.0.4; charset=utf-8", "cache-control": "no-store" });
   });
 
+  if (platform.config.demo) app.use("*", demoGuard);
   app.route("/", protocol);
   app.route("/obx/v1/ingest", ingest);
   app.use("/admin/api/*", adminMiddleware);
+  if (platform.config.demo) app.route("/", demo);
   app.route("/", adminAuth);
   app.route("/", adminPrivacy);
   app.route("/", adminManage);
@@ -181,6 +191,7 @@ function allowedMethods(routes: { path: string; method: string }[]) {
 
 /** Background work for adapters: the minute tick and "run queued jobs now". */
 export function createWorker(platform: Platform) {
+  demoPlatform(platform);
   return {
     /** Applies migrations and fails fast (e.g. a database newer than this software) before serving. */
     async prepare() {

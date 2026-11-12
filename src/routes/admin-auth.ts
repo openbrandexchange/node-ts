@@ -19,6 +19,7 @@ import { blobKey } from "../core/blobs";
 import type { Ctx } from "../core/ctx";
 import { isAudited, writeAudit, type AuditActor } from "../core/audit";
 import { matchedRoutes } from "hono/route";
+import { demoInfo } from "../core/demo";
 
 export const adminAuth = new Hono<AppEnv>();
 
@@ -45,7 +46,8 @@ function sessionJson(setupRequired: boolean, csrf: string, s: SessionInfo | { us
 
 /** Prints a one-time setup code to the log if none exists yet (OBX_SETUP_CODE wins). */
 export async function ensureSetupCode(ctx: Ctx, rotate = false): Promise<void> {
-  if (ctx.config.setupCode || (await ctx.isSetUp())) return;
+  // Demo mode sets itself up (core/demo.ts); there is no setup wizard to unlock.
+  if (ctx.config.setupCode || ctx.config.demo || (await ctx.isSetUp())) return;
   if (!rotate && (await ctx.meta("setup_code_hash"))) return;
   const raw = b64url(randomBytes(9)).replace(/[-_]/g, "x").toUpperCase().slice(0, 12);
   const code = `${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}`;
@@ -128,6 +130,8 @@ adminAuth.get("/admin/api/public/branding", async (c) => {
     access_requests_enabled: setUp && s.portal.access_requests_enabled,
     setup_required: !setUp,
     brands: setUp ? (await visibleBrands(ctx, null)).map((b) => ({ id: b.id, name: b.name })) : [],
+    // Demo mode only (docs/demo.md): the UI shows the demo banner and the one-click sign-in buttons.
+    ...(ctx.config.demo ? { "x-obx-demo": await demoInfo(ctx) } : {}),
   });
 });
 
@@ -221,7 +225,7 @@ adminAuth.get("/admin/api/session", async (c) => {
   return json(c, sessionJson(!(await ctx.isSetUp()), csrf, s));
 });
 
-async function loginAs(c: C, user: UserRow) {
+export async function loginAs(c: C, user: UserRow) {
   const ctx = ctxOf(c);
   c.set("auditActor", actorOf(user));
   const { sid, csrf } = await createSession(ctx, user.id);

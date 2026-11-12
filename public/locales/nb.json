@@ -1564,5 +1564,17 @@
       "why": "Prosentsatsene for denne delen blir ikke 100 %. Sammensetningen oppgis som andel av den totale fibervekten.",
       "law": "Forordning (EU) nr. 1007/2011 artikkel 9 og 11"
     }
+  },
+  "demo": {
+    "banner": "Demo, fiktive data",
+    "bannerNote": "Endringer tilbakestilles automatisk.",
+    "title": "Se deg rundt uten konto",
+    "intro": "Et fiktivt merke med testdata. Velg hvordan du vil se det.",
+    "asRetailer": "Se som forhandler",
+    "asRetailerHint": "Søk, EAN-liste, produktsider, nedlastinger",
+    "asBrand": "Se som merke",
+    "asBrandHint": "Katalog, Excel-import, tilgang per forhandler, statistikk",
+    "refused": "Dette er ikke mulig i demoen.",
+    "api": "Skrivebeskyttet API-nøkkel for utviklere"
   }
 }

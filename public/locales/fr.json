@@ -1594,5 +1594,17 @@
       "why": "Les pourcentages de cet élément ne font pas 100 %. La composition est exprimée en part du poids total des fibres.",
       "law": "Règlement (UE) n° 1007/2011, art. 9 et 11"
     }
+  },
+  "demo": {
+    "banner": "Démo, données fictives",
+    "bannerNote": "Les modifications sont annulées automatiquement.",
+    "title": "Découvrir sans compte",
+    "intro": "Une marque fictive avec des données de test. Choisissez votre point de vue.",
+    "asRetailer": "Voir en tant que revendeur",
+    "asRetailerHint": "Recherche, liste EAN, fiches produit, téléchargements",
+    "asBrand": "Voir en tant que marque",
+    "asBrandHint": "Catalogue, import Excel, accès par revendeur, statistiques",
+    "refused": "Ce n'est pas possible dans la démo.",
+    "api": "Clé API en lecture seule pour les développeurs"
   }
 }

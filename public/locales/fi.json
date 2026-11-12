@@ -1564,5 +1564,17 @@
       "why": "Tämän osan prosentit eivät ole yhteensä 100 %. Koostumus ilmoitetaan osuutena kuitujen kokonaispainosta.",
       "law": "Asetus (EU) N:o 1007/2011, 9 ja 11 artikla"
     }
+  },
+  "demo": {
+    "banner": "Demo, kuvitteellisia tietoja",
+    "bannerNote": "Muutokset perutaan automaattisesti.",
+    "title": "Tutustu ilman tiliä",
+    "intro": "Kuvitteellinen merkki testitiedoilla. Valitse, miten haluat tarkastella sitä.",
+    "asRetailer": "Näytä jälleenmyyjänä",
+    "asRetailerHint": "Haku, EAN-luettelo, tuotesivut, lataukset",
+    "asBrand": "Näytä merkkinä",
+    "asBrandHint": "Luettelo, Excel-tuonti, pääsy jälleenmyyjittäin, tilastot",
+    "refused": "Tämä ei ole mahdollista demossa.",
+    "api": "Vain luku -API-avain kehittäjille"
   }
 }

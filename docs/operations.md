@@ -21,6 +21,7 @@ same sentences. Empty values count as "not set".
 | `OBX_TRUST_PROXY` | `false` | Bun behind a reverse proxy: use `X-Forwarded-For` / `X-Forwarded-Proto`. |
 | `OBX_ALLOW_PRIVATE_URLS` | `false` | Development only: imports and webhooks may use `http://`, localhost and private addresses. Link-local and cloud-metadata addresses stay refused. A warning is logged at start. |
 | `OBX_METRICS_TOKEN` | metrics off | 16+ characters; enables `GET /metrics` with `Authorization: Bearer <token>`. |
+| `OBX_DEMO` | `false` | Public demo mode: **deletes all data at every reset**. Never on a real portal. `OBX_DEMO_*` settings: [demo.md](demo.md). |
 | `OBX_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
 | `OBX_ACCESS_LOG` | on for Bun, off for Workers | One JSON line per API request. |
 | `OBX_MAX_UPLOAD_BYTES` | 32 MiB (Workers) / 100 MiB (Bun) | Largest single upload; larger files use resumable uploads. |

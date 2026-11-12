@@ -1564,5 +1564,17 @@
       "why": "Die Prozentsätze dieses Teils ergeben nicht 100 %. Die Zusammensetzung wird als Anteil am gesamten Fasergewicht angegeben.",
       "law": "Verordnung (EU) Nr. 1007/2011, Art. 9 und 11"
     }
+  },
+  "demo": {
+    "banner": "Demo, fiktive Daten",
+    "bannerNote": "Änderungen werden automatisch zurückgesetzt.",
+    "title": "Ohne Konto umsehen",
+    "intro": "Eine fiktive Marke mit Testdaten. Wählen Sie, wie Sie sie ansehen möchten.",
+    "asRetailer": "Als Händler ansehen",
+    "asRetailerHint": "Suche, EAN-Liste, Produktseiten, Downloads",
+    "asBrand": "Als Marke ansehen",
+    "asBrandHint": "Katalog, Excel-Import, Zugriff pro Händler, Statistiken",
+    "refused": "In der Demo ist das nicht möglich.",
+    "api": "API-Schlüssel nur zum Lesen für Entwickler"
   }
 }

@@ -237,7 +237,7 @@ bunx wrangler dev             # Workers runtime locally
 
 ## Documentation
 
-[Hosting](docs/hosting.md) (Cloudflare, Docker, Cloud Run, standalone) · [Operations](docs/operations.md) · [Upgrading](docs/upgrading.md) · [Automatic upload](docs/automation.md) · [Security](docs/security.md) · [Performance](docs/performance.md) · [Privacy notice template](docs/privacy-notice-template.md) · [Changelog](CHANGELOG.md) · [Implementation notes](NOTES.md)
+[Hosting](docs/hosting.md) (Cloudflare, Docker, Cloud Run, standalone) · [Operations](docs/operations.md) · [Upgrading](docs/upgrading.md) · [Automatic upload](docs/automation.md) · [Security](docs/security.md) · [Performance](docs/performance.md) · [Privacy notice template](docs/privacy-notice-template.md) · [Demo mode](docs/demo.md) · [Changelog](CHANGELOG.md) · [Implementation notes](NOTES.md)
 
 Questions: hello@openbrandexchange.com. Security problems: security@openbrandexchange.com ([SECURITY.md](SECURITY.md)). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) (Developer Certificate of Origin), [Code of Conduct](CODE_OF_CONDUCT.md).
 

@@ -5,6 +5,24 @@ All notable changes to the Portal for Cloudflare (`node-ts`) are listed here. Th
 than replacing the software (see [docs/upgrading.md](docs/upgrading.md)); database migrations are
 always forward-only and applied automatically.
 
+## [Unreleased]
+
+### Added
+- **Demo mode** (`OBX_DEMO=true`, off by default; [docs/demo.md](docs/demo.md)): a public demo portal
+  with a one-click sign-in as a fixed demo retailer or a fixed demo brand admin (optionally behind
+  Cloudflare Turnstile), the banner "Demo, fictional data" (admin-ui), a public read-only API key,
+  and an automatic reset to the Kestrel fixtures (every `OBX_DEMO_RESET_MINUTES`, default 60, and on
+  demand). Passwords, e-mail, API and upload keys, webhooks, scheduled pulls, the shared accounts and
+  large uploads are refused or neutralised; per-address rate limits (Workers rate limiting bindings).
+  `scripts/demo-seed.ts` builds the seed archive; `deploy/demo/wrangler.jsonc` is the Open Brand
+  Exchange demo deployment. Problems may carry `x-obx-…` extension members.
+- admin-ui with the demo banner and sign-in buttons (vendored from admin-ui `main`).
+
+### Fixed
+- `GET /obx/v1/products/{id}` with `If-None-Match` uses the weak comparison (RFC 9110 §13.1.2), so it
+  answers `304` behind Cloudflare, which sends the ETag as `W/"…"` when it compresses the answer
+  (conformance P-CAT-1 against a deployed Worker).
+
 ## [0.2.1] - 2026-11-12
 
 Excel workbooks next to CSV files (spec import-format.md §5). Passes `obx-conformance all` built from

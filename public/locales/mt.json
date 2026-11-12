@@ -1654,5 +1654,17 @@
       "why": "Il-perċentwali ta’ din il-parti ma jammontawx għal 100%. Il-kompożizzjoni tingħata bħala sehem mill-piż totali tal-fibri.",
       "law": "Regolament (UE) Nru 1007/2011, Artikoli 9 u 11"
     }
+  },
+  "demo": {
+    "banner": "Demo, data fittizja",
+    "bannerNote": "It-tibdiliet jitħassru awtomatikament.",
+    "title": "Agħti ħarsa mingħajr kont",
+    "intro": "Brand fittizju b'data tat-test. Agħżel kif trid tarah.",
+    "asRetailer": "Ara bħala bejjiegħ",
+    "asRetailerHint": "Fittex, lista tal-EAN, paġni tal-prodotti, downloads",
+    "asBrand": "Ara bħala brand",
+    "asBrandHint": "Katalgu, importazzjoni minn Excel, aċċess għal kull bejjiegħ, statistika",
+    "refused": "Dan mhux possibbli fid-demo.",
+    "api": "Ċavetta API għall-qari biss għall-iżviluppaturi"
   }
 }
