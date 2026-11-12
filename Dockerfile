@@ -1,14 +1,14 @@
 # Docker build of the Portal for Cloudflare (node-ts) on the Bun runtime, for your own server or any
 # container host.
 # docker build -t brand-portal . && docker run -p 8080:8080 -v portal-data:/data brand-portal
-FROM oven/bun:1.3-slim AS deps
+FROM oven/bun:1.4-slim AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
 FROM litestream/litestream:0.3.13 AS litestream
 
-FROM oven/bun:1.3-slim
+FROM oven/bun:1.4-slim
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=8080 \
