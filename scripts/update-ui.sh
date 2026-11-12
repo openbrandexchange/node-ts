@@ -15,7 +15,13 @@ trap 'rm -rf "$TMP"' EXIT INT TERM
 if [ -n "$REF" ]; then
   git -C "$UI" archive "$REF" dist | tar -x -C "$TMP"
   DIST="$TMP/dist"
-  VERSION="$(git -C "$UI" describe --tags --always "$REF" 2>/dev/null || echo "$REF")"
+  # On a tag: the tag. Otherwise (a release commit not tagged yet) the package.json version and the
+  # commit, e.g. v0.2.0-g2582973, instead of describe's "<older tag>-N-g<sha>".
+  if ! VERSION="$(git -C "$UI" describe --tags --exact-match "$REF" 2>/dev/null)"; then
+    PKG="$(git -C "$UI" show "$REF:package.json" 2>/dev/null | sed -n 's/^  "version": "\(.*\)",$/\1/p')"
+    SHA="$(git -C "$UI" rev-parse --short "$REF")"
+    VERSION="${PKG:+v$PKG-g}$SHA"
+  fi
 else
   if [ ! -f "$UI/dist/index.html" ]; then
     echo "Building admin-ui in $UI ..."

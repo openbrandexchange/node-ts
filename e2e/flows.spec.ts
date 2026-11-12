@@ -92,7 +92,7 @@ test('a CSV plus a zip of images imports the whole catalog', async ({ page }) =>
   await logIn(page, admin)
   await page.getByRole('link', { name: 'Imports' }).first().click()
   await page.getByTestId('import-file-input').setInputFiles([`${FIX}/products.csv`, `${FIX}/assets.csv`, IMAGES_ZIP])
-  await expect(page.getByText('27 images')).toBeVisible()
+  await expect(page.getByText('35 images')).toBeVisible()
   await page.getByRole('button', { name: 'Start import' }).click()
   await expect(page).toHaveURL(/\/admin\/imports\/.+/)
   await expect(page.getByText('Everything was imported without problems.')).toBeVisible({ timeout: 90_000 })
@@ -150,7 +150,7 @@ test('the invited retailer sets a password, browses, pastes EANs and downloads a
 
   const list = page.getByRole('list', { name: 'Articles' })
   await expect(list.getByRole('listitem').first()).toBeVisible()
-  await expect(page.getByText('8 articles')).toBeVisible()
+  await expect(page.getByText('11 articles')).toBeVisible()
   await page.screenshot({ path: 'screenshots/05-portal.png' })
   await axe(page, 'portal catalog')
 
@@ -286,6 +286,9 @@ test('a scheduled import fetches the nightly export from a web address', async (
 })
 
 async function expectImagesLoaded(page: Page) {
+  // Thumbnails are loading="lazy"; since admin-ui 0.2 the label information sits above them, so
+  // bring every image into view before checking that it loaded.
+  for (const img of await page.locator('main img').all()) await img.scrollIntoViewIfNeeded()
   await expect.poll(async () =>
     page.locator('main img').evaluateAll((imgs) => imgs.length > 0 && imgs.every((i) => (i as HTMLImageElement).complete && (i as HTMLImageElement).naturalWidth > 0)),
   ).toBe(true)
@@ -308,10 +311,24 @@ test('a Dutch retailer sees the portal as a Beeldbank', async ({ page }) => {
   await logIn(page, retailer)
   await page.getByTestId('language-switcher').first().selectOption('nl')
   await expect(page.getByText('Beeldbank').first()).toBeVisible()
-  await expect(page.getByText('8 artikelen')).toBeVisible()
+  await expect(page.getByText('11 artikelen')).toBeVisible()
   await expectImagesLoaded(page)
   await page.screenshot({ path: 'screenshots/15-portal-nl.png' })
   await axe(page, 'portal in Dutch')
+  expect(problems).toEqual([])
+})
+
+test('a retailer sees the article data of spec 0.2 on the article page', async ({ page }) => {
+  const problems = watch(page)
+  await logIn(page, retailer)
+  await page.getByTestId('language-switcher').first().selectOption('nl')
+  await page.getByRole('link', { name: /KO-1010/ }).first().click()
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/chelsea/i)
+  await expect(page.getByText('Materialen schoeisel').first()).toBeVisible()
+  await expect(page.getByText('Bovenwerk').first()).toBeVisible()
+  await expect(page.getByText('Hakhoogte', { exact: false }).first()).toBeVisible()
+  await page.screenshot({ path: 'screenshots/16-portal-article-data.png', fullPage: true })
+  await axe(page, 'article data')
   expect(problems).toEqual([])
 })
 
