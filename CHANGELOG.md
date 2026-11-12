@@ -5,7 +5,14 @@ All notable changes to the Portal for Cloudflare (`node-ts`) are listed here. Th
 than replacing the software (see [docs/upgrading.md](docs/upgrading.md)); database migrations are
 always forward-only and applied automatically.
 
-## [Unreleased]
+## [0.2.1] - 2026-11-12
+
+Excel workbooks next to CSV files (spec import-format.md §5). Passes `obx-conformance all` built from
+obx-go 0.2.1 in the Cloudflare Workers runtime, including the optional Excel tests I-IMP-9 and I-IMP-10.
+
+### Upgrading
+- Nothing to do: no migration; take the new release as described in [docs/upgrading.md](docs/upgrading.md).
+  Retailers' software sees no change.
 
 ### Added
 - **Excel import** (spec import-format.md §5, a node feature; conformance I-IMP-9 and I-IMP-10): an
@@ -23,6 +30,11 @@ always forward-only and applied automatically.
   written; `.xlsm`, `.xls`, `.xlsb`, `.ods` and `.numbers` uploads are answered with
   `unsupported_media_type`. A package or folder with both `products.csv` and `products.xlsx` (or both
   assets files) is `import_invalid`.
+- The web interface is admin-ui 0.2.1 (commit 271150c): imports take `products.xlsx` and `assets.xlsx` and
+  link the Excel templates; import problems read "Row 12, column EAN (C)", sorted by row or by problem, with
+  a CSV download of the whole list; a refused workbook is explained in plain words. Retailers get "Article
+  data (Excel)" next to the CSV, and the article page shows the brand's own extra fields. The language files
+  the browser loads no longer carry the e-mail texts (the node still reads them from `public/locales/`).
 
 ### Changed
 - Header names (spec import-format.md §1.1): only space, tab, CR and LF are trimmed, each run of them and
@@ -165,5 +177,6 @@ the Cloudflare Workers runtime.
 - Renewing the secret of an API key that was created on approval retires the secret still waiting
   for the requester's software, so that software gets "already collected" instead of a dead secret.
 
+[0.2.1]: https://github.com/openbrandexchange/node-ts/releases/tag/v0.2.1
 [0.2.0]: https://github.com/openbrandexchange/node-ts/releases/tag/v0.2.0
 [0.1.0]: https://github.com/openbrandexchange/node-ts/releases/tag/v0.1.0
