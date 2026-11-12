@@ -99,8 +99,9 @@ jobs:
               --var OBX_SECRET_KEY:ci-conformance-secret-key-0123456789abcdef --var OBX_SETUP_CODE:CONFORMANCE-1 \
               --var OBX_ALLOW_PRIVATE_URLS:true --var OBX_MAIL_PROVIDER:console --var OBX_MAIL_FROM:portal@kestrel.example \
               >"$RUNNER_TEMP/node.log" 2>&1 &
-            # The Workers runtime runs background jobs from the minute cron; trigger it every few seconds.
-            nohup sh -c 'while sleep 3; do curl -s "http://127.0.0.1:8080/__scheduled?cron=*+*+*+*+*" >/dev/null; done' >/dev/null 2>&1 &
+            # The Workers runtime runs background jobs from the minute cron; trigger it every few seconds
+            # (wrangler's /cdn-cgi/handler/scheduled: /__scheduled now reaches the assets' SPA fallback).
+            nohup sh -c 'while sleep 3; do curl -s "http://127.0.0.1:8080/cdn-cgi/handler/scheduled?cron=*+*+*+*+*" >/dev/null; done' >/dev/null 2>&1 &
           fi
           for _ in $(seq 1 90); do curl -fs http://127.0.0.1:8080/readyz >/dev/null && break; sleep 1; done
           curl -fs http://127.0.0.1:8080/readyz

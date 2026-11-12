@@ -149,9 +149,13 @@ try {
   ]);
   const imp = await call("POST", "/obx/v1/ingest/imports", { bearer: it, body: body as BodyInit, headers: { "content-type": `multipart/form-data; boundary=${boundary}` } });
   check(imp.status === 202, "import accepted (202)");
+  // wrangler's scheduled-trigger endpoint. The older /__scheduled is answered by the asset router's
+  // single-page-application fallback since wrangler 4.160 (it returns index.html, the cron never runs).
+  const cron = await fetch(`${base}/cdn-cgi/handler/scheduled?cron=*+*+*+*+*`);
+  check(cron.ok && !(await cron.text()).trimStart().startsWith("<"), "the scheduled trigger reaches the Worker");
   let status = "";
   for (let i = 0; i < 40 && status !== "succeeded" && status !== "failed"; i++) {
-    await fetch(`${base}/__scheduled?cron=*+*+*+*+*`);
+    await fetch(`${base}/cdn-cgi/handler/scheduled?cron=*+*+*+*+*`);
     await Bun.sleep(500);
     status = (await call("GET", `/obx/v1/ingest/jobs/${imp.json.id}`, { bearer: it })).json?.status;
   }
