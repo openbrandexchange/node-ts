@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
-FROM litestream/litestream:0.3.13 AS litestream
+FROM litestream/litestream:0.5.18 AS litestream
 
 FROM oven/bun:1.3-slim
 WORKDIR /app
