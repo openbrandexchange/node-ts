@@ -18,6 +18,9 @@ that reads `materials` or `care`**; everything else is unchanged.
 - Retailers' software sees `OBX-Version: 0.3` and, in discovery, `obx_version` 0.3 and `spec_version` 0.3.0. It
   must read `part.code`, `fibers[].material.code` and `fibers[].qualifier.code` instead of `part`, `fiber` and
   the flags, and can show the `name` in the shopper's language.
+- Every `/changes` cursor issued before the upgrade (also an export's `changes_cursor`) is `410 cursor_expired`
+  (spec protocol.md §6.4, conformance P-FEED-7): retailers' software restarts without a cursor and gets a snapshot
+  in the 0.3 shapes. Cursors now carry a cursor epoch.
 - Brands' own systems that write through the Ingest API must send the 0.3 shapes (see Changed); CSV files keep
   working as they are.
 

@@ -73,7 +73,7 @@ describe("OAuth2 token endpoint and bearer auth (P-AUTH-1, P-AUTH-2)", () => {
   });
 });
 
-describe("change feed (P-FEED-1..4, P-FEED-6)", () => {
+describe("change feed (P-FEED-1..4, P-FEED-6, P-FEED-7)", () => {
   test("limit=1 paging yields the same entries as limit=500; garbage cursor is cursor_invalid", async () => {
     const big = await node.feed(at, undefined, 500);
     const small = await node.feed(at, undefined, 1);
@@ -82,6 +82,34 @@ describe("change feed (P-FEED-1..4, P-FEED-6)", () => {
     const bad = await node.api(at, "GET", "/obx/v1/changes?cursor=not-a-cursor");
     expect(bad.status).toBe(400);
     expect(bad.json.obx_error).toBe("cursor_invalid");
+  });
+
+  test("cursors issued before the 0.2 → 0.3 upgrade are cursor_expired; fresh cursors work (P-FEED-7)", async () => {
+    const { Keyring } = await import("../src/lib/crypto");
+    const { CURSOR_EPOCH } = await import("../src/core/changes");
+    const keys = new Keyring(node.platform.config.secretKey);
+    const live = await node.feed(at);
+    const snap = await node.api(at, "GET", "/obx/v1/changes?limit=1");
+    expect(snap.json.phase).toBe("snapshot");
+    for (const fresh of [live.cursor, snap.json.next_cursor as string]) {
+      const payload = (await keys.unseal<Record<string, unknown>>("cursor", fresh))!;
+      expect(payload.e).toBe(CURSOR_EPOCH);
+      expect((await node.api(at, "GET", `/obx/v1/changes?cursor=${encodeURIComponent(fresh)}`)).status).toBe(200);
+      // A 0.2 node sealed the same payload without an epoch.
+      const { e: _epoch, ...v02 } = payload;
+      const old = await keys.seal("cursor", v02);
+      const r = await node.api(at, "GET", `/obx/v1/changes?cursor=${encodeURIComponent(old)}`);
+      expect(r.status).toBe(410);
+      expect(r.headers.get("content-type")).toContain("application/problem+json");
+      expect(r.json.obx_error).toBe("cursor_expired");
+      // So is a cursor from any other epoch.
+      const other = await keys.seal("cursor", { ...payload, e: CURSOR_EPOCH + 1 });
+      expect((await node.api(at, "GET", `/obx/v1/changes?cursor=${encodeURIComponent(other)}`)).json.obx_error).toBe("cursor_expired");
+    }
+    // Restarting without a cursor works, and its cursors carry the epoch.
+    const restart = await node.feed(at);
+    expect(restart.entries.length).toBeGreaterThan(0);
+    expect((await keys.unseal<{ e?: number }>("cursor", restart.cursor))!.e).toBe(CURSOR_EPOCH);
   });
 
   test("a retailer restricted to kestrel never sees kestrel-trail (P-FEED-4, A-PORT-2)", async () => {

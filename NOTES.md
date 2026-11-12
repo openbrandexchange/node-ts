@@ -101,10 +101,15 @@ T7. **Label warnings** look at the material code (also written as a 0.1 key): `a
 
 Open questions reported to the spec maintainers (0.3.0):
 
-- S5. **Consumers after a breaking upgrade.** Products that do not change after the upgrade are not sent again in
-  `/changes`, so a consumer that keeps its cursor across the upgrade keeps their 0.2 shape. The spec could ask nodes
-  to write a `grant` change with `resync: true` for every retailer when the protocol's minor version changes before
-  1.0; this node does not (yet).
+- S5. **Consumers after a breaking upgrade** (resolved by spec protocol.md §6.4, conformance P-FEED-7). Products
+  that do not change after the upgrade are not sent again in `/changes`, so a consumer keeping its cursor would keep
+  their 0.2 shape. The spec now says a node that upgrades 0.2 → 0.3 MUST answer every cursor issued before the
+  upgrade with `410 cursor_expired`. This node puts a cursor epoch `e` (`CURSOR_EPOCH` in `src/core/changes.ts`,
+  1 for 0.3) in every `/changes` cursor (also the export's `changes_cursor`); a cursor without it (0.1/0.2) or
+  with another epoch is `410 cursor_expired` (after the node-id check, so a foreign cursor stays `400
+  cursor_invalid`). No migration or stored state: the upgrade is the deploy. Bump the epoch only on an
+  incompatible shape change. The conformance action `simulate_spec_upgrade` is not offered (P-FEED-7 SKIPs);
+  `test/protocol.test.ts` covers it by sealing a 0.2 cursor.
 
 ## Admin and portal API
 
