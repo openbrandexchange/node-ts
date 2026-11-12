@@ -62,38 +62,38 @@ The project name and the foundation's name are proper names: they are **never tr
 
 - Project: **Open Brand Exchange** (short: OBX, only where space is tight or in technical text).
 - Publisher: **Open Brand Exchange Foundation**. Until the foundation has been set up at a notary, the name is always followed by "(in formation)" in the reader's language, from the table below. The name itself stays English.
-- Imprint line (website footer and imprint page, NOTICE files): *An initiative of Richard Lindhout · Open Brand Exchange Foundation (in formation)*, with `hello@openbrandexchange.com`. The imprint page says once that the foundation will be a Dutch *stichting*. No street address or phone number unless the publisher provides one.
+- Imprint line (website footer and imprint page, NOTICE files): *Open Brand Exchange Foundation (in formation)*, with `hello@openbrandexchange.com`. The imprint page says once that the foundation will be a Dutch *stichting*. No street address or phone number unless the publisher provides one.
 - Contact addresses: `hello@openbrandexchange.com` (general) and `security@openbrandexchange.com` (vulnerability reports). No company addresses of implementers.
 
-| Language | "(in formation)" | Imprint: "An initiative of" |
-|---|---|---|
-| Български (`bg`) | (в процес на учредяване) | Инициатива на |
-| Čeština (`cs`) | (v založení) | Iniciativa, kterou založil |
-| Dansk (`da`) | (under stiftelse) | Et initiativ af |
-| Deutsch (`de`) | (in Gründung) | Eine Initiative von |
-| Ελληνικά (`el`) | (υπό σύσταση) | Πρωτοβουλία του |
-| English (`en`) | (in formation) | An initiative of |
-| Español (`es`) | (en constitución) | Una iniciativa de |
-| Eesti (`et`) | (asutamisel) | Algataja: |
-| Suomi (`fi`) | (perusteilla) | Aloitteentekijä: |
-| Français (`fr`) | (en cours de constitution) | Une initiative de |
-| Gaeilge (`ga`) | (á bunú) | Tionscnamh de chuid |
-| Hrvatski (`hr`) | (u osnivanju) | Inicijativa koju je pokrenuo |
-| Magyar (`hu`) | (alapítás alatt) | Kezdeményező: |
-| Italiano (`it`) | (in via di costituzione) | Un'iniziativa di |
-| Lietuvių (`lt`) | (steigiama) | Iniciatorius: |
-| Latviešu (`lv`) | (dibināšanā) | Iniciators: |
-| Malti (`mt`) | (qed titwaqqaf) | Inizjattiva ta' |
-| Norsk bokmål (`nb`) | (under stiftelse) | Et initiativ fra |
-| Nederlands (`nl`) | (in oprichting) | Een initiatief van |
-| Polski (`pl`) | (w organizacji) | Inicjatywa, którą założył |
-| Português (`pt`) | (em constituição) | Uma iniciativa de |
-| Română (`ro`) | (în curs de constituire) | O inițiativă a lui |
-| Slovenčina (`sk`) | (v založení) | Iniciatíva, ktorú založil |
-| Slovenščina (`sl`) | (v ustanavljanju) | Pobuda, ki jo je začel |
-| Svenska (`sv`) | (under bildande) | Ett initiativ av |
+| Language | "(in formation)" |
+|---|---|
+| Български (`bg`) | (в процес на учредяване) |
+| Čeština (`cs`) | (v založení) |
+| Dansk (`da`) | (under stiftelse) |
+| Deutsch (`de`) | (in Gründung) |
+| Ελληνικά (`el`) | (υπό σύσταση) |
+| English (`en`) | (in formation) |
+| Español (`es`) | (en constitución) |
+| Eesti (`et`) | (asutamisel) |
+| Suomi (`fi`) | (perusteilla) |
+| Français (`fr`) | (en cours de constitution) |
+| Gaeilge (`ga`) | (á bunú) |
+| Hrvatski (`hr`) | (u osnivanju) |
+| Magyar (`hu`) | (alapítás alatt) |
+| Italiano (`it`) | (in via di costituzione) |
+| Lietuvių (`lt`) | (steigiama) |
+| Latviešu (`lv`) | (dibināšanā) |
+| Malti (`mt`) | (qed titwaqqaf) |
+| Norsk bokmål (`nb`) | (under stiftelse) |
+| Nederlands (`nl`) | (in oprichting) |
+| Polski (`pl`) | (w organizacji) |
+| Português (`pt`) | (em constituição) |
+| Română (`ro`) | (în curs de constituire) |
+| Slovenčina (`sk`) | (v založení) |
+| Slovenščina (`sl`) | (v ustanavljanju) |
+| Svenska (`sv`) | (under bildande) |
 
-Example (German): *Eine Initiative von Richard Lindhout · Open Brand Exchange Foundation (in Gründung)*. Once the foundation is registered, the "(in formation)" suffix and the initiator line are dropped in one change. The translations other than nl, de, fr and en still need a native review.
+Example (German): *Open Brand Exchange Foundation (in Gründung)*. Once the foundation is registered, the "(in formation)" suffix is dropped in one change. The translations other than nl, de, fr and en still need a native review.
 
 ## Editions
 

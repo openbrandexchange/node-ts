@@ -230,6 +230,6 @@ Questions: hello@openbrandexchange.com. Security problems: security@openbrandexc
 
 GNU Affero General Public License v3.0 only — see [LICENSE](LICENSE) and [NOTICE](NOTICE). If you run a modified version for others, you must offer them its source code. The protocol specification is CC-BY-4.0; the shared admin UI and the Go SDK are Apache-2.0.
 
-An initiative of Richard Lindhout · Open Brand Exchange Foundation (in formation).
+Open Brand Exchange Foundation (in formation).
 
 <sub>Works with Open Brand Exchange.</sub>

@@ -1,7 +1,7 @@
 Open Brand Exchange · Portal for Cloudflare (node-ts)
-Copyright 2026 Richard Lindhout and contributors
+Copyright 2026 Open Brand Exchange Foundation (in formation) and contributors
 
-An initiative of Richard Lindhout · Open Brand Exchange Foundation (in formation)
+Open Brand Exchange Foundation (in formation)
 Contact: hello@openbrandexchange.com · Security reports: security@openbrandexchange.com
 
 This program is free software: you can redistribute it and/or modify it under
@@ -21,7 +21,7 @@ This product includes:
   https://github.com/openbrandexchange/admin-ui. Its own third-party notices are
   shipped with it in public/.
 - Fixtures of the Open Brand Exchange specification (test/fixtures), CC-BY-4.0,
-  "Open Brand Exchange specification, © Richard Lindhout and contributors",
+  "Open Brand Exchange specification, © Open Brand Exchange Foundation (in formation) and contributors",
   https://github.com/openbrandexchange/spec.
 - Third-party packages bundled into the releases (production dependencies; run
   `bun scripts/check-licenses.ts --list` for the exact versions):
