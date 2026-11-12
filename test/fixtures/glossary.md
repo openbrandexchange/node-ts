@@ -1,6 +1,6 @@
 # Glossary: words people see
 
-**Status:** v0.1.0. Non-normative, but binding for every user-facing text in this project: the shared admin UI, e-mails sent by nodes, plugins and the website. Machine-readable copy of the core terms: [`admin-ui/src/i18n/glossary.json`](https://github.com/openbrandexchange/admin-ui/blob/main/src/i18n/glossary.json) (the source of truth for those terms). `node tools/glossary.mjs --compare ../admin-ui/src/i18n/glossary.json` checks that the table below matches it; `npm run validate` checks that every language and every term is present.
+**Status:** v0.2.0. Non-normative, but binding for every user-facing text in this project: the shared admin UI, e-mails sent by nodes, plugins and the website. Machine-readable copy of the core terms: [`admin-ui/src/i18n/glossary.json`](https://github.com/openbrandexchange/admin-ui/blob/main/src/i18n/glossary.json) (the source of truth for those terms). `node tools/glossary.mjs --compare ../admin-ui/src/i18n/glossary.json` checks that the table below matches it; `npm run validate` checks that every language and every term is present.
 
 The protocol has precise technical terms. People using a portal should never need them. A buyer in a shop wants *photos and article data*, not *renditions, grants and cursors*.
 

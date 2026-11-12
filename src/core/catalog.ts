@@ -20,6 +20,7 @@ import {
   type FileRef,
   type Files,
 } from "./reps";
+import { labelWarnings, labelWarningText, normalizeStoredProduct } from "./article";
 
 export type Kind = "brand" | "product" | "variant" | "asset";
 export type Op = "upsert" | "patch" | "delete" | "publish" | "unpublish";
@@ -37,6 +38,20 @@ export interface IngestResult {
   etag: string | null;
   error: Record<string, unknown> | null;
   warnings: string[];
+  /** Label completeness warnings with a stable code (import-format.md rule 10); present only when there are any. */
+  warning_details?: WarningDetail[];
+}
+
+export interface WarningDetail {
+  code: string;
+  pointer: string | null;
+  detail: string;
+}
+
+/** The 0.2 product and variant fields: stored only when stated, so data stored by 0.1 compares equal. */
+function withoutNull<T extends Record<string, unknown>>(o: T, keys: string[]): T {
+  for (const k of keys) if (o[k] === null || o[k] === undefined) delete o[k];
+  return o;
 }
 
 interface Orig {
@@ -127,7 +142,7 @@ export class CatalogSession {
       id: r.id as string,
       ext: r.external_id as string,
       status: r.status as Status,
-      stored: safeJsonParse(r.stored as string, {}),
+      stored: kind === "product" ? normalizeStoredProduct(safeJsonParse(r.stored as string, {})) : safeJsonParse(r.stored as string, {}),
       parent,
       files: kind === "asset" ? safeJsonParse<Files>(r.files as string, {}) : {},
       staged: kind === "asset" ? safeJsonParse<Files | null>(r.staged as string, null) : null,
@@ -467,22 +482,28 @@ export class CatalogSession {
       name: v.localized(d.name, "/name", true),
       description: v.localized(d.description, "/description"),
       item_type: v.key(d.item_type, "/item_type"),
+      item_subtype: v.key(d.item_subtype, "/item_subtype"),
       gpc_brick: v.str(d.gpc_brick, "/gpc_brick", { pattern: /^[0-9]{8}$/, msg: "A GPC brick code has 8 digits." }),
       target_group: v.key(d.target_group, "/target_group"),
       season: v.str(d.season, "/season", { max: 64 }),
       collection: v.str(d.collection, "/collection", { max: 200 }),
       materials: v.materials(d.materials, "/materials"),
+      contains_animal_origin: v.bool(d.contains_animal_origin, "/contains_animal_origin"),
+      footwear_materials: v.footwear(d.footwear_materials, "/footwear_materials"),
       care: v.care(d.care, "/care"),
       country_of_origin: v.country(d.country_of_origin, "/country_of_origin"),
+      certifications: v.certifications(d.certifications, "/certifications"),
       dpp_url: v.url(d.dpp_url, "/dpp_url"),
+      features: v.features(d.features, "/features"),
       attributes: v.attributes(d.attributes, "/attributes"),
       ...v.extensions(d),
     };
+    withoutNull(stored, ["item_subtype", "contains_animal_origin", "footwear_materials", "certifications", "features"]);
     return { stored: sortKeys(stored), status: this.normStatus(v, d.status) };
   }
 
   private normVariant(d: Record<string, unknown>, v: V) {
-    v.known(d, ["product_external_id", "gtin", "sku", "color", "size", "size_system", "status"], "");
+    v.known(d, ["product_external_id", "gtin", "sku", "color", "size", "size_length", "size_system", "measurements", "status"], "");
     let gtinOriginal: string | null = null;
     if (d.gtin !== undefined && d.gtin !== null) {
       if (typeof d.gtin !== "string") v.err("/gtin", "Must be text of digits.", "invalid_gtin");
@@ -496,21 +517,30 @@ export class CatalogSession {
     if (!isPlainObject(d.color)) v.err("/color", "This field is required (at least a colour code).");
     else {
       const c = d.color;
-      color = sortKeys({
-        code: v.str(c.code, "/color/code", { required: true, min: 1, max: 64 }),
-        name: v.localized(c.name, "/color/name"),
-        supplier_color: v.str(c.supplier_color, "/color/supplier_color", { max: 200 }),
-        ...v.extensions(c),
-      });
+      color = sortKeys(
+        withoutNull(
+          {
+            code: v.str(c.code, "/color/code", { required: true, min: 1, max: 64 }),
+            name: v.localized(c.name, "/color/name"),
+            supplier_color: v.str(c.supplier_color, "/color/supplier_color", { max: 200 }),
+            family: v.colorFamily(c.family, "/color/family"),
+            ...v.extensions(c),
+          },
+          ["family"],
+        ),
+      );
     }
     const stored = sortKeys({
       gtin_original: gtinOriginal,
       sku: v.str(d.sku, "/sku", { max: 200 }),
       color,
       size: v.str(d.size, "/size", { max: 64 }),
+      size_length: v.str(d.size_length, "/size_length", { max: 64 }),
       size_system: v.str(d.size_system, "/size_system", { max: 16 }),
+      measurements: v.measurements(d.measurements, "/measurements"),
       ...v.extensions(d),
     });
+    withoutNull(stored, ["size_length", "measurements"]);
     return { stored, status: this.normStatus(v, d.status) };
   }
 
@@ -623,7 +653,7 @@ export class CatalogSession {
     return o;
   }
 
-  private async result(op: Op, kind: Kind, ext: string, r: IngestResult["result"], o: Obj | null, warnings: string[]): Promise<IngestResult> {
+  private async result(op: Op, kind: Kind, ext: string, r: IngestResult["result"], o: Obj | null, warnings: string[], details?: WarningDetail[]): Promise<IngestResult> {
     return {
       op,
       kind,
@@ -634,6 +664,7 @@ export class CatalogSession {
       etag: o && r !== "deleted" ? await this.etag(o) : null,
       error: null,
       warnings,
+      ...(details?.length ? { warning_details: details } : {}),
     };
   }
 
@@ -710,6 +741,13 @@ export class CatalogSession {
       throw new ObxError(gt ? "invalid_gtin" : "validation_failed", gt ? gt.detail : "Some fields are invalid.", v.errors);
     }
     const status: Status = norm.status ?? existing?.status ?? this.settings.defaults.ingest_status;
+    // Label completeness warnings (ingest.md §3.4, import-format.md rule 10): never block the write.
+    const details: WarningDetail[] = [];
+    if (kind === "product")
+      for (const w of labelWarnings(norm.stored)) {
+        details.push({ code: w.code, pointer: w.pointer, detail: w.detail });
+        v.warnings.push(labelWarningText(w));
+      }
 
     // kind-specific uniqueness
     if (kind === "variant") await this.checkGtin(norm.stored.gtin_original as string | null, existing, ext);
@@ -736,7 +774,7 @@ export class CatalogSession {
         existing.status === status &&
         existing.parent === parentId &&
         (kind !== "asset" || (filesEqual(existing.files, newFiles!) && !(files && existing.staged)));
-      if (same) return this.result(op, kind, ext, "unchanged", existing, v.warnings);
+      if (same) return this.result(op, kind, ext, "unchanged", existing, v.warnings, details);
       if (existing.parent !== parentId && kind === "product") await this.loadChildren(existing.id);
       if (kind === "product" && existing.status !== status) await this.loadChildren(existing.id);
       existing.stored = norm.stored;
@@ -752,7 +790,7 @@ export class CatalogSession {
       existing.dirty = true;
       existing.modified_at = now;
       if (kind === "product" && existing.o.parent !== parentId) for (const ch of this.children(existing.id, "c")) ch.dirty = true;
-      return this.result(op, kind, ext, "updated", existing, v.warnings);
+      return this.result(op, kind, ext, "updated", existing, v.warnings, details);
     }
     if (fromPatch) throw new ObxError("not_found", `No ${kind} with external id "${ext}".`);
     const o = this.newObj(kind, ext, now);
@@ -762,7 +800,7 @@ export class CatalogSession {
     if (kind === "asset") o.files = newFiles ?? {};
     this.register(o);
     if (kind === "brand") this.brandCountCache = (this.brandCountCache ?? (await this.brandCount())) + 1;
-    return this.result(op, kind, ext, "created", o, v.warnings);
+    return this.result(op, kind, ext, "created", o, v.warnings, details);
   }
 
   private async checkGtin(gtinOriginal: string | null, existing: Obj | null, ext: string) {

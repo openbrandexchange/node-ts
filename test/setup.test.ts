@@ -39,7 +39,7 @@ describe("first-run setup (A-SETUP-1)", () => {
     expect(disc.json.capabilities).toEqual(expect.arrayContaining(["changes", "products", "by_gtin", "renditions"]));
     expect(disc.json.languages).toEqual(["nl", "en"]);
     expect(disc.json.brands.map((b: any) => b.name)).toEqual(["Kestrel"]);
-    expect(disc.headers.get("obx-version")).toBe("0.1");
+    expect(disc.headers.get("obx-version")).toBe("0.2");
   });
 });
 

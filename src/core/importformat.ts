@@ -3,6 +3,23 @@ import { normHeader, parseCsv } from "../lib/csv";
 import { parseIngestGtin } from "../lib/gtin";
 import { KEY_RE, LANG_RE, ROLES, VIEWS } from "./validate";
 import { normDateTime } from "../lib/util";
+import {
+  FEATURE_REGISTRY,
+  MEASUREMENT_KEYS,
+  normalizeFiber,
+  normalizeMaterials,
+  normKey,
+  parseCertificationsCell,
+  parseColorFamilyCell,
+  parseFeatureCell,
+  parseFootwearCell,
+  parseMeasurementCell,
+  parseStrapCell,
+  type FeatureValue,
+  type Fiber,
+  type Materials,
+  type Measurements,
+} from "./article";
 
 export interface RowError {
   file: string;
@@ -82,9 +99,14 @@ export function parseImageName(file: string): ParsedImageName | { error: string 
 
 // ------------------------------------------------------------------ materials & care
 
-export function parseMaterials(s: string): { value: { part: string; fibers: { fiber: string; percentage: number }[] }[] } | { error: string; warnings?: string[] } {
-  const out: { part: string; fibers: { fiber: string; percentage: number }[] }[] = [];
-  const warnings: string[] = [];
+/**
+ * The materials grammar (import-format.md §1.4): `part: 95% cotton, 5% elastane; lining: 100%
+ * polyester (recycled)`. A flag `(recycled)` / `(organic)` sets that flag on the fibre, and the 0.1
+ * keys recycled_<fibre> / organic_<fibre> give the same result. Percentages that do not add up to
+ * 100 are not an error: the label warning fibre_percentages_not_100 reports them (rule 10).
+ */
+export function parseMaterials(s: string): { value: Materials } | { error: string } {
+  const out: Materials = [];
   for (const rawPart of s.split(";")) {
     const partStr = rawPart.trim();
     if (!partStr) continue;
@@ -96,30 +118,40 @@ export function parseMaterials(s: string): { value: { part: string; fibers: { fi
       body = partStr.slice(colon + 1);
     }
     if (!KEY_RE.test(name)) return { error: `"${name}" is not a valid part name (use e.g. main, outer, lining).` };
-    const fibers: { fiber: string; percentage: number }[] = [];
+    const fibers: Fiber[] = [];
     for (const f of body.split(",")) {
       const t = f.trim();
       if (!t) continue;
       const m = t.match(/^(\d+(?:[.,]\d+)?)\s*%\s*(.+)$/);
-      if (!m) return { error: `"${t}" should look like "95% cotton".` };
+      if (!m) return { error: `"${t}" should look like "95% cotton" or "100% polyester (recycled)".` };
       const pct = Number(m[1].replace(",", "."));
-      const key = m[2].trim().toLowerCase().replace(/[\s-]+/g, "_");
-      if (!KEY_RE.test(key)) return { error: `"${m[2]}" is not a valid fibre name.` };
+      let rest = m[2].trim();
+      let recycled = false;
+      let organic = false;
+      for (;;) {
+        const fl = rest.match(/\s*\((recycled|organic)\)\s*$/i);
+        if (!fl) break;
+        if (fl[1].toLowerCase() === "recycled") recycled = true;
+        else organic = true;
+        rest = rest.slice(0, rest.length - fl[0].length);
+      }
+      const key = rest.trim().toLowerCase().replace(/[\s-]+/g, "_");
+      if (!KEY_RE.test(key)) return { error: `"${rest.trim()}" is not a valid fibre name.` };
       if (!(pct > 0) || pct > 100) return { error: `${m[1]}% is not a valid percentage.` };
-      fibers.push({ fiber: key, percentage: pct });
+      fibers.push(normalizeFiber({ fiber: key, percentage: pct, recycled, organic }));
     }
     if (!fibers.length) return { error: `Part "${name}" has no fibres.` };
-    const sum = fibers.reduce((a, f) => a + f.percentage, 0);
-    if (Math.abs(sum - 100) > 0.01) warnings.push(`The percentages of "${name}" add up to ${sum}, not 100.`);
     out.push({ part: name, fibers });
   }
   if (!out.length) return { error: "No materials found." };
-  return warnings.length ? { value: out, ...{ warnings } } : { value: out };
+  return { value: out };
 }
 
-export function formatMaterials(m: { part: string; fibers: { fiber: string; percentage: number }[] }[] | null | undefined): string {
+export function formatMaterials(m: Materials | null | undefined): string {
   if (!m?.length) return "";
-  return m.map((p) => `${p.part}: ${p.fibers.map((f) => `${f.percentage}% ${f.fiber}`).join(", ")}`).join("; ");
+  return normalizeMaterials(m)
+    .map((p) => `${p.part}: ${p.fibers.map((f) => `${f.percentage}% ${f.fiber}${f.recycled ? " (recycled)" : ""}${f.organic ? " (organic)" : ""}`).join(", ")}`)
+    .join("; ");
 }
 
 export function parseBool(s: string): boolean | null {
@@ -144,24 +176,35 @@ export interface ProductGroup {
 }
 
 /**
- * Which columns a products.csv has, by canonical name (aliases resolved): plain columns, the
- * languages of each text column (the plain one is the import's default language) and the
- * attr:<key> columns. A node keeps the stored value of every field whose column is missing.
+ * Which columns a products.csv has, by canonical name (aliases resolved): plain columns (the
+ * measurement columns among them), the languages of each text column (the plain one is the
+ * import's default language), the attr:<key> and the feature:<key> columns. A node keeps the
+ * stored value of every field whose column is missing (rule 9; per key for attributes, features
+ * and measurements).
  */
 export interface PresentColumns {
   plain: Set<string>;
   langs: Record<"name" | "description" | "color_name", Set<string>>;
   attrs: Set<string>;
+  features: Set<string>;
 }
 
-const COLUMN_ALIASES: Record<string, string> = { style: "style_number", ean: "gtin", barcode: "gtin", colour_code: "color_code", colour_name: "color_name" };
+const COLUMN_ALIASES: Record<string, string> = {
+  style: "style_number",
+  ean: "gtin",
+  barcode: "gtin",
+  colour_code: "color_code",
+  colour_name: "color_name",
+  colour_family: "color_family",
+};
 
 export function presentColumns(cols: string[], defaultLanguage: string): PresentColumns {
-  const p: PresentColumns = { plain: new Set(), langs: { name: new Set(), description: new Set(), color_name: new Set() }, attrs: new Set() };
+  const p: PresentColumns = { plain: new Set(), langs: { name: new Set(), description: new Set(), color_name: new Set() }, attrs: new Set(), features: new Set() };
   for (const c of cols) {
     const [raw, tag] = c.split(":");
     const base = COLUMN_ALIASES[raw] ?? raw;
     if (base === "attr" && tag) p.attrs.add(tag);
+    else if (base === "feature" && tag) p.features.add(normKey(tag));
     else if (tag) {
       if (base in p.langs) p.langs[base as keyof PresentColumns["langs"]].add(tag);
     } else if (base) {
@@ -172,25 +215,44 @@ export function presentColumns(cols: string[], defaultLanguage: string): Present
   return p;
 }
 
-type ColumnField = { path: string; column: string; kind: "plain" | "text" | "attrs" };
+type ColumnField = { path: string; column: string; kind: "plain" | "text" | "attrs" | "features" | "measurements" };
 export const PRODUCT_COLUMN_FIELDS: ColumnField[] = [
   { path: "name", column: "name", kind: "text" },
   { path: "description", column: "description", kind: "text" },
-  ...["item_type", "target_group", "season", "collection", "gpc_brick", "materials", "care", "country_of_origin", "dpp_url"].map((c) => ({ path: c, column: c, kind: "plain" as const })),
+  ...[
+    "item_type",
+    "item_subtype",
+    "target_group",
+    "season",
+    "collection",
+    "gpc_brick",
+    "materials",
+    "contains_animal_origin",
+    "footwear_materials",
+    "care",
+    "country_of_origin",
+    "certifications",
+    "dpp_url",
+  ].map((c) => ({ path: c, column: c, kind: "plain" as const })),
+  { path: "features", column: "feature", kind: "features" },
   { path: "attributes", column: "attr", kind: "attrs" },
 ];
 export const VARIANT_COLUMN_FIELDS: ColumnField[] = [
-  ...["gtin", "sku", "size", "size_system"].map((c) => ({ path: c, column: c, kind: "plain" as const })),
+  ...["gtin", "sku", "size", "size_length", "size_system"].map((c) => ({ path: c, column: c, kind: "plain" as const })),
   { path: "color.name", column: "color_name", kind: "text" },
+  { path: "color.family", column: "color_family", kind: "plain" },
   { path: "color.supplier_color", column: "supplier_color", kind: "plain" },
+  { path: "measurements", column: "measurements", kind: "measurements" },
 ];
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
  * Import rule 9 (spec import-format.md): for a product or variant the node already has, a field
- * whose column the file does not have keeps its stored value (texts per language, attributes per
- * key); an empty cell in a column the file has still removes the value. Changes `data` in place.
+ * whose column the file does not have keeps its stored value (texts per language; attributes,
+ * features and measurements per key); an empty cell in a column the file has still removes the
+ * value, and when the last feature or measurement is removed the object is null. Changes `data`
+ * in place.
  */
 export function keepAbsentColumns(data: Record<string, unknown>, stored: Record<string, unknown>, fields: ColumnField[], present: PresentColumns) {
   for (const f of fields) {
@@ -212,7 +274,14 @@ export function keepAbsentColumns(data: Record<string, unknown>, stored: Record<
     if (!isObj(was)) continue;
     const now: Record<string, unknown> = isObj(parent[key]) ? { ...(parent[key] as Record<string, unknown>) } : {};
     for (const [k, v] of Object.entries(was)) {
-      const absent = f.kind === "attrs" ? !present.attrs.has(k) : !present.langs[f.column as keyof PresentColumns["langs"]].has(k);
+      const absent =
+        f.kind === "attrs"
+          ? !present.attrs.has(k)
+          : f.kind === "features"
+            ? !present.features.has(k)
+            : f.kind === "measurements"
+              ? !present.plain.has(k)
+              : !present.langs[f.column as keyof PresentColumns["langs"]].has(k);
       if (!(k in now) && absent) now[k] = v;
     }
     if (Object.keys(now).length) parent[key] = now;
@@ -227,17 +296,39 @@ const PRODUCT_COLS = new Set([
   "name",
   "description",
   "item_type",
+  "item_subtype",
   "target_group",
   "season",
   "collection",
   "gpc_brick",
   "materials",
+  "contains_animal_origin",
+  "footwear_materials",
   "care",
   "country_of_origin",
+  "certifications",
   "dpp_url",
   "status",
 ]);
-const VARIANT_COLS = new Set(["variant_id", "gtin", "ean", "barcode", "sku", "color_code", "colour_code", "color_name", "colour_name", "supplier_color", "size", "size_system", "variant_status"]);
+const VARIANT_COLS = new Set([
+  "variant_id",
+  "gtin",
+  "ean",
+  "barcode",
+  "sku",
+  "color_code",
+  "colour_code",
+  "color_name",
+  "colour_name",
+  "color_family",
+  "colour_family",
+  "supplier_color",
+  "size",
+  "size_length",
+  "size_system",
+  ...MEASUREMENT_KEYS,
+  "variant_status",
+]);
 
 export interface ParsedProducts {
   groups: ProductGroup[];
@@ -245,7 +336,11 @@ export interface ParsedProducts {
   rows: number;
 }
 
-/** Parses products.csv into product groups (file order), with row errors and warnings. */
+/**
+ * Parses products.csv into product groups (file order), with row errors and warnings. A row with
+ * an error is skipped as a whole (its product and its variant), so a value outside the rules never
+ * reaches the catalog.
+ */
 export function parseProductsCsv(text: string, file: string, defaultLanguage: string): ParsedProducts {
   const errors: RowError[] = [];
   const err = (row: number | null, column: string | null, detail: string, value: string | null = null, code = "validation_failed", severity: "error" | "warning" = "error") =>
@@ -256,9 +351,20 @@ export function parseProductsCsv(text: string, file: string, defaultLanguage: st
     return { groups: [], errors, rows: 0 };
   }
   const cols = csv.header.map(normHeader);
-  // Unknown columns: one warning each.
+  // Unknown columns: one warning each. feature:<key> outside the registry: one warning each.
+  const featureCols: { key: string; i: number }[] = [];
   cols.forEach((c, i) => {
     const [base, lang] = c.split(":");
+    if (base === "feature" && lang !== undefined) {
+      const key = normKey(lang);
+      if (!KEY_RE.test(key)) err(null, csv.header[i], `"${lang}" is not a feature key (lowercase letters, digits and _); the column was ignored.`, null, "validation_failed", "warning");
+      else if (featureCols.some((f) => f.key === key)) err(null, csv.header[i], `The column feature:${key} appears twice; the first one is used.`, null, "validation_failed", "warning");
+      else {
+        featureCols.push({ key, i });
+        if (!(key in FEATURE_REGISTRY)) err(null, `feature:${key}`, `The feature "${key}" is not in the feature registry; its cells are stored as text.`, null, "validation_failed", "warning");
+      }
+      return;
+    }
     const ok =
       (PRODUCT_COLS.has(base) && (!lang || ["name", "description"].includes(base))) ||
       (VARIANT_COLS.has(base) && (!lang || ["color_name", "colour_name"].includes(base))) ||
@@ -293,24 +399,31 @@ export function parseProductsCsv(text: string, file: string, defaultLanguage: st
     product_id: idx(["product_id"]),
     style: idx(["style_number", "style"]),
     item_type: idx(["item_type"]),
+    item_subtype: idx(["item_subtype"]),
     target_group: idx(["target_group"]),
     season: idx(["season"]),
     collection: idx(["collection"]),
     gpc_brick: idx(["gpc_brick"]),
     materials: idx(["materials"]),
+    contains_animal_origin: idx(["contains_animal_origin"]),
+    footwear_materials: idx(["footwear_materials"]),
     care: idx(["care"]),
     country: idx(["country_of_origin"]),
+    certifications: idx(["certifications"]),
     dpp: idx(["dpp_url"]),
     status: idx(["status"]),
     variant_id: idx(["variant_id"]),
     gtin: idx(["gtin", "ean", "barcode"]),
     sku: idx(["sku"]),
     color: idx(["color_code", "colour_code"]),
+    color_family: idx(["color_family", "colour_family"]),
     supplier_color: idx(["supplier_color"]),
     size: idx(["size"]),
+    size_length: idx(["size_length"]),
     size_system: idx(["size_system"]),
     variant_status: idx(["variant_status"]),
   };
+  const measurementCols = MEASUREMENT_KEYS.map((k) => ({ key: k, i: idx([k]) })).filter((m) => m.i >= 0);
   const present = presentColumns(cols, defaultLanguage);
   const names = langCols(["name"]);
   const descs = langCols(["description"]);
@@ -322,6 +435,7 @@ export function parseProductsCsv(text: string, file: string, defaultLanguage: st
   }
   const groups = new Map<string, ProductGroup>();
   const order: string[] = [];
+  const families = new Map<string, string>(); // product key + colour code → colour family
   const cell = (cells: string[], i: number) => (i >= 0 ? (cells[i] ?? "").trim() : "");
   for (const { row, cells } of csv.rows) {
     const style = cell(cells, I.style);
@@ -332,6 +446,11 @@ export function parseProductsCsv(text: string, file: string, defaultLanguage: st
     const key = cell(cells, I.product_id) || style;
     const product: Record<string, unknown> = { style_number: style };
     let rowOk = true;
+    const fail = (column: string, detail: string, value: string | null, code = "validation_failed") => {
+      err(row, column, detail, value, code);
+      rowOk = false;
+    };
+    const warn = (column: string, detail: string, value: string | null) => err(row, column, detail, value, "validation_failed", "warning");
     const nm: Record<string, string> = {};
     for (const n of names) if (cell(cells, n.i)) nm[n.lang] = cell(cells, n.i);
     if (Object.keys(nm).length) product.name = nm;
@@ -348,26 +467,32 @@ export function parseProductsCsv(text: string, file: string, defaultLanguage: st
     for (const [k, f] of simple) if (cell(cells, I[k])) product[f] = f === "country_of_origin" ? cell(cells, I[k]).toUpperCase() : cell(cells, I[k]);
     for (const [k, f] of [
       ["item_type", "item_type"],
+      ["item_subtype", "item_subtype"],
       ["target_group", "target_group"],
     ] as const) {
       const v = cell(cells, I[k]);
       if (!v) continue;
       const key2 = v.toLowerCase().replace(/[\s-]+/g, "_");
-      if (!KEY_RE.test(key2)) {
-        err(row, f, `"${v}" is not a valid ${f} key.`, v);
-        rowOk = false;
-      } else product[f] = key2;
+      if (!KEY_RE.test(key2)) fail(f, `"${v}" is not a valid ${f} key.`, v);
+      else product[f] = key2;
     }
     const mat = cell(cells, I.materials);
     if (mat) {
       const m = parseMaterials(mat);
-      if ("error" in m) {
-        err(row, "materials", m.error, mat);
-        rowOk = false;
-      } else {
-        product.materials = m.value;
-        for (const w of (m as { warnings?: string[] }).warnings ?? []) err(row, "materials", w, mat, "validation_failed", "warning");
-      }
+      if ("error" in m) fail("materials", m.error, mat);
+      else product.materials = m.value;
+    }
+    const animal = cell(cells, I.contains_animal_origin);
+    if (animal) {
+      const b = parseBool(animal);
+      if (b === null) fail("contains_animal_origin", "contains_animal_origin must be yes or no.", animal);
+      else product.contains_animal_origin = b;
+    }
+    const fw = cell(cells, I.footwear_materials);
+    if (fw) {
+      const r = parseFootwearCell(fw);
+      if ("error" in r) fail("footwear_materials", r.error, fw);
+      else product.footwear_materials = r.value;
     }
     const care = cell(cells, I.care);
     if (care) {
@@ -375,80 +500,124 @@ export function parseProductsCsv(text: string, file: string, defaultLanguage: st
       const list: { code: string; text: null }[] = [];
       for (const c of codes) {
         const k = c.toLowerCase();
-        if (!KEY_RE.test(k)) {
-          err(row, "care", `"${c}" is not a valid care code.`, care);
-          rowOk = false;
-        } else {
-          if (!CARE_CODES.has(k)) err(row, "care", `Unknown care code "${c}" was kept.`, care, "validation_failed", "warning");
+        if (!KEY_RE.test(k)) fail("care", `"${c}" is not a valid care code.`, care);
+        else {
+          if (!CARE_CODES.has(k)) warn("care", `Unknown care code "${c}" was kept.`, care);
           list.push({ code: k, text: null });
         }
       }
       product.care = list;
     }
+    const certs = cell(cells, I.certifications);
+    if (certs) {
+      const r = parseCertificationsCell(certs);
+      if ("error" in r) fail("certifications", r.error, certs);
+      else product.certifications = r.value;
+    }
+    const features: Record<string, FeatureValue> = {};
+    for (const f of featureCols) {
+      const v = cell(cells, f.i);
+      if (!v) continue;
+      const r = parseFeatureCell(f.key, v, parseBool);
+      if ("error" in r) fail(`feature:${f.key}`, `feature ${f.key}: ${r.error}`, v);
+      else features[f.key] = r.value;
+    }
+    if (Object.keys(features).length) product.features = features;
     const at: Record<string, string> = {};
     for (const a of attrs) if (cell(cells, a.i)) at[a.c.slice(5)] = cell(cells, a.i);
     if (Object.keys(at).length) product.attributes = at;
     const status = cell(cells, I.status).toLowerCase();
-    if (status && status !== "published" && status !== "unpublished") {
-      err(row, "status", 'status must be "published" or "unpublished".', status);
-      rowOk = false;
+    if (status && status !== "published" && status !== "unpublished") fail("status", 'status must be "published" or "unpublished".', status);
+
+    // variant columns
+    const anyVariant = [I.variant_id, I.gtin, I.sku, I.color, I.size].some((i) => cell(cells, i) !== "");
+    let variant: { row: number; externalId: string; data: Record<string, unknown> } | null = null;
+    if (!anyVariant) {
+      for (const [column, i] of [["color_family", I.color_family], ["size_length", I.size_length], ...measurementCols.map((m) => [m.key, m.i] as const)] as const)
+        if (cell(cells, i)) warn(column, `${column} is ignored on a row without variant columns (gtin, variant_id, sku, color_code or size).`, cell(cells, i));
+    } else {
+      const color = cell(cells, I.color);
+      if (!color) fail("color_code", "color_code is required when a row has variant data.", null);
+      const v: Record<string, unknown> = { product_external_id: key, color: { code: color } };
+      const vc = v.color as Record<string, unknown>;
+      const cn: Record<string, string> = {};
+      for (const c of colorNames) if (cell(cells, c.i)) cn[c.lang] = cell(cells, c.i);
+      if (Object.keys(cn).length) vc.name = cn;
+      if (cell(cells, I.supplier_color)) vc.supplier_color = cell(cells, I.supplier_color);
+      const fam = cell(cells, I.color_family);
+      if (fam) {
+        const r = parseColorFamilyCell(fam);
+        if ("error" in r) fail("color_family", r.error, fam);
+        else {
+          vc.family = r.value;
+          const fk = `${key}\u0000${color}`;
+          const prev = families.get(fk);
+          if (prev === undefined) families.set(fk, r.value);
+          else if (prev !== r.value) warn("color_family", `Differs from an earlier row of colour ${color} (${prev}); every variant of one colour should have the same family.`, fam);
+        }
+      }
+      const gtinRaw = cell(cells, I.gtin);
+      let gtinWritten: string | null = null;
+      if (gtinRaw) {
+        const g2 = parseIngestGtin(gtinRaw);
+        if ("error" in g2)
+          fail("gtin", /e\+?\d/i.test(gtinRaw) ? "This looks like a number mangled by a spreadsheet (e.g. 2.00010010102E+12). Format the column as text and export again." : g2.error, gtinRaw, "invalid_gtin");
+        else {
+          v.gtin = g2.original;
+          gtinWritten = gtinRaw.replace(/\s+/g, "");
+        }
+      }
+      for (const [k, f] of [
+        ["sku", "sku"],
+        ["size", "size"],
+        ["size_length", "size_length"],
+        ["size_system", "size_system"],
+      ] as const)
+        if (cell(cells, I[k])) v[f] = cell(cells, I[k]);
+      if (typeof v.size_length === "string" && v.size_length.length > 64) fail("size_length", "size_length may be at most 64 characters.", v.size_length);
+      const ms: Measurements = {};
+      for (const m of measurementCols) {
+        const raw = cell(cells, m.i);
+        if (!raw) continue;
+        const r = m.key === "strap_length_cm" ? parseStrapCell(raw) : parseMeasurementCell(raw);
+        if ("error" in r) fail(m.key, r.error, raw);
+        else (ms as Record<string, unknown>)[m.key] = r.value;
+      }
+      if (Object.keys(ms).length) v.measurements = ms;
+      const vs = cell(cells, I.variant_status).toLowerCase();
+      if (vs) {
+        if (vs !== "published" && vs !== "unpublished") fail("variant_status", 'variant_status must be "published" or "unpublished".', vs);
+        else v.status = vs;
+      }
+      const vid = cell(cells, I.variant_id) || gtinWritten || `${style}-${color}-${cell(cells, I.size)}`;
+      variant = { row, externalId: vid, data: v };
     }
+    if (!rowOk) continue;
+
     let g = groups.get(key);
     if (!g) {
-      if (!rowOk) continue;
       g = { key, firstRow: row, brandRef: cell(cells, I.brand) || null, product, status: status || null, variants: [], rows: [], present };
       groups.set(key, g);
       order.push(key);
     } else {
       // Product columns repeated on each row: a different non-empty value is a warning; the first wins.
       for (const [f, v] of Object.entries(product)) {
+        if (f === "features" && isObj(v)) {
+          const cur = (g.product.features ??= {}) as Record<string, unknown>;
+          for (const [fk, fv] of Object.entries(v)) {
+            if (cur[fk] === undefined) cur[fk] = fv;
+            else if (JSON.stringify(cur[fk]) !== JSON.stringify(fv)) warn(`feature:${fk}`, `Differs from the first row of ${key}; the first value is used.`, typeof fv === "string" ? fv : JSON.stringify(fv));
+          }
+          continue;
+        }
         if (g.product[f] === undefined) g.product[f] = v;
-        else if (JSON.stringify(g.product[f]) !== JSON.stringify(v)) err(row, f, `Differs from the first row of ${key}; the first value is used.`, typeof v === "string" ? v : JSON.stringify(v), "validation_failed", "warning");
+        else if (JSON.stringify(g.product[f]) !== JSON.stringify(v)) warn(f, `Differs from the first row of ${key}; the first value is used.`, typeof v === "string" ? v : JSON.stringify(v));
       }
       if (!g.brandRef && cell(cells, I.brand)) g.brandRef = cell(cells, I.brand);
       if (!g.status && status) g.status = status;
     }
     g.rows.push(row);
-    // variant columns
-    const anyVariant = [I.variant_id, I.gtin, I.sku, I.color, I.size].some((i) => cell(cells, i) !== "");
-    if (!anyVariant) continue;
-    const color = cell(cells, I.color);
-    if (!color) {
-      err(row, "color_code", "color_code is required when a row has variant data.");
-      continue;
-    }
-    const v: Record<string, unknown> = { product_external_id: key, color: { code: color } };
-    const cn: Record<string, string> = {};
-    for (const c of colorNames) if (cell(cells, c.i)) cn[c.lang] = cell(cells, c.i);
-    if (Object.keys(cn).length) (v.color as Record<string, unknown>).name = cn;
-    if (cell(cells, I.supplier_color)) (v.color as Record<string, unknown>).supplier_color = cell(cells, I.supplier_color);
-    const gtinRaw = cell(cells, I.gtin);
-    let gtinWritten: string | null = null;
-    if (gtinRaw) {
-      const g2 = parseIngestGtin(gtinRaw);
-      if ("error" in g2) {
-        err(row, "gtin", /e\+?\d/i.test(gtinRaw) ? "This looks like a number mangled by a spreadsheet (e.g. 2.00010010102E+12). Format the column as text and export again." : g2.error, gtinRaw, "invalid_gtin");
-        continue;
-      }
-      v.gtin = g2.original;
-      gtinWritten = gtinRaw.replace(/\s+/g, "");
-    }
-    for (const [k, f] of [
-      ["sku", "sku"],
-      ["size", "size"],
-      ["size_system", "size_system"],
-    ] as const)
-      if (cell(cells, I[k])) v[f] = cell(cells, I[k]);
-    const vs = cell(cells, I.variant_status).toLowerCase();
-    if (vs) {
-      if (vs !== "published" && vs !== "unpublished") {
-        err(row, "variant_status", 'variant_status must be "published" or "unpublished".', vs);
-        continue;
-      }
-      v.status = vs;
-    }
-    const vid = cell(cells, I.variant_id) || gtinWritten || `${style}-${color}-${cell(cells, I.size)}`;
-    g.variants.push({ row, externalId: vid, data: v });
+    if (variant) g.variants.push(variant);
   }
   for (const k of order) {
     const g = groups.get(k)!;

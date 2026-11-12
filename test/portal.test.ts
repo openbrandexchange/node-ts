@@ -44,12 +44,14 @@ describe("retailer portal (A-INV-1, A-PORT-1, A-PORT-2)", () => {
     expect(v.json.preview).toBe(false);
     expect(v.json.permissions.original_download).toBe(true);
     const list = await retailer.req("GET", "/admin/api/portal/products?limit=5");
-    expect(list.json.total).toBe(8);
+    expect(list.json.total).toBe(11);
     expect(list.json.items.length).toBe(5);
     expect(list.json.next_cursor).toBeTruthy();
     expect(list.json.items[0].thumb_url).toContain("/renditions/thumb?");
     const more = await retailer.req("GET", `/admin/api/portal/products?limit=5&cursor=${encodeURIComponent(list.json.next_cursor)}`);
-    expect(more.json.items.length).toBe(3);
+    expect(more.json.items.length).toBe(5);
+    const last = await retailer.req("GET", `/admin/api/portal/products?limit=5&cursor=${encodeURIComponent(more.json.next_cursor)}`);
+    expect(last.json.items.length).toBe(1);
     const q = await retailer.req("GET", "/admin/api/portal/products?q=merino");
     expect(q.json.items.map((p: any) => p.style_number)).toContain("KO-1001");
     const byGtin = await retailer.req("GET", "/admin/api/portal/products?q=2000100101025");
@@ -58,7 +60,7 @@ describe("retailer portal (A-INV-1, A-PORT-1, A-PORT-2)", () => {
     expect(facets.json.brands.length).toBe(2);
     expect(facets.json.item_types.length).toBeGreaterThan(0);
     const filtered = await retailer.req("GET", `/admin/api/portal/products?brand_id=${brandIds["kestrel"]}`);
-    expect(filtered.json.total).toBe(6);
+    expect(filtered.json.total).toBe(9);
     const detail = await retailer.req("GET", `/admin/api/portal/products/${list.json.items[0].id}`);
     expect(detail.json.variants.length).toBeGreaterThan(0);
     const img = new URL(detail.json.assets[0].renditions.thumb.url);
@@ -67,7 +69,7 @@ describe("retailer portal (A-INV-1, A-PORT-1, A-PORT-2)", () => {
 
   test("restricted retailer never sees the other brand; originals hidden", async () => {
     const list = await restricted.req("GET", "/admin/api/portal/products?limit=50");
-    expect(list.json.total).toBe(6);
+    expect(list.json.total).toBe(9);
     expect(list.json.items.every((p: any) => p.brand.id === brandIds["kestrel"])).toBe(true);
     const trail = await node.platform.db.first<{ id: string }>("SELECT id FROM products WHERE brand_id = ?", [brandIds["kestrel-trail"]]);
     expect((await restricted.req("GET", `/admin/api/portal/products/${trail!.id}`)).status).toBe(404);

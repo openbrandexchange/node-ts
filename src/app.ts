@@ -19,6 +19,7 @@ import "./core/importjob";
 import "./core/batch";
 import "./core/bulk";
 import "./core/cron";
+import { OBX_VERSION } from "./core/article";
 
 export const API_PREFIXES = ["/admin/api", "/obx/", "/.well-known/"];
 export const OPS_PATHS = ["/healthz", "/readyz", "/metrics"];
@@ -49,7 +50,7 @@ function applyHeaders(res: Response, req: Request, path: string, requestId: stri
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) if (!res.headers.has(k)) res.headers.set(k, v);
   if (isHttps(req)) res.headers.set("strict-transport-security", HSTS);
   res.headers.set("x-request-id", requestId);
-  if (path.startsWith("/obx/") || path.startsWith("/.well-known/")) res.headers.set("obx-version", "0.1");
+  if (path.startsWith("/obx/") || path.startsWith("/.well-known/")) res.headers.set("obx-version", OBX_VERSION);
 }
 
 export function createApp(platform: Platform) {

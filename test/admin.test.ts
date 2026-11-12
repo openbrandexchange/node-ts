@@ -164,7 +164,7 @@ describe("settings effects", () => {
     expect(s.json.defaults.rights.channels).toContain("print");
     await node.drain();
     const f1 = await node.feed(at, f0.cursor);
-    expect(f1.entries.length).toBe(27);
+    expect(f1.entries.length).toBe(35);
     expect(f1.entries.every((e) => e.type === "asset" && e.op === "upsert" && e.data.rights.channels.includes("print"))).toBe(true);
     await admin.req("PATCH", "/admin/api/settings", { json: { portal: { allow_original_download: false } } });
     const f2 = await node.feed(at, f1.cursor);
@@ -312,7 +312,7 @@ describe("scheduled pull import (https URL)", () => {
       const r = await admin.req("GET", `/admin/api/imports/${run.json.id}`);
       expect(r.json.status).toBe("succeeded");
       expect(r.json.trigger).toBe("manual_run");
-      expect(r.json.counts.created).toBe(2 + 8 + 40 + 27 - 1);
+      expect(r.json.counts.created).toBe(2 + 11 + 46 + 35 - 1);
       const run2 = await admin.req("POST", `/admin/api/import-sources/${src.json.id}/run`, { json: {} });
       await node.drain();
       const r2 = await admin.req("GET", `/admin/api/imports/${run2.json.id}`);

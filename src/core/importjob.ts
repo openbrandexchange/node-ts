@@ -12,6 +12,14 @@ import { isPlainObject, safeJsonParse, slugify } from "../lib/util";
 import { fetchSource, type SourceRow } from "./sources";
 import type { Stmt } from "../platform";
 
+/** The products.csv column each label completeness warning names (import-format.md rule 10). */
+const LABEL_WARNING_COLUMN: Record<string, string> = {
+  fibre_composition_missing: "materials",
+  animal_origin_unknown: "contains_animal_origin",
+  footwear_materials_missing: "footwear_materials",
+  fibre_percentages_not_100: "materials",
+};
+
 export interface Loc {
   key: string;
   offset: number;
@@ -780,7 +788,15 @@ async function finishSession(ctx: Ctx, st: State, input: ImportInput, s: Catalog
   for (const x of results) {
     if (x.r.result === "error") resultErrors(x.r, x.file, x.row, sink);
     else countResult(st, x.r);
-    for (const w of x.r.warnings) sink.add({ file: x.file, row: x.row, column: null, severity: "warning", obx_error: "validation_failed", detail: w, value: null });
+    // Label completeness warnings (rule 10): once per product, at its first row, with their code
+    // and column; the other warnings are generic.
+    const coded = new Set<string>();
+    if (x.r.result !== "error")
+      for (const d of x.r.warning_details ?? []) {
+        coded.add(`${d.code}: ${d.detail}`);
+        sink.add({ file: x.file, row: x.row, column: LABEL_WARNING_COLUMN[d.code] ?? null, severity: "warning", obx_error: d.code, detail: d.detail, value: null });
+      }
+    for (const w of x.r.warnings) if (!coded.has(w)) sink.add({ file: x.file, row: x.row, column: null, severity: "warning", obx_error: "validation_failed", detail: w, value: null });
   }
 }
 

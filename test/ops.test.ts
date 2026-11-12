@@ -299,6 +299,6 @@ describe("D1 query cap per invocation (Workers)", () => {
     expect(Math.max(...perInvocation)).toBeLessThan(400);
     const job = await node.api(token, "GET", `/obx/v1/ingest/jobs/${r.json.id}`);
     expect(job.json.import_run.counts.errors).toBe(0);
-    expect(job.json.import_run.counts.files).toBe(27);
+    expect(job.json.import_run.counts.files).toBe(35);
   });
 });

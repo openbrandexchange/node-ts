@@ -1,10 +1,13 @@
-// Article data as CSV: the canonical import columns plus image_files, so an export can be re-imported.
+// Article data as CSV: the canonical import columns in the order of import-format.md §1.2 (0.2:
+// with the article data columns, a feature:<key> column per registry key and per other key the
+// products have) plus image_files, so an export can be re-imported.
 import type { Ctx } from "./ctx";
 import type { Viewer } from "./auth";
 import { writeCsv } from "../lib/csv";
 import { formatMaterials } from "./importformat";
 import { assetVisibleSql, placeholders, productVisibleSql, type AssetRow, type ProductRow, type VariantRow } from "./read";
 import { safeJsonParse } from "../lib/util";
+import { FEATURE_KEYS, FEATURE_REGISTRY, MEASUREMENT_KEYS, formatCertifications, formatFeature, formatFootwear, formatMeasurement, normalizeStoredProduct } from "./article";
 import { assetCore, assetFilename, type Files } from "./reps";
 
 export async function articleCsv(ctx: Ctx, viewer: Viewer, productIds: string[], delimiter: string): Promise<{ csv: string; rows: number }> {
@@ -22,12 +25,16 @@ export async function articleCsv(ctx: Ctx, viewer: Viewer, productIds: string[],
   const brands = new Map<string, string>();
   for (const b of await ctx.db.all<{ id: string; stored: string }>("SELECT id, stored FROM brands")) brands.set(b.id, String(safeJsonParse<Record<string, unknown>>(b.stored, {}).name ?? ""));
   const attrKeys = new Set<string>();
+  const otherFeatures = new Set<string>();
   const parsed = products.map((p) => {
-    const s = safeJsonParse<Record<string, unknown>>(p.stored, {});
+    const s = normalizeStoredProduct(safeJsonParse<Record<string, unknown>>(p.stored, {}));
     for (const k of Object.keys((s.attributes as Record<string, unknown>) ?? {})) attrKeys.add(k);
+    for (const k of Object.keys((s.features as Record<string, unknown>) ?? {})) if (!(k in FEATURE_REGISTRY)) otherFeatures.add(k);
     return { p, s };
   });
   const attrs = [...attrKeys].sort();
+  const features = [...FEATURE_KEYS, ...[...otherFeatures].sort()];
+  const yesNo = (v: unknown) => (v === true ? "yes" : v === false ? "no" : "");
   rows.push([
     "brand",
     "product_id",
@@ -35,24 +42,32 @@ export async function articleCsv(ctx: Ctx, viewer: Viewer, productIds: string[],
     ...langs.map((l) => `name:${l}`),
     ...langs.map((l) => `description:${l}`),
     "item_type",
+    "item_subtype",
     "target_group",
     "season",
     "collection",
     "gpc_brick",
     "materials",
+    "contains_animal_origin",
+    "footwear_materials",
     "care",
     "country_of_origin",
+    "certifications",
     "dpp_url",
     "status",
+    ...features.map((k) => `feature:${k}`),
     ...attrs.map((a) => `attr:${a}`),
     "variant_id",
     "gtin",
     "sku",
     "color_code",
     ...langs.map((l) => `color_name:${l}`),
+    "color_family",
     "supplier_color",
     "size",
+    "size_length",
     "size_system",
+    ...MEASUREMENT_KEYS,
     "variant_status",
     "image_files",
   ]);
@@ -68,6 +83,7 @@ export async function articleCsv(ctx: Ctx, viewer: Viewer, productIds: string[],
       const name = (s.name as Record<string, string>) ?? {};
       const desc = (s.description as Record<string, string>) ?? {};
       const at = (s.attributes as Record<string, unknown>) ?? {};
+      const ft = (s.features as Record<string, unknown>) ?? {};
       const base = [
         brands.get(p.brand_id) ?? "",
         p.external_id,
@@ -75,15 +91,20 @@ export async function articleCsv(ctx: Ctx, viewer: Viewer, productIds: string[],
         ...langs.map((l) => name[l] ?? ""),
         ...langs.map((l) => desc[l] ?? ""),
         s.item_type ?? "",
+        s.item_subtype ?? "",
         s.target_group ?? "",
         s.season ?? "",
         s.collection ?? "",
         s.gpc_brick ?? "",
         formatMaterials(s.materials as never),
+        yesNo(s.contains_animal_origin),
+        formatFootwear(s.footwear_materials),
         ((s.care as { code: string }[]) ?? []).map((c) => c.code).join("|"),
         s.country_of_origin ?? "",
+        formatCertifications(s.certifications),
         s.dpp_url ?? "",
         p.status,
+        ...features.map((k) => formatFeature(ft[k])),
         ...attrs.map((a) => (at[a] === undefined ? "" : typeof at[a] === "object" ? JSON.stringify(at[a]) : String(at[a]))),
       ];
       const pAssets = assets.filter((a) => a.product_id === p.id);
@@ -94,12 +115,12 @@ export async function articleCsv(ctx: Ctx, viewer: Viewer, productIds: string[],
           .join("|");
       const pv2 = variants.filter((v) => v.product_id === p.id);
       if (!pv2.length) {
-        rows.push([...base, "", "", "", "", ...langs.map(() => ""), "", "", "", "", filesFor(null)]);
+        rows.push([...base, "", "", "", "", ...langs.map(() => ""), "", "", "", "", "", ...MEASUREMENT_KEYS.map(() => ""), "", filesFor(null)]);
         continue;
       }
       for (const v of pv2) {
         const vs = safeJsonParse<Record<string, unknown>>(v.stored, {});
-        const color = (vs.color as { code: string; name?: Record<string, string>; supplier_color?: string }) ?? { code: "" };
+        const color = (vs.color as { code: string; name?: Record<string, string>; supplier_color?: string; family?: string }) ?? { code: "" };
         rows.push([
           ...base,
           v.external_id,
@@ -107,9 +128,12 @@ export async function articleCsv(ctx: Ctx, viewer: Viewer, productIds: string[],
           vs.sku ?? "",
           color.code,
           ...langs.map((l) => color.name?.[l] ?? ""),
+          color.family ?? "",
           color.supplier_color ?? "",
           vs.size ?? "",
+          vs.size_length ?? "",
           vs.size_system ?? "",
+          ...MEASUREMENT_KEYS.map((k) => formatMeasurement(vs.measurements, k)),
           v.status,
           filesFor(color.code),
         ]);

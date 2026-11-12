@@ -25,8 +25,8 @@ describe("canonical import (I-IMP-1..4)", () => {
     const job = await importKestrel(node, token);
     expect(job.status).toBe("succeeded");
     expect(job.import_run.counts.errors).toBe(0);
-    expect(job.import_run.counts.rows).toBe(40);
-    expect(job.import_run.counts.files).toBe(27);
+    expect(job.import_run.counts.rows).toBe(46);
+    expect(job.import_run.counts.files).toBe(35);
     const expected = JSON.parse(fixtureText("expected/counts.json"));
     const snap = await node.feed(at);
     expect(counts(snap.entries)).toEqual({ brand: expected.brands, product: expected.products, variant: expected.variants, asset: expected.assets });
@@ -147,7 +147,7 @@ describe("canonical import (I-IMP-1..4)", () => {
     const job = (await node.api(token, "GET", `/obx/v1/ingest/jobs/${r.json.id}`)).json;
     expect(job.status).toBe("succeeded");
     expect(job.import_run.counts.errors).toBe(0);
-    expect(counts((await node.feed(at)).entries)).toEqual({ brand: 2, product: 8, variant: 40, asset: 27 });
+    expect(counts((await node.feed(at)).entries)).toEqual({ brand: 2, product: 11, variant: 46, asset: 35 });
 
     // A second node imports with a manifest of already-uploaded blobs instead of image bytes.
     const b = await kestrelNode();
@@ -163,7 +163,7 @@ describe("canonical import (I-IMP-1..4)", () => {
     await b.node.drain();
     const job2 = (await b.node.api(b.token, "GET", `/obx/v1/ingest/jobs/${r2.json.id}`)).json;
     expect(job2.import_run.counts.errors).toBe(0);
-    expect(counts((await b.node.feed(b.at)).entries)).toEqual({ brand: 2, product: 8, variant: 40, asset: 27 });
+    expect(counts((await b.node.feed(b.at)).entries)).toEqual({ brand: 2, product: 11, variant: 46, asset: 35 });
     const sha = await sha256Hex(kestrelImages()[0].bytes);
     const row = await b.node.platform.db.first<{ files: string }>("SELECT files FROM assets WHERE external_id = 'KO-1001_NVY_1'");
     expect(JSON.parse(row!.files).original.sha256).toBe(sha);
@@ -242,6 +242,8 @@ describe("canonical import (I-IMP-1..4)", () => {
       expect.arrayContaining(["products.csv|2|gtin|invalid_gtin", "products.csv|3|gtin|invalid_gtin", "products.csv|4|materials|validation_failed", "ZZ-1_BLK_front.jpg|null|null|validation_failed"]),
     );
     expect(errs.some((e: any) => e.file === "QQ-9_BLK_1.jpg" && (e.obx_error === "unknown_parent" || e.obx_error === "unsupported_media_type"))).toBe(true);
-    expect(job.import_run.counts.created).toBeGreaterThanOrEqual(3);
+    // A row with an error is skipped as a whole (spec fixtures/imports/5-invalid.csv): only ZZ-1 is written.
+    expect(job.import_run.counts.created).toBe(2);
+    expect((await node.api(token, "GET", "/obx/v1/ingest/products/ZZ-2")).status).toBe(404);
   });
 });

@@ -1,6 +1,23 @@
 // Hand-written validation for the OBX input schemas, reporting JSON-pointer field errors.
 import { fieldError, type FieldError, type ErrorCode } from "../lib/problem";
 import { isPlainObject, normDateTime } from "../lib/util";
+import {
+  CERTIFICATION_SCOPES,
+  COLOR_FAMILIES,
+  FOOTWEAR_PARTS,
+  FOOTWEAR_VALUES,
+  MEASUREMENT_KEYS,
+  checkFeature,
+  normalizeFiber,
+  orderFeatures,
+  orderMeasurements,
+  type Certification,
+  type FeatureValue,
+  type Fiber,
+  type FootwearMaterials,
+  type Materials,
+  type Measurements,
+} from "./article";
 
 export const LANG_RE = /^[a-z]{2,3}(-[A-Z]{2})?$/;
 export const KEY_RE = /^[a-z][a-z0-9_]{0,63}$/;
@@ -165,28 +182,129 @@ export class V {
     return this.str(v, p, { pattern: KEY_RE, msg: "Use lowercase letters, digits and _ (starting with a letter)." });
   }
 
-  materials(v: unknown, p: string): { part: string; fibers: { fiber: string; percentage: number }[] }[] | null {
+  /** Materials (protocol.md §5.9.1): 0.1 fibre keys recycled_* / organic_* become the fibre with the flag. */
+  materials(v: unknown, p: string): Materials | null {
     if (v === undefined || v === null) return null;
     if (!Array.isArray(v)) {
       this.err(p, "Must be a list of parts.");
       return null;
     }
-    const out: { part: string; fibers: { fiber: string; percentage: number }[] }[] = [];
+    const out: Materials = [];
     v.forEach((part, i) => {
       if (!isPlainObject(part)) return this.err(`${p}/${i}`, "Must be an object.");
       const name = this.key(part.part, `${p}/${i}/part`);
       if (!Array.isArray(part.fibers) || part.fibers.length === 0) return this.err(`${p}/${i}/fibers`, "At least one fibre is required.");
-      const fibers: { fiber: string; percentage: number }[] = [];
+      const fibers: Fiber[] = [];
       part.fibers.forEach((f: unknown, j: number) => {
         if (!isPlainObject(f)) return this.err(`${p}/${i}/fibers/${j}`, "Must be an object.");
         const fiber = this.key(f.fiber, `${p}/${i}/fibers/${j}/fiber`);
         const pct = f.percentage;
         if (typeof pct !== "number" || !(pct > 0) || pct > 100) return this.err(`${p}/${i}/fibers/${j}/percentage`, "Must be a number above 0 and at most 100.");
-        if (fiber) fibers.push({ fiber, percentage: pct });
+        for (const flag of ["recycled", "organic"] as const)
+          if (f[flag] !== undefined && f[flag] !== null && typeof f[flag] !== "boolean") return this.err(`${p}/${i}/fibers/${j}/${flag}`, "Must be true or false.");
+        if (fiber) fibers.push({ ...this.extensions(f), ...normalizeFiber({ fiber, percentage: pct, recycled: f.recycled, organic: f.organic }) });
       });
       if (name) out.push({ part: name, fibers });
     });
     return out;
+  }
+
+  /** footwear_materials (§5.9.2): all three parts, null when not stated; an object without any is null. */
+  footwear(v: unknown, p: string): FootwearMaterials | null {
+    if (v === undefined || v === null) return null;
+    if (!isPlainObject(v)) {
+      this.err(p, "Must be an object with upper, lining_and_sock and outer_sole.");
+      return null;
+    }
+    const out = { upper: null, lining_and_sock: null, outer_sole: null } as FootwearMaterials;
+    for (const [k, val] of Object.entries(v)) {
+      if (k.startsWith("x-")) continue;
+      if (!(FOOTWEAR_PARTS as readonly string[]).includes(k)) {
+        this.err(`${p}/${k}`, "The parts are upper, lining_and_sock and outer_sole.");
+        continue;
+      }
+      if (val === null) continue;
+      if (typeof val !== "string" || !FOOTWEAR_VALUES.includes(val)) this.err(`${p}/${k}`, `Must be one of: ${FOOTWEAR_VALUES.join(", ")}.`);
+      else out[k as keyof FootwearMaterials] = val;
+    }
+    if (FOOTWEAR_PARTS.every((k) => out[k] === null)) return null;
+    return { ...out, ...this.extensions(v) } as FootwearMaterials;
+  }
+
+  /** certifications (§5.9.6): passed on as stated; an empty list is null. */
+  certifications(v: unknown, p: string): Certification[] | null {
+    if (v === undefined || v === null) return null;
+    if (!Array.isArray(v)) {
+      this.err(p, "Must be a list of certifications.");
+      return null;
+    }
+    const out: Certification[] = [];
+    v.forEach((c, i) => {
+      if (!isPlainObject(c)) return this.err(`${p}/${i}`, "Must be an object with scheme and scope.");
+      for (const k of Object.keys(c)) if (!["scheme", "licence_number", "scope"].includes(k) && !EXT_RE.test(k)) this.err(`${p}/${i}/${k}`, "Unknown field.");
+      const scheme = this.key(c.scheme, `${p}/${i}/scheme`);
+      if (c.scheme === undefined || c.scheme === null) this.err(`${p}/${i}/scheme`, "This field is required.");
+      const licence = this.str(c.licence_number, `${p}/${i}/licence_number`, { min: 1, max: 200 });
+      const scope = this.enumv(c.scope, `${p}/${i}/scope`, CERTIFICATION_SCOPES, true);
+      if (scheme && scope) out.push({ scheme, licence_number: licence, scope, ...this.extensions(c) });
+    });
+    return out.length ? out : null;
+  }
+
+  /** features (§5.9.4): registry keys typed, other keys kept as sent; an empty object is null. */
+  features(v: unknown, p: string): Record<string, FeatureValue> | null {
+    if (v === undefined || v === null) return null;
+    if (!isPlainObject(v)) {
+      this.err(p, "Must be an object of features.");
+      return null;
+    }
+    const out: Record<string, FeatureValue> = {};
+    for (const [k, val] of Object.entries(v)) {
+      if (!KEY_RE.test(k)) {
+        this.err(`${p}/${k}`, "Feature keys use lowercase letters, digits and _.");
+        continue;
+      }
+      if (val === null) continue;
+      const r = checkFeature(k, val);
+      if ("error" in r) this.err(`${p}/${k}`, r.error);
+      else out[k] = r.value;
+    }
+    return Object.keys(out).length ? orderFeatures(out) : null;
+  }
+
+  /** measurements (§5.9.3): positive numbers, strap_length_cm {min, max}; an empty object is null. */
+  measurements(v: unknown, p: string): Measurements | null {
+    if (v === undefined || v === null) return null;
+    if (!isPlainObject(v)) {
+      this.err(p, "Must be an object of measurements.");
+      return null;
+    }
+    const out: Measurements = {};
+    const pos = (x: unknown) => typeof x === "number" && Number.isFinite(x) && x > 0;
+    for (const [k, val] of Object.entries(v)) {
+      if (EXT_RE.test(k)) {
+        (out as Record<string, unknown>)[k] = val;
+        continue;
+      }
+      if (!(MEASUREMENT_KEYS as readonly string[]).includes(k)) {
+        this.err(`${p}/${k}`, `Unknown measurement; the keys are ${MEASUREMENT_KEYS.join(", ")}.`);
+        continue;
+      }
+      if (val === null) continue;
+      if (k === "strap_length_cm") {
+        if (!isPlainObject(val) || !pos(val.min) || !pos(val.max) || Object.keys(val).some((x) => x !== "min" && x !== "max")) this.err(`${p}/${k}`, 'Must be {"min": …, "max": …} with positive numbers in cm.');
+        else if ((val.min as number) > (val.max as number)) this.err(`${p}/${k}`, "min (the shortest setting) may not be larger than max.");
+        else out.strap_length_cm = { min: val.min as number, max: val.max as number };
+        continue;
+      }
+      if (!pos(val)) this.err(`${p}/${k}`, "Must be a positive number.");
+      else out[k as Exclude<(typeof MEASUREMENT_KEYS)[number], "strap_length_cm">] = val as number;
+    }
+    return Object.keys(out).some((k) => !k.startsWith("x-")) ? orderMeasurements(out) : null;
+  }
+
+  colorFamily(v: unknown, p: string): string | null {
+    return this.enumv(v, p, COLOR_FAMILIES);
   }
 
   care(v: unknown, p: string): { code: string; text: Record<string, string> | null }[] | null {

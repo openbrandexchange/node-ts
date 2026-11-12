@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { parseCsv, writeCsv, normHeader } from "../src/lib/csv";
 import { parseIngestGtin, normaliseLookupGtin } from "../src/lib/gtin";
-import { parseImageName, parseMaterials, parseProductsCsv } from "../src/core/importformat";
+import { formatMaterials, parseImageName, parseMaterials, parseProductsCsv } from "../src/core/importformat";
 import { isBlockedIp, assertSafeUrl, safeFetch, checkUrl, pinnedRequest } from "../src/lib/ssrf";
 import { readZipDirectory, readZipEntry, zipBytes, unsafeEntryReason, zipStream, zipSize } from "../src/lib/zip";
 import { bytesReader, scanMultipart } from "../src/lib/multipart";
@@ -76,7 +76,16 @@ describe("import format", () => {
     expect("error" in parseImageName("KO-1001_NVY_01.jpg")).toBe(true);
   });
   test("materials grammar", () => {
-    expect(parseMaterials("100% organic cotton")).toEqual({ value: [{ part: "main", fibers: [{ fiber: "organic_cotton", percentage: 100 }] }] });
+    // 0.2: the 0.1 keys organic_* / recycled_* become the fibre with its flag, like the flag form.
+    expect(parseMaterials("100% organic cotton")).toEqual({ value: [{ part: "main", fibers: [{ fiber: "cotton", percentage: 100, organic: true }] }] });
+    expect(parseMaterials("100% Cotton (Organic)")).toEqual(parseMaterials("100% organic_cotton"));
+    expect(parseMaterials("outer: 100% polyester (recycled); lining: 88% polyamide, 12% elastane")).toEqual({
+      value: [
+        { part: "outer", fibers: [{ fiber: "polyester", percentage: 100, recycled: true }] },
+        { part: "lining", fibers: [{ fiber: "polyamide", percentage: 88 }, { fiber: "elastane", percentage: 12 }] },
+      ],
+    });
+    expect(formatMaterials([{ part: "main", fibers: [{ fiber: "recycled_cotton", percentage: 100 }] }])).toBe("main: 100% cotton (recycled)");
     const m = parseMaterials("outer: 65% cotton, 35% polyamide; lining: 100% polyester");
     expect("value" in m && m.value.map((x) => x.part)).toEqual(["outer", "lining"]);
     expect("error" in parseMaterials("cotton")).toBe(true);

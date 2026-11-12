@@ -14,6 +14,7 @@ import { sendEmail } from "./mail";
 import { emitClientEvent } from "./notify";
 import type { Stmt } from "../platform";
 import type { RenditionName } from "./validate";
+import { OBX_VERSION } from "./article";
 
 export interface PortalFilter {
   q?: string;
@@ -450,7 +451,7 @@ export function manifestStream(ctx: Ctx, job: JobRow): ReadableStream<Uint8Array
   return new ReadableStream<Uint8Array>({
     async pull(c) {
       if (ki === -1) {
-        const header = { type: "header", export_id: job.id, created_at: job.created_at, obx_version: "0.1", changes_cursor: st.cursor, counts: st.counts };
+        const header = { type: "header", export_id: job.id, created_at: job.created_at, obx_version: OBX_VERSION, changes_cursor: st.cursor, counts: st.counts };
         c.enqueue(enc.encode(JSON.stringify(header) + "\n"));
         ki = 0;
         return;

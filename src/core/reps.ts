@@ -2,6 +2,7 @@
 import type { SettingsData, Rights } from "./ctx";
 import { canonicalJson, safeJsonParse } from "../lib/util";
 import type { RenditionName } from "./validate";
+import { normalizeStoredProduct } from "./article";
 
 export interface FileRef {
   sha256: string;
@@ -66,24 +67,30 @@ export function brandRep(r: BrandRowLike): Record<string, unknown> {
   };
 }
 
+/** Product fields in Product.json order; every one is present in a response (null when not stated). */
 export const PRODUCT_FIELDS = [
   "style_number",
   "name",
   "description",
   "item_type",
+  "item_subtype",
   "gpc_brick",
   "target_group",
   "season",
   "collection",
   "materials",
+  "contains_animal_origin",
+  "footwear_materials",
   "care",
   "country_of_origin",
+  "certifications",
   "dpp_url",
+  "features",
   "attributes",
 ] as const;
 
 export function productRep(r: ProductRowLike): Record<string, unknown> {
-  const s = safeJsonParse<Record<string, unknown>>(r.stored, {});
+  const s = normalizeStoredProduct(safeJsonParse<Record<string, unknown>>(r.stored, {}));
   const out: Record<string, unknown> = { id: r.id, external_id: r.external_id, brand_id: r.brand_id };
   for (const f of PRODUCT_FIELDS) out[f] = s[f] ?? null;
   out.created_at = r.created_at;
@@ -101,12 +108,21 @@ export function variantRep(r: VariantRowLike): Record<string, unknown> {
     gtin: r.gtin14 ?? null,
     gtin_original: s.gtin_original ?? null,
     sku: s.sku ?? null,
-    color: s.color,
+    color: colorRep(s.color),
     size: s.size ?? null,
+    size_length: s.size_length ?? null,
     size_system: s.size_system ?? null,
+    measurements: s.measurements ?? null,
     updated_at: r.updated_at,
     ...ext(s),
   };
+}
+
+/** Colour with every Color.json property (family added in 0.2: null when not stated). */
+function colorRep(c: unknown): unknown {
+  if (typeof c !== "object" || c === null || Array.isArray(c)) return c;
+  const x = c as Record<string, unknown>;
+  return { ...x, code: x.code, name: x.name ?? null, supplier_color: x.supplier_color ?? null, family: x.family ?? null };
 }
 
 export function effectiveRights(stored: Record<string, unknown>, settings: SettingsData): Rights {

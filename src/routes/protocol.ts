@@ -37,6 +37,7 @@ import { assertSafeUrl } from "../lib/ssrf";
 import { pickLanguage, sendEmail } from "../core/mail";
 import { adminAccessRequestJson, type AccessRequestRow } from "../core/accounts";
 import { normDateTime } from "../lib/util";
+import { OBX_VERSION, SPEC_VERSION } from "../core/article";
 
 export const protocol = new Hono<AppEnv>();
 
@@ -61,8 +62,8 @@ protocol.get("/.well-known/obx", async (c) => {
   const brands = (await visibleBrands(ctx, null)).map((b) => ({ id: b.id as string, name: b.name as string, logo_url: (b.logo_url as string | null) ?? null }));
   const langs = [s.portal.default_language, ...s.portal.languages.filter((l) => l !== s.portal.default_language)];
   const doc = {
-    obx_version: "0.1",
-    spec_version: "0.1.0",
+    obx_version: OBX_VERSION,
+    spec_version: SPEC_VERSION,
     node: { software: ctx.config.software, version: ctx.config.version },
     publisher: {
       id: "pub_" + (await ctx.nodeId()).replace(/^node_/, ""),
@@ -201,7 +202,7 @@ protocol.get("/obx/v1/access-requests/:id", async (c) => {
 function oauthError(status: number, error: string, description: string, extra: Record<string, string> = {}) {
   return new Response(JSON.stringify({ error, error_description: description }), {
     status,
-    headers: { "content-type": "application/json", "cache-control": "no-store", pragma: "no-cache", "obx-version": "0.1", ...extra },
+    headers: { "content-type": "application/json", "cache-control": "no-store", pragma: "no-cache", "obx-version": OBX_VERSION, ...extra },
   });
 }
 
@@ -255,7 +256,7 @@ protocol.post("/obx/v1/oauth/token", async (c) => {
     ]).catch(() => {}));
   return new Response(JSON.stringify({ access_token: token, token_type: "Bearer", expires_in: ACCESS_TOKEN_TTL, scope: scopes.join(" ") }), {
     status: 200,
-    headers: { "content-type": "application/json", "cache-control": "no-store", pragma: "no-cache", "obx-version": "0.1", ...limitHeaders(rl) },
+    headers: { "content-type": "application/json", "cache-control": "no-store", pragma: "no-cache", "obx-version": OBX_VERSION, ...limitHeaders(rl) },
   });
 });
 
@@ -452,7 +453,7 @@ protocol.on(["GET", "HEAD"], "/obx/v1/assets/:id/renditions/:name", async (c) =>
     disposition: "inline",
     sha256: pick.ref.sha256,
     cacheControl: "private, max-age=3600",
-    extraHeaders: { ...(c.get("rl") ?? {}), "obx-version": "0.1" },
+    extraHeaders: { ...(c.get("rl") ?? {}), "obx-version": OBX_VERSION },
   });
   const range = c.req.header("range");
   if (viewer.kind === "client" && res.status === 200 && c.req.method === "GET" && (!range || /^bytes=0-/.test(range)))
@@ -549,7 +550,7 @@ protocol.get("/obx/v1/exports/:id/manifest", async (c) => {
   const ctx = ctxOf(c);
   if (job.status === "expired" || (job.expires_at && Date.parse(job.expires_at) < ctx.now())) throw new ObxError("export_expired", "This export has expired. Start a new one.");
   if (job.status !== "succeeded") throw new ObxError("not_found", "The export is not finished yet.");
-  return new Response(manifestStream(ctx, job), { headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "private, no-store", "obx-version": "0.1" } });
+  return new Response(manifestStream(ctx, job), { headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "private, no-store", "obx-version": OBX_VERSION } });
 });
 
 protocol.get("/obx/v1/exports/:id/parts/:number", async (c) => {
@@ -569,7 +570,7 @@ protocol.get("/obx/v1/exports/:id/parts/:number", async (c) => {
     filename: `obx-export-${job.id}-part-${n}.zip`,
     disposition: "attachment",
     sha256: part.sha256,
-    extraHeaders: { "obx-version": "0.1" },
+    extraHeaders: { "obx-version": OBX_VERSION },
   });
   const range = c.req.header("range");
   if (res.status === 200 && (!range || /^bytes=0-/.test(range))) logDownload(ctx, { kind: "api_export", viewer: who.viewer, files: part.files, bytes: part.bytes });

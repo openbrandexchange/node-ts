@@ -126,7 +126,7 @@ describe("catalog reads (P-CAT-2..4)", () => {
       seen.push(...r.json.items.map((p: any) => p.id));
       cursor = r.json.next_cursor;
     } while (cursor);
-    expect(seen.length).toBe(8);
+    expect(seen.length).toBe(11);
     expect([...seen].sort()).toEqual(seen);
     const ids = await node.api(at, "GET", `/obx/v1/products?ids=${seen[0]},prd_unknown,${seen[1]}`);
     expect(ids.json.items.map((p: any) => p.id)).toEqual([seen[0], seen[1]]);
