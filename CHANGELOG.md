@@ -47,7 +47,7 @@ the Cloudflare Workers runtime.
 
 #### Changed
 
-- The web interface is admin-ui 0.1.1 (commit dabdcd0): the zip dialog downloads the version you
+- The web interface is admin-ui 0.1.1 (commit d3ee574): the zip dialog downloads the version you
   picked, website fields accept an address without `https://`, an approved API key can be shown when
   the retailer asked on the web form, the "Get started" list asks to set up e-mail while none is
   configured, and on Cloudflare the scheduled-import form no longer offers SFTP (the node reports
