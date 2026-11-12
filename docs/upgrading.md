@@ -7,9 +7,10 @@ Versions follow [Semantic Versioning](https://semver.org/):
   settings. Read the "Upgrading" notes of that version in [CHANGELOG.md](../CHANGELOG.md).
 - **Major** (0.x → 1.0): may need a manual step; the changelog says which.
 
-Protocol compatibility is separate: every 0.2.x portal speaks OBX protocol 0.2 (0.1.x spoke 0.1; 0.2 only adds
-fields, so software written for 0.1 keeps working), and retailers' software
-keeps working across portal updates.
+Protocol compatibility is separate: every 0.3.x portal speaks OBX protocol 0.3 (0.2.x spoke 0.2, 0.1.x spoke 0.1).
+0.2 only added fields, so software written for 0.1 kept working; 0.3 changes the shape of `materials` and `care`
+(terms with names, spec proposal 0004), so retailers' software that reads those fields must move to 0.3 too. Everything
+else keeps working across portal updates.
 
 ## Before every upgrade
 

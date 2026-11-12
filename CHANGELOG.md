@@ -5,6 +5,46 @@ All notable changes to the Portal for Cloudflare (`node-ts`) are listed here. Th
 than replacing the software (see [docs/upgrading.md](docs/upgrading.md)); database migrations are
 always forward-only and applied automatically.
 
+## [0.3.0] - Unreleased
+
+Implements Open Brand Exchange spec 0.3.0: materials and care as terms with names (spec proposal 0004,
+[openbrandexchange/spec#3](https://github.com/openbrandexchange/spec/pull/3)). **Breaking for retailers' software
+that reads `materials` or `care`**; everything else is unchanged.
+
+### Upgrading
+- Migration `0006_terms.sql` runs at start (on Cloudflare also with `npm run deploy`). It rewrites stored
+  materials to the 0.3 form: the part and the material become `{"code": …}`, the flags `recycled: true` /
+  `organic: true` become the qualifier. Care needs no change. No new columns.
+- Retailers' software sees `OBX-Version: 0.3` and, in discovery, `obx_version` 0.3 and `spec_version` 0.3.0. It
+  must read `part.code`, `fibers[].material.code` and `fibers[].qualifier.code` instead of `part`, `fiber` and
+  the flags, and can show the `name` in the shopper's language.
+- Brands' own systems that write through the Ingest API must send the 0.3 shapes (see Changed); CSV files keep
+  working as they are.
+
+### Added
+- **Names for parts, materials, qualifiers and care instructions** in English, Dutch, German and French, from
+  the spec's vocabularies (`src/vocabularies/`, copied by `scripts/sync-fixtures.sh` and bundled into the Bun
+  and Workers builds). Every care entry has its ISO 3758 `category` and its GINETEX `symbol` (e.g. `1_D_30`).
+  Codes outside the vocabularies keep the name, category and symbol that were written, or `null`.
+- Imports: any qualifier code in brackets after a fibre, e.g. `100% cotton (regenerative)`; one per fibre.
+
+### Changed
+- `materials`: `{"part": {"code", "name"}, "fibers": [{"material": {"code", "name"}, "percentage",
+  "qualifier": {"code", "name"} | null}]}`; `fiber` and the flags `recycled`/`organic` are gone. The part
+  `main` has the name `null`.
+- `care`: every entry is `{"code", "category", "symbol", "name", "text"}`; `text` is the brand's own extra text.
+- Ingest API and admin: `name`, `category` and `symbol` may be left out on write; names of known codes are
+  not stored, so PUTting back a record's `data` is `unchanged`. The 0.2 shapes (a string `part`, `fiber`,
+  `recycled`, `organic`) are `422 validation_failed`; the 0.1 keys `recycled_*` / `organic_*` still become the
+  material with that qualifier.
+- Imports: two qualifiers on one fibre are a row error. The label warning `animal_origin_unknown` is decided on
+  the material code.
+- Test fixtures follow spec 0.3.0.
+
+### Open
+- The web interface (admin-ui) is not re-vendored in this version yet: the label information on the article
+  pages and the article form still need the admin-ui build for 0.3.
+
 ## [0.2.1] - 2026-11-12
 
 Excel workbooks next to CSV files (spec import-format.md §5). Passes `obx-conformance all` built from

@@ -1,12 +1,16 @@
-// Article data added in OBX 0.2 (spec protocol.md §5.9, import-format.md §1.6 and rules 9 and 10):
-// the feature registry, measurements, footwear materials, certifications, colour families, the fibre
-// flags `recycled`/`organic`, the products.csv cell grammar for them, and the label completeness
-// warnings. Shared by the write path (catalog.ts), imports (importformat.ts), the representations
-// (reps.ts) and the article data CSV (csvexport.ts).
+// Article data (spec protocol.md §5.9, import-format.md §1.4–1.6 and rules 9 and 10): the feature
+// registry, measurements, footwear materials, certifications, colour families, materials and care as
+// terms with names (0.3, from the spec's vocabularies), the products.csv cell grammar for them, and the
+// label completeness warnings. Shared by the write path (catalog.ts), imports (importformat.ts), the
+// representations (reps.ts) and the article data CSV (csvexport.ts).
+import careVocab from "../vocabularies/care.json";
+import materialsVocab from "../vocabularies/materials.json";
+import partsVocab from "../vocabularies/parts.json";
+import qualifiersVocab from "../vocabularies/qualifiers.json";
 
 /** The OBX protocol version (OBX-Version header, discovery, export manifests) and the spec version. */
-export const OBX_VERSION = "0.2";
-export const SPEC_VERSION = "0.2.0";
+export const OBX_VERSION = "0.3";
+export const SPEC_VERSION = "0.3.0";
 
 const KEY_RE = /^[a-z][a-z0-9_]{0,63}$/;
 
@@ -56,8 +60,14 @@ export const FOOTWEAR_PARTS = ["upper", "lining_and_sock", "outer_sole"] as cons
 export const FOOTWEAR_VALUES = ["leather", "coated_leather", "textile", "other"];
 export const CERTIFICATION_SCOPES = ["product", "material"];
 
-export type Fiber = { fiber: string; percentage: number; recycled?: true; organic?: true };
-export type Materials = { part: string; fibers: Fiber[] }[];
+export type LocalizedText = Record<string, string>;
+/** A code with its name per language (Materials.json $defs/term). */
+export type Term = { code: string; name?: LocalizedText | null };
+export type Fiber = { material: Term; percentage: number; qualifier?: Term | null };
+export type Materials = { part: Term; fibers: Fiber[] }[];
+export type CareCategory = "washing" | "bleaching" | "drying" | "ironing" | "professional_care";
+export type CareEntry = { code: string; category?: CareCategory | null; symbol?: string | null; name?: LocalizedText | null; text?: LocalizedText | null };
+type CareVocabEntry = { code: string; category: CareCategory; symbol: string | null; name: LocalizedText };
 export type Strap = { min: number; max: number };
 export type Measurements = Partial<Record<(typeof MEASUREMENT_KEYS)[number], number | Strap>>;
 export type FootwearMaterials = Record<(typeof FOOTWEAR_PARTS)[number], string | null>;
@@ -71,52 +81,153 @@ export function normKey(s: string): string {
   return s.trim().toLowerCase().replace(/[\s-]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
-// ------------------------------------------------------------------ fibres
+// ------------------------------------------------------------------ terms (spec 0.3, protocol.md §5.9.1)
+//
+// Parts, materials, qualifiers and care entries are terms: a code and its name per language. The
+// names (and for care the category and symbol) of known codes come from the spec's vocabularies
+// (src/vocabularies, copied by scripts/sync-fixtures.sh). The stored document keeps codes only, plus
+// what was written for codes outside the vocabularies; the representations add the rest when read, so
+// a newer vocabulary needs no data migration and PUTting back a GET's data is `unchanged`.
+
+const vocab = (v: { entries: { code: string; name: LocalizedText | null }[] }) => new Map(v.entries.map((e) => [e.code, e.name]));
+export const PART_NAMES = vocab(partsVocab);
+export const MATERIAL_NAMES = vocab(materialsVocab);
+export const QUALIFIER_NAMES = vocab(qualifiersVocab);
+export const CARE_VOCAB = new Map((careVocab.entries as CareVocabEntry[]).map((e) => [e.code, e]));
+export const CARE_CATEGORIES = ["washing", "bleaching", "drying", "ironing", "professional_care"] as const;
 
 /**
- * The 0.1 fibre keys recycled_<fibre> / organic_<fibre> become the fibre with the flag
- * (protocol.md §5.9.1); a flag that is not true is dropped (flags are present only when true).
+ * The 0.1 keys recycled_<material> / organic_<material> become the material with that qualifier
+ * (protocol.md §5.9.1); the key wins over a qualifier that was also given (ingest.md §3.4).
  */
-export function normalizeFiber(f: { fiber: string; percentage: number; recycled?: unknown; organic?: unknown }): Fiber {
-  let fiber = f.fiber;
-  let recycled = f.recycled === true;
-  let organic = f.organic === true;
+export function splitLegacyMaterial(code: string): { code: string; qualifier: string | null } {
+  let qualifier: string | null = null;
   for (;;) {
-    if (fiber.startsWith("recycled_") && fiber.length > 9) {
-      fiber = fiber.slice(9);
-      recycled = true;
-    } else if (fiber.startsWith("organic_") && fiber.length > 8) {
-      fiber = fiber.slice(8);
-      organic = true;
-    } else break;
+    const m = code.match(/^(recycled|organic)_(.+)$/);
+    if (!m) break;
+    qualifier ??= m[1];
+    code = m[2];
   }
-  const out: Fiber = { fiber, percentage: f.percentage };
-  if (recycled) out.recycled = true;
-  if (organic) out.organic = true;
+  return { code, qualifier };
+}
+
+/** A term as stored: the code, and the name only for a code outside the vocabulary. */
+export function storeTerm(t: Term, names: Map<string, LocalizedText | null>): Term {
+  const out: Term = { code: t.code, ...extMembers(t) };
+  if (!names.has(t.code) && t.name) out.name = t.name;
   return out;
 }
 
-/** Materials with every fibre normalised; anything that is not a materials list is returned as is. */
-export function normalizeMaterials<T>(m: T): T {
-  if (!Array.isArray(m)) return m;
-  return m.map((p) =>
-    isObj(p) && Array.isArray(p.fibers)
-      ? { ...p, fibers: p.fibers.map((f: unknown) => (isObj(f) && typeof f.fiber === "string" && typeof f.percentage === "number" ? { ...extMembers(f), ...normalizeFiber(f as Fiber) } : f)) }
-      : p,
-  ) as T;
+/** A term as returned: the vocabulary's name for a known code, else the name it was given, or null. */
+export function expandTerm(t: unknown, names: Map<string, LocalizedText | null>): unknown {
+  if (!isObj(t) || typeof t.code !== "string") return t;
+  return { code: t.code, name: names.has(t.code) ? (names.get(t.code) ?? null) : ((t.name as LocalizedText | undefined) ?? null), ...extMembers(t) };
 }
 
-function extMembers(o: Record<string, unknown>): Record<string, unknown> {
+/** Materials as stored (codes only for known codes, one qualifier per fibre, 0.1 keys normalised). */
+export function storeMaterials(m: Materials): Materials {
+  return m.map((p) => ({
+    ...extMembers(p),
+    part: storeTerm(p.part, PART_NAMES),
+    fibers: p.fibers.map((f) => {
+      const legacy = splitLegacyMaterial(f.material.code);
+      const material = storeTerm({ ...f.material, code: legacy.code }, MATERIAL_NAMES);
+      const qualifier = legacy.qualifier ? { code: legacy.qualifier } : (f.qualifier ?? null);
+      const out: Fiber = { ...extMembers(f), material, percentage: f.percentage };
+      if (qualifier) out.qualifier = storeTerm(qualifier, QUALIFIER_NAMES);
+      return out;
+    }),
+  }));
+}
+
+/** Materials as the protocol returns them: every term with its name, `qualifier` null when none. */
+export function expandMaterials(m: unknown): unknown {
+  if (!Array.isArray(m)) return m;
+  return m.map((p) =>
+    isObj(p)
+      ? {
+          part: expandTerm(p.part, PART_NAMES),
+          fibers: Array.isArray(p.fibers)
+            ? p.fibers.map((f: unknown) =>
+                isObj(f) ? { material: expandTerm(f.material, MATERIAL_NAMES), percentage: f.percentage, qualifier: f.qualifier ? expandTerm(f.qualifier, QUALIFIER_NAMES) : null, ...extMembers(f) } : f,
+              )
+            : p.fibers,
+          ...extMembers(p),
+        }
+      : p,
+  );
+}
+
+/** A care entry as stored: code and text, and category/symbol/name only for a code outside the vocabulary. */
+export function storeCare(c: CareEntry): CareEntry {
+  const out: CareEntry = { code: c.code, text: c.text ?? null, ...extMembers(c) };
+  if (!CARE_VOCAB.has(c.code)) {
+    if (c.category) out.category = c.category;
+    if (c.symbol) out.symbol = c.symbol;
+    if (c.name) out.name = c.name;
+  }
+  return out;
+}
+
+/** Care as the protocol returns it: code, category, symbol, name, text. */
+export function expandCare(c: unknown): unknown {
+  if (!Array.isArray(c)) return c;
+  return c.map((e) => {
+    if (!isObj(e) || typeof e.code !== "string") return e;
+    const v = CARE_VOCAB.get(e.code);
+    return {
+      code: e.code,
+      category: v ? v.category : (e.category ?? null),
+      symbol: v ? v.symbol : (e.symbol ?? null),
+      name: v ? v.name : (e.name ?? null),
+      text: e.text ?? null,
+      ...extMembers(e),
+    };
+  });
+}
+
+function extMembers(o: object): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(o)) if (k.startsWith("x-")) out[k] = v;
   return out;
 }
 
-/** A stored product as a 0.2 node returns it: the materials normalised (data stored before 0.2). */
+/**
+ * Materials stored by a 0.2 node (part a string; fibre {fiber, percentage, recycled?, organic?}) in the
+ * 0.3 stored form. Migration 0006 converts the database; this covers rows written by an older node
+ * while the migration ran, and backups restored from 0.2.
+ */
+function upgradeMaterials(m: unknown[]): unknown[] {
+  return m.map((p) => {
+    if (!isObj(p)) return p;
+    const part = typeof p.part === "string" ? { code: p.part } : p.part;
+    const fibers = Array.isArray(p.fibers)
+      ? p.fibers.map((f: unknown) => {
+          if (!isObj(f) || typeof f.fiber !== "string") return f;
+          const { fiber, recycled, organic, ...rest } = f;
+          const q = recycled === true ? "recycled" : organic === true ? "organic" : null;
+          return { ...rest, material: { code: fiber }, ...(q ? { qualifier: { code: q } } : {}) };
+        })
+      : p.fibers;
+    return { ...p, part, fibers };
+  });
+}
+
+/** A stored product in the 0.3 stored form (materials and care of data stored before 0.3 upgraded). */
 export function normalizeStoredProduct(s: Record<string, unknown>): Record<string, unknown> {
   if (!Array.isArray(s.materials)) return s;
-  const m = normalizeMaterials(s.materials);
-  return JSON.stringify(m) === JSON.stringify(s.materials) ? s : { ...s, materials: m };
+  const legacyFiber = (f: unknown) => isObj(f) && ("fiber" in f || (isObj(f.material) && typeof f.material.code === "string" && /^(recycled|organic)_./.test(f.material.code)));
+  const legacy = s.materials.some((p) => isObj(p) && (typeof p.part === "string" || (Array.isArray(p.fibers) && p.fibers.some(legacyFiber))));
+  if (!legacy) return s;
+  return { ...s, materials: storeMaterials(upgradeMaterials(s.materials) as Materials) };
+}
+
+/** The product fields of the protocol representation that differ from the stored form. */
+export function expandProductTerms(s: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...s };
+  if (Array.isArray(s.materials)) out.materials = expandMaterials(s.materials);
+  if (Array.isArray(s.care)) out.care = expandCare(s.care);
+  return out;
 }
 
 // ------------------------------------------------------------------ features
@@ -360,13 +471,16 @@ export function labelWarnings(p: Record<string, unknown>): LabelWarning[] {
         detail: "The fibre composition is missing; it must be on the label of a textile product and shown before purchase, also online (Regulation (EU) No 1007/2011).",
       });
     if (p.contains_animal_origin === null || p.contains_animal_origin === undefined) {
-      const animal = materials.flatMap((m) => m.fibers ?? []).find((f) => isAnimalFibre(normalizeFiber(f).fiber));
+      const animal = materials
+        .flatMap((m) => m.fibers ?? [])
+        .map((f) => (isObj(f.material) && typeof f.material.code === "string" ? splitLegacyMaterial(f.material.code).code : ""))
+        .find(isAnimalFibre);
       if (animal)
         out.push({
           code: "animal_origin_unknown",
           column: "contains_animal_origin",
           pointer: "/contains_animal_origin",
-          detail: `The materials contain ${animal.fiber}; state whether the product contains non-textile parts of animal origin (Regulation (EU) No 1007/2011 Art. 12).`,
+          detail: `The materials contain ${animal}; state whether the product contains non-textile parts of animal origin (Regulation (EU) No 1007/2011 Art. 12).`,
         });
     }
     materials.forEach((m, i) => {
@@ -376,7 +490,7 @@ export function labelWarnings(p: Record<string, unknown>): LabelWarning[] {
           code: "fibre_percentages_not_100",
           column: "materials",
           pointer: `/materials/${i}`,
-          detail: `The percentages of ${m.part} add up to ${Math.round(sum * 100) / 100}, not 100 (Regulation (EU) No 1007/2011 Art. 9).`,
+          detail: `The percentages of ${isObj(m.part) ? m.part.code : "a part"} add up to ${Math.round(sum * 100) / 100}, not 100 (Regulation (EU) No 1007/2011 Art. 9).`,
         });
     });
   } else if (FOOTWEAR_ITEM_TYPES.includes(itemType)) {

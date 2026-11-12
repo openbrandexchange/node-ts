@@ -1,6 +1,6 @@
 # Implementation notes (node-ts)
 
-Decisions taken where the spec (v0.1.0, and since node-ts 0.2.0 spec v0.2.0) was silent, ambiguous or in tension with the project requirements. Each is the simplest reading that works on both runtimes; they are also reported to the spec maintainers.
+Decisions taken where the spec (v0.1.0; since node-ts 0.2.0 spec v0.2.0, since node-ts 0.3.0 spec v0.3.0) was silent, ambiguous or in tension with the project requirements. Each is the simplest reading that works on both runtimes; they are also reported to the spec maintainers.
 
 ## Protocol and ingest
 
@@ -70,6 +70,41 @@ Open questions reported to the spec maintainers (0.2.0):
   mock also `product_id`) out. This node keeps them (they are importable and were in 0.1).
 - S4. **`licence_number`** is not required by Certifications.json; this node always returns it (`null` when not
   stated), as the expected fixtures show it.
+
+## Terms with names (spec 0.3.0)
+
+Materials and care as terms: protocol.md §5.9.1, import-format.md §1.4 and §1.5, ingest.md §3.4, proposal 0004.
+Code: `src/core/article.ts` (store/expand), `src/core/validate.ts` (write path), `src/core/importformat.ts` (CSV).
+
+T1. **Codes are stored, names are added when read.** The stored document keeps `{"part": {"code": …}, "fibers":
+    [{"material": {"code": …}, "percentage": …, "qualifier": {"code": …}}]}` (no `qualifier` key when there is
+    none) and care `{"code", "text"}`. A name, category or symbol written for a code that is in the vocabulary is
+    dropped; for a code outside the vocabulary it is stored as written. The protocol representation, `/changes`,
+    exports and the IngestRecord (Ingest API and admin) add the vocabulary's names, categories and symbols when
+    they read. A newer vocabulary therefore needs no data migration, and PUTting back a GET's `data` (with names)
+    or the same data with codes only is `unchanged`.
+T2. **Vocabularies** are `src/vocabularies/*.json`, copied from the spec's `vocabularies/` by
+    `scripts/sync-fixtures.sh` and imported as JSON, so both the Bun build and the Workers bundle carry them.
+T3. **0.1 keys** `recycled_<material>` / `organic_<material>` are normalised on every write path (the key wins over
+    a qualifier written next to it, ingest.md §3.4) and when a stored document is read (protocol, admin record, CSV).
+T4. **The 0.2 write shapes are refused** (`422 validation_failed`): a `part` that is a string, a fibre with `fiber`,
+    `recycled` or `organic`, a `qualifier` that is not a term. Terms, fibres, parts and care entries are closed
+    objects apart from `x-` members, as in the 0.3 schemas.
+T5. **Upgrading.** `migrations/0006_terms.sql` rewrites stored 0.2 materials with SQLite's JSON functions (D1 and
+    bun:sqlite), keeping `x-` members; a 0.2 document that is still found when read (a restored backup) is
+    upgraded in memory and stored in the 0.3 form on its next write. The migration does not change `updated_at`
+    and writes no change entries.
+T6. **CSV**: one qualifier per fibre, any code (`(regenerative)`, `(upcycled)`); two qualifiers, or one that is not
+    a code, are a `validation_failed` error of the row. Exports write codes only (`100% cotton (organic)`).
+T7. **Label warnings** look at the material code (also written as a 0.1 key): `animal_origin_unknown` for
+    `wool (recycled)` as for `wool`.
+
+Open questions reported to the spec maintainers (0.3.0):
+
+- S5. **Consumers after a breaking upgrade.** Products that do not change after the upgrade are not sent again in
+  `/changes`, so a consumer that keeps its cursor across the upgrade keeps their 0.2 shape. The spec could ask nodes
+  to write a `grant` change with `resync: true` for every retailer when the protocol's minor version changes before
+  1.0; this node does not (yet).
 
 ## Admin and portal API
 

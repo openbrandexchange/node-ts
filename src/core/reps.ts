@@ -2,7 +2,7 @@
 import type { SettingsData, Rights } from "./ctx";
 import { canonicalJson, safeJsonParse } from "../lib/util";
 import type { RenditionName } from "./validate";
-import { normalizeStoredProduct } from "./article";
+import { expandProductTerms, normalizeStoredProduct } from "./article";
 
 export interface FileRef {
   sha256: string;
@@ -90,7 +90,7 @@ export const PRODUCT_FIELDS = [
 ] as const;
 
 export function productRep(r: ProductRowLike): Record<string, unknown> {
-  const s = normalizeStoredProduct(safeJsonParse<Record<string, unknown>>(r.stored, {}));
+  const s = expandProductTerms(normalizeStoredProduct(safeJsonParse<Record<string, unknown>>(r.stored, {})));
   const out: Record<string, unknown> = { id: r.id, external_id: r.external_id, brand_id: r.brand_id };
   for (const f of PRODUCT_FIELDS) out[f] = s[f] ?? null;
   out.created_at = r.created_at;

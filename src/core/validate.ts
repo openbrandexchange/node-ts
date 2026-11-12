@@ -7,22 +7,27 @@ import {
   FOOTWEAR_PARTS,
   FOOTWEAR_VALUES,
   MEASUREMENT_KEYS,
+  CARE_CATEGORIES,
   checkFeature,
-  normalizeFiber,
+  storeCare,
+  storeMaterials,
   orderFeatures,
   orderMeasurements,
+  type CareEntry,
   type Certification,
   type FeatureValue,
   type Fiber,
   type FootwearMaterials,
   type Materials,
   type Measurements,
+  type Term,
 } from "./article";
 
 export const LANG_RE = /^[a-z]{2,3}(-[A-Z]{2})?$/;
 export const KEY_RE = /^[a-z][a-z0-9_]{0,63}$/;
 export const COUNTRY_RE = /^[A-Z]{2}$/;
 export const EXT_RE = /^x-[a-z0-9]+-[a-z0-9_-]+$/;
+export const CARE_SYMBOL_RE = /^[1-5]_[A-Za-z0-9_]{1,30}$/;
 export const ROLES = ["packshot", "model", "detail", "ghost", "flatlay", "scene", "swatch", "size_chart", "other"];
 export const VIEWS = ["front", "back", "side", "left", "right", "top", "bottom", "tilted_left", "tilted_right", "inside", "detail", "other"];
 export const CHANNELS = ["webshop", "marketplace", "social", "print"];
@@ -182,7 +187,27 @@ export class V {
     return this.str(v, p, { pattern: KEY_RE, msg: "Use lowercase letters, digits and _ (starting with a letter)." });
   }
 
-  /** Materials (protocol.md §5.9.1): 0.1 fibre keys recycled_* / organic_* become the fibre with the flag. */
+  /**
+   * A term {code, name?} (Materials.json $defs/term); a closed object apart from x- members. The name is
+   * optional on write and kept only for codes outside the vocabulary (storeMaterials).
+   */
+  term(v: unknown, p: string): Term | null {
+    if (!isPlainObject(v)) {
+      this.err(p, typeof v === "string" ? `Must be an object {"code": "${v}"} since OBX 0.3.` : 'Must be an object {"code": …, "name": …}.');
+      return null;
+    }
+    for (const k of Object.keys(v)) if (k !== "code" && k !== "name" && !EXT_RE.test(k)) this.err(`${p}/${k}`, "Unknown field.");
+    if (v.code === undefined || v.code === null) this.err(`${p}/code`, "This field is required.");
+    const code = this.key(v.code, `${p}/code`);
+    const name = this.localized(v.name, `${p}/name`);
+    if (!code) return null;
+    return { code, ...(name ? { name } : {}), ...this.extensions(v) };
+  }
+
+  /**
+   * Materials (protocol.md §5.9.1, 0.3): parts, materials and qualifiers are terms; one qualifier per
+   * fibre. The 0.1 keys recycled_* / organic_* become the material with that qualifier.
+   */
   materials(v: unknown, p: string): Materials | null {
     if (v === undefined || v === null) return null;
     if (!Array.isArray(v)) {
@@ -192,21 +217,25 @@ export class V {
     const out: Materials = [];
     v.forEach((part, i) => {
       if (!isPlainObject(part)) return this.err(`${p}/${i}`, "Must be an object.");
-      const name = this.key(part.part, `${p}/${i}/part`);
+      for (const k of Object.keys(part)) if (k !== "part" && k !== "fibers" && !EXT_RE.test(k)) this.err(`${p}/${i}/${k}`, "Unknown field.");
+      const term = this.term(part.part, `${p}/${i}/part`);
       if (!Array.isArray(part.fibers) || part.fibers.length === 0) return this.err(`${p}/${i}/fibers`, "At least one fibre is required.");
       const fibers: Fiber[] = [];
       part.fibers.forEach((f: unknown, j: number) => {
-        if (!isPlainObject(f)) return this.err(`${p}/${i}/fibers/${j}`, "Must be an object.");
-        const fiber = this.key(f.fiber, `${p}/${i}/fibers/${j}/fiber`);
+        const fp = `${p}/${i}/fibers/${j}`;
+        if (!isPlainObject(f)) return this.err(fp, "Must be an object.");
+        for (const k of Object.keys(f))
+          if (!["material", "percentage", "qualifier"].includes(k) && !EXT_RE.test(k))
+            this.err(`${fp}/${k}`, k === "fiber" || k === "recycled" || k === "organic" ? "Since OBX 0.3 a fibre is {material, percentage, qualifier}." : "Unknown field.");
+        const material = this.term(f.material, `${fp}/material`);
         const pct = f.percentage;
-        if (typeof pct !== "number" || !(pct > 0) || pct > 100) return this.err(`${p}/${i}/fibers/${j}/percentage`, "Must be a number above 0 and at most 100.");
-        for (const flag of ["recycled", "organic"] as const)
-          if (f[flag] !== undefined && f[flag] !== null && typeof f[flag] !== "boolean") return this.err(`${p}/${i}/fibers/${j}/${flag}`, "Must be true or false.");
-        if (fiber) fibers.push({ ...this.extensions(f), ...normalizeFiber({ fiber, percentage: pct, recycled: f.recycled, organic: f.organic }) });
+        if (typeof pct !== "number" || !(pct > 0) || pct > 100) return this.err(`${fp}/percentage`, "Must be a number above 0 and at most 100.");
+        const qualifier = f.qualifier === undefined || f.qualifier === null ? null : this.term(f.qualifier, `${fp}/qualifier`);
+        if (material) fibers.push({ ...this.extensions(f), material, percentage: pct, ...(qualifier ? { qualifier } : {}) });
       });
-      if (name) out.push({ part: name, fibers });
+      if (term) out.push({ ...this.extensions(part), part: term, fibers });
     });
-    return out;
+    return storeMaterials(out);
   }
 
   /** footwear_materials (§5.9.2): all three parts, null when not stated; an object without any is null. */
@@ -307,18 +336,24 @@ export class V {
     return this.enumv(v, p, COLOR_FAMILIES);
   }
 
-  care(v: unknown, p: string): { code: string; text: Record<string, string> | null }[] | null {
+  /** Care (protocol.md §5.9.1, 0.3): category, symbol and name are optional on write and kept only for unknown codes. */
+  care(v: unknown, p: string): CareEntry[] | null {
     if (v === undefined || v === null) return null;
     if (!Array.isArray(v)) {
       this.err(p, "Must be a list of care codes.");
       return null;
     }
-    const out: { code: string; text: Record<string, string> | null }[] = [];
+    const out: CareEntry[] = [];
     v.forEach((c, i) => {
       if (!isPlainObject(c)) return this.err(`${p}/${i}`, "Must be an object.");
+      for (const k of Object.keys(c)) if (!["code", "category", "symbol", "name", "text"].includes(k) && !EXT_RE.test(k)) this.err(`${p}/${i}/${k}`, "Unknown field.");
+      if (c.code === undefined || c.code === null) this.err(`${p}/${i}/code`, "This field is required.");
       const code = this.key(c.code, `${p}/${i}/code`);
+      const category = this.enumv(c.category, `${p}/${i}/category`, CARE_CATEGORIES);
+      const symbol = this.str(c.symbol, `${p}/${i}/symbol`, { pattern: CARE_SYMBOL_RE, msg: "A symbol code in GINETEX notation such as 1_C_40." });
+      const name = this.localized(c.name, `${p}/${i}/name`);
       const text = this.localized(c.text, `${p}/${i}/text`);
-      if (code) out.push({ code, text });
+      if (code) out.push(storeCare({ code, category, symbol, name, text, ...this.extensions(c) }));
     });
     return out;
   }

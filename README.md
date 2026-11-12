@@ -3,7 +3,7 @@
 Your own **brand portal** for retailers, running on your own Cloudflare account. It gives your brand:
 
 1. **A portal for your retailers** ("*Kestrel · Beeldbank*", "*Kestrel · Händlerportal*", "*Kestrel · Brand portal*"…). Retailers ask for access, log in, search and filter your products, paste a list of EANs, pick products and download images (original, web or square) and article data (CSV) as zip files.
-2. **A standard API for your retailers' software.** Shops, PIMs and ERPs pull your products, EANs, images, rights and AI labels automatically, using the open [Open Brand Exchange](https://openbrandexchange.com) protocol (version 0.2). That includes the article data shops need for their product pages and filters: composition with recycled and organic fibres, "contains non-textile parts of animal origin", footwear materials, care, certifications, features (wheels, lock, closure, fit …) and per size the measurements (cm, kg, litres), second size and colour family. You hand out an *API key for their software* in the admin.
+2. **A standard API for your retailers' software.** Shops, PIMs and ERPs pull your products, EANs, images, rights and AI labels automatically, using the open [Open Brand Exchange](https://openbrandexchange.com) protocol (version 0.3). That includes the article data shops need for their product pages and filters: composition with recycled, organic and regenerative fibres (with the names of parts, materials and care instructions in English, Dutch, German and French), "contains non-textile parts of animal origin", footwear materials, care, certifications, features (wheels, lock, closure, fit …) and per size the measurements (cm, kg, litres), second size and colour family. You hand out an *API key for their software* in the admin.
 3. **Automatic upload from your own systems.** Publish from your PIM, ERP, DAM or a shared folder: a nightly CSV + images from a web address or an S3/R2 bucket, the `obx` command-line tool, a GitHub Action, n8n/Make/Zapier or the upload API. Nothing is published twice: unchanged products and images cost nothing.
 
 It is free and open source (AGPL-3.0). You own the data; there is no vendor in between.
@@ -113,11 +113,12 @@ Without e-mail the portal still works: the admin copies invitation links by hand
 Everything below works against **any** Open Brand Exchange portal, because it only uses the standard upload API and the standard CSV format. Full recipes (cron, Windows Task Scheduler, GitHub Action, n8n/Make/Zapier): [spec/docs/automation.md](https://github.com/openbrandexchange/spec/blob/main/docs/automation.md).
 
 **The CSV (or Excel):** one row per size, product columns repeated; images named `{style}_{colour}_{position}.jpg`, e.g. `KO-1001_NVY_1.jpg`, `KO-1001_NVY_2_back.jpg`. Download the template in **Imports**.
-Article data has one plain column each (spec import format 0.2): `item_subtype`, `contains_animal_origin` (`yes`/`no`),
+Article data has one plain column each (spec import format 0.3): `item_subtype`, `contains_animal_origin` (`yes`/`no`),
 `footwear_materials` (`upper: leather; lining_and_sock: textile; outer_sole: other`), `certifications`
 (`gots:CU 123456; rws:CU 200101 (material)`), `feature:<key>` (`feature:wheels` = `4`), and per size `size_length`,
-`color_family` and the measurements (`height_cm`, `weight_kg`, `strap_length_cm` = `80-130` …). Materials take
-`(recycled)` and `(organic)`: `outer: 100% polyester (recycled)`. A column your file does not have leaves that field as it
+`color_family` and the measurements (`height_cm`, `weight_kg`, `strap_length_cm` = `80-130` …). Materials take one
+qualifier per fibre in brackets, such as `(recycled)`, `(organic)` or `(regenerative)`: `outer: 100% polyester (recycled)`; the file
+holds codes only and the portal adds the names. A column your file does not have leaves that field as it
 is (per feature and per measurement). The import warns, without blocking anything, when a label would miss what EU law
 requires: the fibre composition, whether there are non-textile parts of animal origin, the footwear materials, or
 percentages that do not add up to 100.
@@ -232,8 +233,8 @@ bunx wrangler dev             # Workers runtime locally
 - `src/routes` — OBX Protocol (`/obx/v1`), Ingest API (`/obx/v1/ingest`), Node Admin + Portal API (`/admin/api`).
 - `migrations/*.sql` — one SQLite schema for D1 and bun:sqlite, applied automatically at start.
 - The admin screens come from [admin-ui](https://github.com/openbrandexchange/admin-ui): `scripts/update-ui.sh` (or `bun run update-ui`) copies its committed build into `public/`, including the e-mail strings in `public/locales/`. The admin API is plain REST + JSON (session cookie, `X-CSRF-Token` header on writes, `{items, next_cursor}` lists, problem+json errors), so any SPA stack works, for example React with TanStack Query. When developing the UI, run this node on port 8080 and let the UI's dev server proxy `/admin/api`, `/obx` and `/.well-known` to it (same origin, no CORS needed).
-- Contracts: [openbrandexchange/spec](https://github.com/openbrandexchange/spec) 0.2.0. Implementation notes and deviations: [NOTES.md](NOTES.md). Fixtures (including the import cases in `fixtures/imports/`) are copied with `scripts/sync-fixtures.sh`.
-- `src/core/article.ts` — the 0.2 article data: feature registry, measurements, footwear materials, certifications, fibre flags, the products.csv cell grammar and the label completeness warnings.
+- Contracts: [openbrandexchange/spec](https://github.com/openbrandexchange/spec) 0.3.0. Implementation notes and deviations: [NOTES.md](NOTES.md). Fixtures (including the import cases in `fixtures/imports/`) and the vocabularies (`src/vocabularies/`, bundled into both builds) are copied with `scripts/sync-fixtures.sh`.
+- `src/core/article.ts` — the article data: feature registry, measurements, footwear materials, certifications, materials and care as terms with names (0.3), the products.csv cell grammar and the label completeness warnings.
 
 ## Documentation
 
