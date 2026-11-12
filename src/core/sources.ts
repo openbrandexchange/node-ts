@@ -233,7 +233,8 @@ export async function fetchSource(ctx: Ctx, src: SourceRow, jobId: string, force
   const prod = csvs.filter((f) => base(f.path) === "products.csv").sort((a, b) => a.path.split("/").length - b.path.split("/").length)[0] ?? (csvs.filter((f) => base(f.path) !== "assets.csv").length === 1 ? csvs.find((f) => base(f.path) !== "assets.csv") : undefined);
   const ass = csvs.find((f) => base(f.path) === "assets.csv");
   // products.xlsx / assets.xlsx take the place of products.csv / assets.csv (import-format.md §5.1);
-  // the "only *.csv" fallback does not extend to workbooks, and a folder with both is refused.
+  // the "only *.csv" fallback does not extend to workbooks (never a workbook; not used when the folder
+  // has products.xlsx, which then wins over any other CSV), and a folder with both is refused.
   const shallowest = (n: string) => listed.filter((f) => base(f.path) === n).sort((a, b) => a.path.split("/").length - b.path.split("/").length)[0];
   const prodBook = shallowest("products.xlsx");
   const assBook = shallowest("assets.xlsx");
@@ -254,6 +255,14 @@ export async function fetchSource(ctx: Ctx, src: SourceRow, jobId: string, force
   ] as const) {
     if (!f) continue;
     const workbook = f === prodBook || f === assBook;
+    if (workbook && f.size > 64 * 1048576) {
+      // Not read: the import job refuses it with payload_too_large and one ImportRowError (§5.5, §5.6 step 1).
+      const loc = { key: "", offset: 0, length: f.size, name: base(f.path), workbook };
+      if (which === "csv") inputs.csv = loc;
+      else inputs.assets = loc;
+      files.push({ name: f.path, bytes: f.size, sha256: null });
+      continue;
+    }
     const bytes = await readRemoteFile(ctx, src.id, f.path, 64 * 1048576);
     // A workbook is stored as the file it is (never its parts) and converted by the import job.
     const key = `jobs/${jobId}/${which}.${workbook ? "xlsx" : "csv"}`;

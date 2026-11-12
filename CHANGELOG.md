@@ -18,9 +18,19 @@ always forward-only and applied automatically.
   Excel's row numbers and a `row 12, column ean (C): ` locator. The templates import as they are.
 - New error codes `workbook_invalid`, `workbook_unsafe` (macros, ActiveX, external links, data
   connections), `workbook_sheet_missing` and `workbook_too_large` (fixed limits against zip bombs and
-  oversized sheets), each as one ImportRowError of the import; `.xlsm`, `.xls`, `.xlsb`, `.ods` and
-  `.numbers` uploads are answered with `unsupported_media_type`. A package or folder with both
-  `products.csv` and `products.xlsx` (or both assets files) is `import_invalid`.
+  oversized sheets): a refused workbook (also `payload_too_large` above the 64 MB CSV limit) fails the
+  import run with that code and one ImportRowError (row and column null), and nothing of the import is
+  written; `.xlsm`, `.xls`, `.xlsb`, `.ods` and `.numbers` uploads are answered with
+  `unsupported_media_type`. A package or folder with both `products.csv` and `products.xlsx` (or both
+  assets files) is `import_invalid`.
+
+### Changed
+- Header names (spec import-format.md §1.1): only space, tab, CR and LF are trimmed, each run of them and
+  `-` counts as one `_`, and an empty header name is no column (no "Unknown column" warning).
+
+### Fixed
+- An `assets.csv` row whose image is neither in the import nor in the `images_manifest` is the error
+  `files_missing` (spec import-format.md §2.2); it was silently ignored.
 
 ## [0.2.0] - 2026-11-12
 

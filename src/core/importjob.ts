@@ -3,7 +3,7 @@
 import type { Ctx } from "./ctx";
 import { CatalogSession, type IngestResult } from "./catalog";
 import { enqueueJob, jobItemStmt, jobItems, registerJob, type JobRow, type StepOutcome } from "./jobs";
-import { ObxError } from "../lib/problem";
+import { ObxError, type ErrorCode } from "../lib/problem";
 import { getBlob, storeBlob, fileRef, blobKey } from "./blobs";
 import { ignoredEntry, readZipDirectory, readZipEntry, unsafeEntryReason, ZipError, type RangeReader, type ZipReadEntry } from "../lib/zip";
 import { convertWorkbook, excelRowError, memoryReader, WorkbookError, WORKBOOK_ROLES, type WorkbookRole } from "../lib/xlsx";
@@ -97,8 +97,6 @@ interface State {
   assetsName?: string;
   /** Header texts (row 1) of the workbooks the CSVs were converted from, for Excel row numbers in errors. */
   xlsx?: { csv?: string[]; assets?: string[] };
-  /** A workbook could not be imported (its one error is recorded); the rest of the import goes on. */
-  workbookFailed?: boolean;
   prepStep?: number;
   manifestDone?: number;
   imgCount: number;
@@ -351,8 +349,8 @@ async function prepare(ctx: Ctx, job: JobRow, st: State, input: ImportInput, sin
     let csvLoc: CsvLoc | null = null;
     let assetsLoc: CsvLoc | null = null;
     // A workbook is converted to its canonical CSV here (import-format.md §5); a workbook that cannot
-    // be imported gives one ImportRowError and nothing of that file is imported.
-    const take = async (which: "csv" | "assets", loc: CsvLoc, read: RangeReader | null): Promise<CsvLoc | null> => {
+    // be imported fails the run with its code and one ImportRowError, and nothing is written (§5.5).
+    const take = async (which: "csv" | "assets", loc: CsvLoc, read: RangeReader | null): Promise<CsvLoc> => {
       if (!loc.workbook) return loc;
       const role: WorkbookRole = which === "csv" ? "products" : "assets";
       const conv = await workbookToCsv(ctx, job, st, sink, role, read ?? storeReader(ctx, loc.key, loc.offset), loc.length, loc.name);
@@ -401,7 +399,7 @@ async function prepare(ctx: Ctx, job: JobRow, st: State, input: ImportInput, sin
         if (which === "csv") csvDone = true;
         else assetsDone = true;
         if (e === prodBook || e === assBook) {
-          if (e.size > CSV_MAX) throw new ObxError("payload_too_large", `${base(e.name)} may be at most ${CSV_MAX / 1048576} MB.`);
+          if (e.size > CSV_MAX) throw refuseWorkbook(sink, WORKBOOK_ROLES[which === "csv" ? "products" : "assets"].file, "payload_too_large", `the workbook is larger than ${CSV_MAX / 1048576} MB, the limit for one CSV file`);
           // The workbook is read from memory; its parts are never written anywhere.
           const book = await readZipEntry(read, e, CSV_MAX);
           const loc = await take(which, { key: "", offset: 0, length: book.length, name: e.name.replace(/\\/g, "/").split("/").pop()!, workbook: true }, memoryReader(book));
@@ -490,13 +488,22 @@ async function prepare(ctx: Ctx, job: JobRow, st: State, input: ImportInput, sin
     st.prepStep = 2;
   }
   // Nothing to import at all?
-  if (!st.csvKey && !st.imgCount && !st.workbookFailed) throw new ObxError("import_invalid", "The import contains no products.csv and no images.");
+  if (!st.csvKey && !st.imgCount) throw new ObxError("import_invalid", "The import contains no products.csv and no images.");
   // Parse CSVs once to count rows and record their errors.
   if (st.csvKey) {
     const groups = await loadGroups(ctx, st, input, sink);
     void groups;
   }
-  if (st.assetsKey) await loadOverrides(ctx, st, input, sink, true);
+  if (st.assetsKey) {
+    const overrides = await loadOverrides(ctx, st, input, sink, true);
+    // §2.2: a row whose file is neither in this import nor in the images_manifest is files_missing.
+    const names = new Set(
+      (await ctx.db.all<{ n: string | null }>("SELECT lower(json_extract(item, '$.name')) AS n FROM job_items WHERE job_id = ? AND kind = 'img'", [job.id])).map((r) => r.n),
+    );
+    for (const o of [...overrides.values()].sort((a, b) => a.row - b.row))
+      if (!names.has(o.file.toLowerCase()))
+        sink.add({ file: st.assetsName ?? "assets.csv", row: o.row, column: "file", severity: "error", obx_error: "files_missing", detail: `The image "${o.file}" is not part of this import.`, value: o.file });
+  }
   return true;
 }
 
@@ -506,12 +513,13 @@ const CSV_MAX = 64 * 1048576;
 /**
  * Converts a workbook (products.xlsx / assets.xlsx) to its canonical CSV (import-format.md §5), stores
  * that CSV for the later phases and records the conversion errors and warnings. Returns the CSV's
- * location, or null when the workbook cannot be imported (one ImportRowError with its code).
+ * location. A workbook that cannot be imported throws: the run fails with its code and the one
+ * ImportRowError (row and column null) recorded (§5.5).
  */
-async function workbookToCsv(ctx: Ctx, job: JobRow, st: State, sink: ErrSink, role: WorkbookRole, read: RangeReader, size: number, uploadedName: string): Promise<CsvLoc | null> {
+async function workbookToCsv(ctx: Ctx, job: JobRow, st: State, sink: ErrSink, role: WorkbookRole, read: RangeReader, size: number, uploadedName: string): Promise<CsvLoc> {
   const file = WORKBOOK_ROLES[role].file;
   if (!st.files.some((f) => f.name === uploadedName)) st.files.push({ name: uploadedName, bytes: size, sha256: null });
-  if (size > CSV_MAX) throw new ObxError("payload_too_large", `${file} may be at most ${CSV_MAX / 1048576} MB.`);
+  if (size > CSV_MAX) throw refuseWorkbook(sink, file, "payload_too_large", `the workbook is larger than ${CSV_MAX / 1048576} MB, the limit for one CSV file`);
   try {
     const out = await convertWorkbook(read, size, role);
     const which = role === "products" ? "csv" : "assets";
@@ -533,10 +541,14 @@ async function workbookToCsv(ctx: Ctx, job: JobRow, st: State, sink: ErrSink, ro
     return { key, offset: 0, length: stored.size, name: file, workbook: true };
   } catch (e) {
     if (!(e instanceof WorkbookError)) throw e;
-    sink.addRaw({ file, row: null, column: null, severity: "error", obx_error: e.code, detail: `${e.detail}.`, value: null });
-    st.workbookFailed = true;
-    return null;
+    throw refuseWorkbook(sink, file, e.code, e.detail);
   }
+}
+
+/** Records the one ImportRowError of a refused workbook and returns the error that fails the run (§5.5). */
+function refuseWorkbook(sink: ErrSink, file: string, code: string, detail: string): ObxError {
+  sink.addRaw({ file, row: null, column: null, severity: "error", obx_error: code, detail: `${detail}.`, value: null });
+  return new ObxError(code as ErrorCode, `${file}: ${detail}.`);
 }
 
 const groupCache = new WeakMap<object, ProductGroup[]>();

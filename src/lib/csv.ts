@@ -77,7 +77,7 @@ export function parseCsv(input: string, delimiter?: string): ParsedCsv {
     rec.push(field);
     records.push(rec);
   }
-  const header = (records.shift() ?? []).map((h) => h.trim());
+  const header = (records.shift() ?? []).map(trimWs);
   const rows: ParsedCsv["rows"] = [];
   records.forEach((cells, idx) => {
     const trimmed = cells.map((c) => c.trim());
@@ -87,12 +87,15 @@ export function parseCsv(input: string, delimiter?: string): ParsedCsv {
   return { delimiter, header, rows };
 }
 
-/** Header normalisation: case-insensitive, trimmed, spaces and "-" count as "_" (language suffix kept). */
+/** White space around and inside header names (import-format.md §1.1): space, tab, CR, LF. */
+const trimWs = (s: string) => s.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "");
+
+/** Header normalisation (§1.1): case-insensitive, trimmed, each run of white space and "-" is one "_" (language suffix kept). */
 export function normHeader(h: string): string {
-  const [base, ...rest] = h.trim().split(":");
-  const b = base.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const [base, ...rest] = trimWs(h).split(":");
+  const b = trimWs(base).toLowerCase().replace(/[ \t\r\n-]+/g, "_");
   if (!rest.length) return b;
-  return `${b}:${rest.join(":").trim()}`;
+  return `${b}:${trimWs(rest.join(":"))}`;
 }
 
 function escapeFormula(v: string): string {

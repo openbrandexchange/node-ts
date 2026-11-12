@@ -354,6 +354,7 @@ export function parseProductsCsv(text: string, file: string, defaultLanguage: st
   // Unknown columns: one warning each. feature:<key> outside the registry: one warning each.
   const featureCols: { key: string; i: number }[] = [];
   cols.forEach((c, i) => {
+    if (c === "") return; // an empty header name is no column: ignored without a warning (§1.1)
     const [base, lang] = c.split(":");
     if (base === "feature" && lang !== undefined) {
       const key = normKey(lang);

@@ -155,12 +155,25 @@ The recipient's language is the user's language, the requester's `contact.langua
   output in byte chunks and the file); 12 columns (45 MB XML) in 1.6 s CPU, heap peak ~22 MB. In
   `wrangler dev` (workerd, R2 simulated) they convert in 6.6 s and 3.3 s wall, and the whole import job succeeds. The template converts
   in a few milliseconds. The CSV import of such a file afterwards costs what the same CSV costs.
-- Choices where the spec leaves room: a workbook that cannot be imported is one ImportRowError and the job
-  still succeeds (also when nothing else was sent), as I-IMP-10 asks; a workbook above the CSV limit fails
-  the job with `payload_too_large`, as a CSV does. `.xlsm`, `.xls`, `.xlsb`, `.xltx`, `.xltm`, `.ods` and
-  `.numbers` uploads are answered 415. CDATA sections count as text (the reference ignores them; Excel
-  never writes them). Zip CRCs are not checked (a corrupt deflate stream still fails). The ImportRun
-  `files` list shows the uploaded file name; ImportRowErrors use `products.xlsx` / `assets.xlsx`.
+- Aligned with the spec's later decisions (import-format.md §5.5, §5.6, NOTES 36–42), as node-go and
+  node-php: a workbook that cannot be imported (and one above the 64 MB CSV limit, `payload_too_large`)
+  fails the import run with its code (`ImportRun.error`) and one ImportRowError with row and column null,
+  recorded before the failure so `/results` and `errors_preview` show it; nothing of the import is written,
+  also with `dry_run`. A folder workbook above the limit is not downloaded; the job refuses it. Unsafe entry
+  names are checked before `[Content_Types].xml` is read. A non-zero number outside 1E-308 to below 1E+308
+  (after rounding to 15 digits) is `workbook_invalid`, checked from the decimal text (an exponent of more
+  than 9 digits is refused before anything is built), also in date cells; a date after 9999-12-31 is a
+  conversion error. A column whose header is empty after trimming (also one emptied by a conversion error in
+  row 1) gets one warning when it holds values in rows 2 to R, and its cells are located as
+  `row <n>, column <letter>: `; the CSV import ignores empty header names without a warning. Header names
+  are normalised as §1.1 now says (only space/tab/CR/LF trimmed, each run of them and `-` one `_`), for CSV
+  headers and the sheet choice alike. CDATA sections count as text. In a pull folder `products.xlsx` wins
+  over the "only `*.csv`" fallback, which never picks a workbook. `.xlsm`, `.xls`, `.xlsb`, `.xltx`,
+  `.xltm`, `.ods` and `.numbers` uploads are answered 415. Zip CRCs are not checked (a corrupt deflate stream
+  still fails). The ImportRun `files` list shows the uploaded file name; ImportRowErrors use
+  `products.xlsx` / `assets.xlsx`.
+- `assets.csv` rows whose image is neither in the import nor in the `images_manifest` are `files_missing`
+  (§2.2), checked once the job knows every image name.
 
 ## Production hardening (2026-09-28)
 

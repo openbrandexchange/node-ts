@@ -94,14 +94,16 @@ function colNumber(letters: string): number {
   for (let i = 0; i < letters.length; i++) n = n * 26 + letters.charCodeAt(i) - 64;
   return n;
 }
-/** CSV header normalisation used for the sheet choice (§5.2, §1.1). */
-const normalizeHeader = (h: string) => h.trim().toLowerCase().replace(/[ -]/g, "_");
+/** White space around header names (§1.1): space, tab, CR, LF. */
+export const trimHeader = (h: string) => h.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "");
+/** CSV header normalisation used for the sheet choice (§5.2, §1.1): each run of white space and "-" is one "_". */
+const normalizeHeader = (h: string) => trimHeader(h).toLowerCase().replace(/[ \t\r\n-]+/g, "_");
 
 /** §5.4 ST_Xstring escapes: _xHHHH_ is the character U+HHHH, one left-to-right pass. */
 export const unescapeXstring = (s: string) => (s.includes("_x") ? s.replace(/_x([0-9A-Fa-f]{4})_/g, (_, h: string) => String.fromCharCode(parseInt(h, 16))) : s);
 
-/** §5.5 locator at the start of every detail about a cell: "row 12, column ean (C): ". */
-export const cellLocator = (row: number, column: string | null, letter: string) => `row ${row}, column ${column ? `${column} ` : ""}(${letter}): `;
+/** §5.5 locator at the start of every detail about a cell: "row 12, column ean (C): ", or "row 12, column C: " without a header. */
+export const cellLocator = (row: number, column: string | null, letter: string) => (column ? `row ${row}, column ${column} (${letter}): ` : `row ${row}, column ${letter}: `);
 
 // ------------------------------------------------------------------ numbers (§5.4)
 
@@ -110,7 +112,7 @@ const NUMBER = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/;
 /**
  * The text of a numeric cell value as written in <v>: exact decimal expansion, rounded to 15
  * significant digits (half away from zero), no exponent, no trailing zeros, "." as separator.
- * Returns null when <v> is not a number.
+ * Returns null when <v> is not a number or (not zero) outside Excel's range 1E-308 <= |x| < 1E+308.
  */
 export function numberText(lex: string): string | null {
   const m = NUMBER.exec(lex.trim());
@@ -120,8 +122,10 @@ export function numberText(lex: string): string | null {
   let z = 0;
   while (z < all.length && all[z] === "0") z++;
   let digits = all.slice(z);
+  if (/^0*$/.test(digits)) return "0"; // zero, whatever its exponent
+  // a non-zero number with an exponent of more than 9 digits is out of range (never expanded)
+  if (m[4] !== undefined && m[4].replace(/^[+-]?0*/, "").length > 9) return null;
   let point = m[2].length + Number(m[4] ?? 0) - z;
-  if (digits === "") return "0";
   if (digits.length > 15) {
     const up = digits[15] >= "5";
     const kept = digits.slice(0, 15).split("").map(Number);
@@ -145,7 +149,8 @@ export function numberText(lex: string): string | null {
     digits = kept.join("");
   }
   digits = digits.replace(/0+$/, "");
-  if (digits === "") return "0";
+  // Excel's range (§5.4, numbers, step 3); the leading digit stands for 10^(point - 1)
+  if (point - 1 >= 308 || point - 1 < -308) return null;
   let int: string;
   let frac: string;
   if (point <= 0) {
@@ -221,7 +226,7 @@ export function serialText(lex: string, kind: "date" | "datetime", date1904: boo
   }
   const epoch = date1904 ? Date.UTC(1904, 0, 1) : Date.UTC(1899, 11, 30);
   const d = new Date(epoch + days * 86400000);
-  if (Number.isNaN(d.getTime())) return null;
+  if (Number.isNaN(d.getTime()) || d.getUTCFullYear() > 9999) return null; // after 9999-12-31
   const ymd = `${pad(d.getUTCFullYear(), 4)}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
   if (kind === "date") return ymd;
   return `${ymd}T${pad(Math.floor(secs / 3600))}:${pad(Math.floor(secs / 60) % 60)}:${pad(secs % 60)}Z`;
@@ -664,14 +669,15 @@ function cellValue(c: RawCell, fmt: Fmt, date1904: boolean, shared: string[]): V
     }
     default: {
       if (c.v === null || c.v.trim() === "") return { text: "" };
+      // a date cell holds a number too: not a number, or out of Excel's range, is workbook_invalid
+      let t = numberText(c.v);
+      if (t === null) throw new WorkbookError("workbook_invalid", `a number cell holds "${c.v.slice(0, 50)}", which is not a number Excel can store`);
       const f = fmt(c.s);
       const kind = dateKind(f.id, f.code);
       if (kind) {
-        const t = serialText(c.v, kind, date1904);
-        return t === null ? { error: c.v, reason: "a date before 1900-03-01" } : { text: t };
+        const d = serialText(c.v, kind, date1904);
+        return d === null ? { error: c.v, reason: `a date outside ${date1904 ? "1904-01-01" : "1900-03-01"} to 9999-12-31` } : { text: d };
       }
-      let t = numberText(c.v);
-      if (t === null) throw new WorkbookError("workbook_invalid", `a number cell holds "${c.v.slice(0, 50)}"`);
       const w = zeroPad(f.code);
       if (w && /^\d+$/.test(t) && t.length < w) t = t.padStart(w, "0");
       return { text: t };
@@ -714,6 +720,8 @@ class ByteSink {
 
 class Emitter {
   header: string[] | null = null;
+  /** Columns 1 to W whose header name is empty after trimming. */
+  private noHeader: boolean[] = [];
   width = 0;
   private out = new ByteSink();
   private lastOut = 1;
@@ -750,6 +758,7 @@ class Emitter {
     for (const [c, v] of cells) if (v.error !== undefined && c <= w) this.error(1, c, "", v);
     for (const c of this.preCols) if (c > w) this.stray.add(c);
     this.header = header;
+    this.noHeader = header.map((h) => trimHeader(h) === "");
     this.out.write(header.map(csvField).join(",") + "\r\n");
   }
 
@@ -778,11 +787,13 @@ class Emitter {
       }
     }
     if (!inside) return;
+    // values under an empty header name are ignored with a warning (§5.3)
+    for (const [c] of cells) if (c <= w && this.noHeader[c - 1]) this.stray.add(c);
     const empty = ",".repeat(w - 1) + "\r\n";
     for (let r = this.lastOut + 1; r < rn; r++) this.out.write(empty);
     this.lastOut = rn;
     if (bad) {
-      for (const [c, v] of cells) if (c <= w && v.error !== undefined) this.error(rn, c, this.header![c - 1].trim(), v);
+      for (const [c, v] of cells) if (c <= w && v.error !== undefined) this.error(rn, c, trimHeader(this.header![c - 1]), v);
       this.out.write(empty);
       return;
     }
@@ -1126,7 +1137,7 @@ export function excelRowError<E extends { row: number | null; column: string | n
   let idx = -1;
   if (e.column !== null) {
     const c = e.column.trim();
-    idx = header.findIndex((h) => h.trim() === c);
+    idx = header.findIndex((h) => trimHeader(h) === c);
     if (idx < 0) {
       const n = norm(c);
       idx = header.findIndex((h) => norm(h) === n);
@@ -1137,7 +1148,7 @@ export function excelRowError<E extends { row: number | null; column: string | n
       }
     }
   }
-  const head = idx >= 0 ? header[idx].trim() : "";
+  const head = idx >= 0 ? trimHeader(header[idx]) : "";
   const letter = idx >= 0 ? colLetter(idx + 1) : "";
   let prefix = "";
   if (row !== null && idx >= 0) prefix = cellLocator(row, head, letter);

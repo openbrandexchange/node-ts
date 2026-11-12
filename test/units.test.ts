@@ -43,6 +43,12 @@ describe("CSV", () => {
     expect(p.rows[0].cells[1]).toBe('Crew "neck"; knit');
     expect(p.rows[1].cells[2]).toBe("multi\nline");
   });
+  test("header names (import-format.md §1.1): runs of white space and - are one _, empty names are no column", () => {
+    expect(["Style  -  Number", "\tStyle\nNumber ", "style-number", "Name : en", "colour\u00a0code"].map(normHeader)).toEqual(["style_number", "style_number", "style_number", "name:en", "colour\u00a0code"]);
+    const p = parseProductsCsv("brand,Style  Number,,name:en, ,bogus\r\nKestrel,KX-1,x,Tee,y,z\r\n", "products.csv", "en");
+    expect(p.errors.map((e) => [e.column, e.detail])).toEqual([["bogus", 'Unknown column "bogus" was ignored.']]);
+    expect(p.groups.map((g) => g.product.style_number)).toEqual(["KX-1"]);
+  });
   test("writer escapes formulas but keeps numbers", () => {
     const out = writeCsv([["=cmd", "+1", "-x", "@a", "2000100101025", "-12.5", "plain"]], ",", false);
     expect(out.trim()).toBe("'=cmd,+1,'-x,'@a,2000100101025,-12.5,plain");
