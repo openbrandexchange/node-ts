@@ -37,7 +37,7 @@
     "@types/bun": "latest",
     "oxlint": "^1.86.0",
     "typescript": "^5.9.3",
-    "wrangler": "^4.142.0"
+    "wrangler": "^4.158.0"
   },
   "cloudflare": {
     "label": "Open Brand Exchange \u00b7 Portal for Cloudflare",
