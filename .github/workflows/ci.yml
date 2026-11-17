@@ -72,6 +72,9 @@ jobs:
         if: env.OBX_ACCESS == 'yes'
         with:
           repository: openbrandexchange/obx-go
+          # The suite of the spec version this node implements (0.3.0). Switch to the tag v0.3.0 once obx-go
+          # publishes it (it will point at the same commit as obx-0.3-terms, fe9b626).
+          ref: obx-0.3-terms
           token: ${{ secrets.OBX_READ_TOKEN || github.token }}
           path: obx-go
       - uses: actions/setup-go@v5

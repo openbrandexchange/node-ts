@@ -135,7 +135,7 @@ try {
   // Import job through the cron path (Workers: jobs run in waitUntil / the minute tick).
   const zip = await zipBytes(
     [
-      { name: "products.csv", data: new TextEncoder().encode("style_number,name:en,gtin,color_code,size\nKO-2002,Tee,2000200101031,BLK,M\n") },
+      { name: "products.csv", data: new TextEncoder().encode("style_number,name:en,gtin,color_code,size\nKO-2002,Tee,2000999900013,BLK,M\n") },
       { name: "KO-2002_BLK_1.jpg", data: fakeJpeg(800, 1000, 7) },
     ],
     crc32,
@@ -178,6 +178,8 @@ try {
     xstatus = (await call("GET", `/obx/v1/ingest/jobs/${ximp.json.id}`, { bearer: it })).json?.status;
   }
   const xjob = await call("GET", `/obx/v1/ingest/jobs/${ximp.json.id}`, { bearer: it });
+  if (xstatus !== "succeeded" || xjob.json.import_run.counts.errors !== 0)
+    console.error(JSON.stringify({ status: xstatus, counts: xjob.json.import_run?.counts, errors: (await call("GET", `/obx/v1/ingest/jobs/${ximp.json.id}/results?errors_only=true`, { bearer: it })).json?.items?.slice(0, 5) }));
   check(xstatus === "succeeded" && xjob.json.import_run.counts.rows === 46 && xjob.json.import_run.counts.errors === 0, "products.xlsx (the template) converts and imports in the Workers runtime");
   const ui = await fetch(`${base}/some/portal/route`, { headers: { accept: "text/html" } });
   check(ui.status === 200 && (await ui.text()).includes("<html"), "static UI with SPA fallback");
