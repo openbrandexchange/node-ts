@@ -110,7 +110,17 @@ describe("imports of the article data columns (I-IMP-7, I-IMP-8)", () => {
       expect({ file: c.file, status: job.status }).toEqual({ file: c.file, status: "succeeded" });
       const k = job.import_run.counts;
       expect({ file: c.file, counts: { rows: k.rows, created: k.created, updated: k.updated, unchanged: k.unchanged, errors: k.errors } }).toEqual({ file: c.file, counts: c.counts });
-      const errs = items.filter((i: any) => i.severity === "error").map((i: any) => ({ file: i.file, row: i.row, column: i.column, severity: i.severity, obx_error: i.obx_error, value: i.value }));
+      const errors = items.filter((i: any) => i.severity === "error");
+      const errs = errors.map((i: any, n: number) => ({
+        file: i.file,
+        row: i.row,
+        column: i.column,
+        severity: i.severity,
+        obx_error: i.obx_error,
+        // detail_prefix: the detail must start with it (the decimal comma, import-format.md §1.4)
+        ...(c.errors[n]?.detail_prefix !== undefined ? { detail_prefix: String(i.detail).startsWith(c.errors[n].detail_prefix) ? c.errors[n].detail_prefix : i.detail } : {}),
+        value: i.value,
+      }));
       expect({ file: c.file, errs }).toEqual({ file: c.file, errs: c.errors });
       const live = (await node.feed(at, cursor)).entries.map((e: any) => ({ type: e.type, op: e.op, external_id: e.external_id }));
       expect({ file: c.file, live }).toEqual({ file: c.file, live: c.changes });
@@ -127,20 +137,45 @@ describe("imports of the article data columns (I-IMP-7, I-IMP-8)", () => {
     }
   });
 
+  test("variant identity: default ids, a late GTIN, a GTIN that finds its variant, a GTIN of another product (I-IMP-12)", async () => {
+    const exp = JSON.parse(fixtureText("imports/variant-identity.expected.json"));
+    let ids: Record<string, string> | null = null;
+    for (const c of exp.cases) {
+      const { cursor } = await node.feed(at);
+      const { job, items } = await importCsv(c.file, fixtureText(`imports/${c.file}`));
+      const k = job.import_run.counts;
+      expect({ file: c.file, counts: { rows: k.rows, created: k.created, updated: k.updated, unchanged: k.unchanged, errors: k.errors } }).toEqual({ file: c.file, counts: c.counts });
+      const errs = items.filter((i: any) => i.severity === "error").map((i: any) => ({ file: i.file, row: i.row, column: i.column, severity: i.severity, obx_error: i.obx_error, value: i.value }));
+      expect({ file: c.file, errs }).toEqual({ file: c.file, errs: c.errors });
+      const live = (await node.feed(at, cursor)).entries.map((e: any) => ({ type: e.type, op: e.op, external_id: e.external_id }));
+      expect({ file: c.file, live }).toEqual({ file: c.file, live: c.changes });
+      const p = await productByExt("KL-8101");
+      const want = c.products["KL-8101"].variants as Record<string, unknown>[];
+      const got = p.variants.map((v: any, i: number) => Object.fromEntries(Object.keys(want[i] ?? v).map((k) => [k, v[k]])));
+      expect({ file: c.file, got }).toEqual({ file: c.file, got: want });
+      const now = Object.fromEntries(p.variants.map((v: any) => [v.external_id, v.id]));
+      if (ids) expect(now).toEqual(ids);
+      ids = now;
+    }
+    // The Kestrel variants have the default ids although products.csv has their GTINs.
+    expect((await productByExt("KO-1004")).variants.map((v: any) => v.external_id)).toContain("KO-1004-IND-30-32");
+    expect((await node.api(token, "DELETE", "/obx/v1/ingest/products/KL-8101")).status).toBeLessThan(300);
+  });
+
   test("label-warnings.csv as a dry run: exactly the expected codes, nothing written; the Kestrel import has none", async () => {
     const exp = JSON.parse(fixtureText("imports/label-warnings.expected.json"));
     const { cursor } = await node.feed(at);
     const { job, items } = await importCsv("label-warnings.csv", fixtureText("imports/label-warnings.csv"), { dry_run: true });
     expect(job.status).toBe("succeeded");
     expect(items.filter((i: any) => i.severity === "error")).toEqual([]);
-    const coded = items.filter((i: any) => exp.warnings.some((w: any) => w.obx_error === i.obx_error) || /^(fibre|animal|footwear)_/.test(i.obx_error));
-    expect(coded.map((i: any) => ({ file: i.file, row: i.row, column: i.column, severity: i.severity, obx_error: i.obx_error }))).toEqual(exp.warnings);
+    const coded = items.filter((i: any) => exp.codes.includes(i.obx_error));
+    expect(coded.map((i: any, n: number) => ({ file: i.file, row: i.row, column: i.column, severity: i.severity, obx_error: i.obx_error, ...("value" in (exp.warnings[n] ?? {}) ? { value: i.value } : {}) }))).toEqual(exp.warnings);
     expect(job.import_run.counts.warnings).toBeGreaterThanOrEqual(5);
     expect((await node.feed(at, cursor)).entries).toEqual([]);
     expect((await node.api(token, "GET", "/obx/v1/ingest/products/KL-8001")).status).toBe(404);
     const again = await importKestrel(node, token);
     const all = (await node.api(token, "GET", `/obx/v1/ingest/jobs/${again.id}/results?limit=500`)).json.items;
-    expect(all.filter((i: any) => /^(fibre|animal|footwear)_/.test(i.obx_error))).toEqual([]);
+    expect(all.filter((i: any) => exp.codes.includes(i.obx_error))).toEqual([]);
   });
 
   test("cell grammar of import-format.md §1.6", () => {
@@ -217,7 +252,11 @@ describe("Ingest API (ingest.md §3.4)", () => {
       },
     });
     expect(r.status).toBe(201);
-    expect(r.json.warning_details).toEqual([{ code: "fibre_percentages_not_100", pointer: "/materials/0", detail: expect.any(String) }]);
+    expect(r.json.warning_details).toEqual([
+      { code: "fibre_percentages_not_100", pointer: "/materials/0", detail: expect.any(String) },
+      // An unknown material code is kept, with a warning (import-format.md §1.4).
+      { code: "material_unknown", pointer: "/materials/0/fibers/2/material/code", detail: expect.stringContaining("pinatex") },
+    ]);
     expect(r.json.warnings.some((w: string) => w.startsWith("fibre_percentages_not_100: "))).toBe(true);
     // Stored: codes, plus what was written for codes outside the vocabularies.
     const stored = JSON.parse((await node.platform.db.first<{ stored: string }>("SELECT stored FROM products WHERE external_id = 'KX-9'"))!.stored);
@@ -261,19 +300,91 @@ describe("Ingest API (ingest.md §3.4)", () => {
     expect("warning_details" in ok.json).toBe(false);
   });
 
+  test("unknown members are ignored with a warning at any depth, never 422; extensions are kept (ingest.md §3.1, I-EXT-1)", async () => {
+    const input = JSON.parse(fixtureText("examples/ProductInput.extension.json"));
+    input.brand_external_id = "kestrel"; // the node has two brands
+    input.unknown_member = 1;
+    input.materials[0].fibers[0].unknown_nested = true;
+    const r = await node.api(token, "PUT", "/obx/v1/ingest/products/KX-EXT", { json: input });
+    expect(r.status).toBe(201);
+    expect(r.json.warnings.filter((w: string) => w.startsWith("Unknown field"))).toEqual(["Unknown field /unknown_member was ignored.", "Unknown field /materials/0/fibers/0/unknown_nested was ignored."]);
+    const check = (d: any) => {
+      expect(d["x-kestrel-fabric-weight-gsm"]).toBe(180);
+      expect(d["x-kestrel-care-note"]).toEqual(input["x-kestrel-care-note"]);
+      expect(d.materials[0].fibers[0].material["x-kestrel-mill"]).toBe("Mill 7");
+      expect(JSON.stringify(d)).not.toContain("unknown_");
+    };
+    check((await node.api(token, "GET", "/obx/v1/ingest/products/KX-EXT")).json.data);
+    check(await productByExt("KX-EXT"));
+    expect((await node.api(token, "PUT", "/obx/v1/ingest/products/KX-EXT", { json: input })).json.result).toBe("unchanged");
+    const { cursor } = await node.feed(at);
+    const p = await node.api(token, "PATCH", "/obx/v1/ingest/products/KX-EXT", { json: { "x-kestrel-fabric-weight-gsm": null }, headers: { "content-type": "application/merge-patch+json" } });
+    expect(p.json.result).toBe("updated");
+    const live = (await node.feed(at, cursor)).entries;
+    expect(live.map((e: any) => [e.type, e.op])).toEqual([["product", "upsert"]]);
+    expect("x-kestrel-fabric-weight-gsm" in live[0].data).toBe(false);
+    expect(live[0].data["x-kestrel-care-note"]).toEqual(input["x-kestrel-care-note"]);
+    // Unknown members inside other objects too: a warning, never a 422.
+    const nested = await node.api(token, "PUT", "/obx/v1/ingest/products/KX-EXT", {
+      json: { ...input, care: [{ code: "wash_30", colour: "red" }], certifications: [{ scheme: "gots", scope: "product", issuer: "x" }], footwear_materials: null, materials: [{ part: { code: "main", extra: 1 }, fibers: [{ material: { code: "cotton" }, percentage: 100, recycled: true }] }] },
+    });
+    expect(nested.status).toBe(200);
+    expect(nested.json.warnings.filter((w: string) => w.startsWith("Unknown field"))).toEqual(
+      expect.arrayContaining(["Unknown field /care/0/colour was ignored.", "Unknown field /certifications/0/issuer was ignored.", "Unknown field /materials/0/part/extra was ignored.", "Unknown field /materials/0/fibers/0/recycled was ignored."]),
+    );
+    // An import leaves the extension members untouched (import-format.md rule 2).
+    await node.api(token, "PUT", "/obx/v1/ingest/products/KX-EXT", { json: input });
+    const imp = await importCsv("ext.csv", "brand,style_number,name:en\nkestrel,KX-EXT,Linen Shirt Renamed\n");
+    expect(imp.job.import_run.counts.updated).toBe(1);
+    const after = (await node.api(token, "GET", "/obx/v1/ingest/products/KX-EXT")).json.data;
+    expect([after.name.en, after["x-kestrel-fabric-weight-gsm"]]).toEqual(["Linen Shirt Renamed", 180]);
+    // A variant: on the variant and inside color.
+    const vr = await node.api(token, "PUT", "/obx/v1/ingest/variants/KX-EXT-BLK-M", {
+      json: { product_external_id: "KX-EXT", color: { code: "BLK", "x-kestrel-pantone": "19-4005", shade: "dark" }, size: "M", "x-kestrel-bin": { aisle: 4 } },
+    });
+    expect(vr.status).toBe(201);
+    expect(vr.json.warnings).toContain("Unknown field /color/shade was ignored.");
+    const pv = (await productByExt("KX-EXT")).variants[0];
+    expect([pv["x-kestrel-bin"], pv.color["x-kestrel-pantone"], "shade" in pv.color]).toEqual([{ aisle: 4 }, "19-4005", false]);
+    await node.api(token, "DELETE", "/obx/v1/ingest/variants/KX-EXT-BLK-M");
+    await node.api(token, "DELETE", "/obx/v1/ingest/products/KX-EXT");
+  });
+
+  test("the draft single qualifier is read as a list of one with the warning qualifier_deprecated (I-MAT-1)", async () => {
+    const fibers = [
+      { material: { code: "polyester" }, percentage: 60, qualifier: { code: "recycled" } },
+      { material: { code: "cotton" }, percentage: 30, qualifier: { code: "organic" }, qualifiers: [{ code: "regenerative" }] },
+      { material: { code: "elastane" }, percentage: 10, qualifier: null },
+    ];
+    const r = await node.api(token, "PUT", "/obx/v1/ingest/products/KX-MAT", { json: { ...base, item_type: "home", materials: [{ part: { code: "main" }, fibers }] } });
+    expect(r.status).toBe(201);
+    expect(r.json.warning_details).toEqual([{ code: "qualifier_deprecated", pointer: "/materials/0/fibers/0/qualifier", detail: expect.any(String) }]);
+    expect(r.json.warnings.filter((w: string) => w.startsWith("qualifier_deprecated")).length).toBe(1);
+    const codes = (d: any) => d.materials[0].fibers.map((f: any) => f.qualifiers.map((q: any) => q.code));
+    const rec = (await node.api(token, "GET", "/obx/v1/ingest/products/KX-MAT")).json.data;
+    const prod = await productByExt("KX-MAT");
+    for (const d of [rec, prod]) {
+      expect(codes(d)).toEqual([["recycled"], ["regenerative"], []]);
+      expect(JSON.stringify(d.materials)).not.toContain('"qualifier"');
+    }
+    const plain = fibers.map(({ qualifier: _q, ...f }, i) => ({ ...f, qualifiers: [[{ code: "recycled" }], [{ code: "regenerative" }], []][i] }));
+    expect((await node.api(token, "PUT", "/obx/v1/ingest/products/KX-MAT", { json: { ...base, item_type: "home", materials: [{ part: { code: "main" }, fibers: plain }] } })).json.result).toBe("unchanged");
+    await node.api(token, "DELETE", "/obx/v1/ingest/products/KX-MAT");
+  });
+
   test("0.2 shapes and malformed terms are 422", async () => {
     const bad: [Record<string, unknown>, string][] = [
       [{ ...base, materials: [{ part: "main", fibers: [{ material: { code: "cotton" }, percentage: 100 }] }] }, "/materials/0/part"],
-      [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ fiber: "cotton", percentage: 100 }] }] }, "/materials/0/fibers/0/fiber"],
-      [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ material: { code: "polyester" }, percentage: 100, recycled: true }] }] }, "/materials/0/fibers/0/recycled"],
-      [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 100, qualifier: { code: "organic" } }] }] }, "/materials/0/fibers/0/qualifier"],
+      // A 0.2 fibre has no material; its "fiber" member is unknown (a warning, ingest.md §3.1).
+      [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ fiber: "cotton", percentage: 100 }] }] }, "/materials/0/fibers/0/material"],
+      [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 0 }] }] }, "/materials/0/fibers/0/percentage"],
+      [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, qualifier: "organic" }] }] }, "/materials/0/fibers/0/qualifier"],
       [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 100, qualifiers: { code: "organic" } }] }] }, "/materials/0/fibers/0/qualifiers"],
       [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 100, qualifiers: ["organic"] }] }] }, "/materials/0/fibers/0/qualifiers/0"],
       [{ ...base, materials: [{ part: { code: "Main" }, fibers: [{ material: { code: "cotton" }, percentage: 100 }] }] }, "/materials/0/part/code"],
       [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton", name: { en: "" } }, percentage: 100 }] }] }, "/materials/0/fibers/0/material/name/en"],
       [{ ...base, care: [{ code: "wash_30", category: "rinsing" }] }, "/care/0/category"],
       [{ ...base, care: [{ code: "wash_30", symbol: "C40" }] }, "/care/0/symbol"],
-      [{ ...base, care: [{ code: "wash_30", colour: "red" }] }, "/care/0/colour"],
     ];
     for (const [json, pointer] of bad) {
       const r = await node.api(token, "PUT", "/obx/v1/ingest/products/KX-9", { json });

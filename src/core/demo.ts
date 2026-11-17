@@ -55,6 +55,7 @@ const WIPE = [
   "selections",
   "download_events",
   "idempotency",
+  "idempotency_keys",
   "audit_log",
 ];
 

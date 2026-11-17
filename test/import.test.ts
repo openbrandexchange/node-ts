@@ -222,10 +222,10 @@ describe("canonical import (I-IMP-1..4)", () => {
     const { node, token } = await kestrelNode();
     const csv = [
       "style_number,name:en,gtin,color_code,size,materials",
-      "ZZ-1,Good Tee,2000100101018,BLK,M,100% cotton",
+      "ZZ-1,Good Tee,2000999900013,BLK,M,100% cotton",
       "ZZ-2,Bad Gtin,2.00010010102E+12,BLK,M,",
       "ZZ-3,Bad Check,2000100101019,BLK,M,",
-      "ZZ-4,Bad Materials,,BLK,M,cotton",
+      "ZZ-4,Bad Materials,,BLK,M,\"95,5% cotton\"",
     ].join("\n");
     const f = formData([
       { name: "csv", filename: "products.csv", data: csv },

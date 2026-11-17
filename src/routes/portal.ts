@@ -2,7 +2,7 @@
 // Admins get the same endpoints as a preview of everything published (their downloads are not logged).
 import { Hono } from "hono";
 import type { AppEnv, C } from "./common";
-import { ctxOf, json, noContent, readObject, intQuery, idParam, listQuery, encodeListCursor, decodeListCursor } from "./common";
+import { ctxOf, json, noContent, readObject, limitQuery, idParam, listQuery, encodeListCursor, decodeListCursor } from "./common";
 import { requireUser } from "./admin-auth";
 import { ObxError } from "../lib/problem";
 import { grantOf, retailerOriginalAllowed, type RetailerRow, type ClientRow, type Viewer, type SessionInfo } from "../core/auth";
@@ -144,7 +144,7 @@ portal.get("/admin/api/portal/viewer", async (c) => {
 portal.get("/admin/api/portal/products", async (c) => {
   const { viewer } = await viewerOf(c);
   const ctx = ctxOf(c);
-  const limit = intQuery(c, "limit", 48, 1, 200);
+  const limit = limitQuery(c, 48, 200);
   const f = filterFrom(c);
   const w = filterSql(f, viewer, ctx.iso());
   const off = (await decodeListCursor<number>(ctx, "portal-products", c.req.query("cursor") || undefined)) ?? 0;

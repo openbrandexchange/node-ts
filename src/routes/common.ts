@@ -70,6 +70,17 @@ export function intQuery(c: C, name: string, def: number, lo: number, hi: number
   return Number(v);
 }
 
+/**
+ * A page size (protocol.md §2.1): above the maximum it is clamped to the maximum (never an error);
+ * not a whole number or below 1 is 400 invalid_request.
+ */
+export function limitQuery(c: C, def: number, max: number): number {
+  const v = c.req.query("limit");
+  if (v === undefined || v === "") return def;
+  if (!/^\d+$/.test(v) || Number(v) < 1) throw new ObxError("invalid_request", `limit must be a whole number of at least 1 (at most ${max} are returned).`);
+  return Math.min(Number(v), max);
+}
+
 export function listQuery(c: C, name: string): string[] | undefined {
   const all = c.req.queries(name);
   if (!all?.length) return undefined;

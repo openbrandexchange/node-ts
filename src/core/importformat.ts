@@ -88,6 +88,19 @@ export function parseImageName(file: string): ParsedImageName | { error: string 
   return { style, color: color.toUpperCase() === "ALL" ? null : color, position: Number(pos), role, view };
 }
 
+/**
+ * The default variant external id (import-format.md §1.2.1): `<style>-<color>-<size>[-<size_length>]`, the
+ * cells as written (trimmed), an empty size or size_length left out with its `-`, control characters and
+ * `/` as `_`. Never the GTIN.
+ */
+export function defaultVariantId(style: string, color: string, size: string, sizeLength: string): string {
+  return [style, color, size, sizeLength]
+    .map((x) => x.trim())
+    .filter((x, i) => i < 2 || x !== "")
+    .join("-")
+    .replace(/[\x00-\x1f\x7f/]/g, "_");
+}
+
 // ------------------------------------------------------------------ materials & care
 
 /**
@@ -95,8 +108,10 @@ export function parseImageName(file: string): ParsedImageName | { error: string 
  * polyester (recycled) (post_consumer)`. Codes only: the node adds the names from the vocabularies. Each
  * bracket holds one qualifier code, in order, a repeated code counts once; `(organic, recycled)` is an
  * error (the comma separates fibres). The 0.1 keys recycled_<material> / organic_<material> give the
- * material with that qualifier, first in the list. Percentages that do not add up to 100 are not an error: the label
- * warning fibre_percentages_not_100 reports them (rule 10).
+ * material with that qualifier, first in the list. A fibre without a percentage (`outer: leather`) has
+ * percentage null; percentages take a decimal point only (a digits-only fibre is the "decimal comma"
+ * error). Percentages that do not add up to 100 are not an error: the label warning
+ * fibre_percentages_not_100 reports them (rule 10).
  */
 export function parseMaterials(s: string): { value: Materials } | { error: string } {
   const out: Materials = [];
@@ -115,9 +130,11 @@ export function parseMaterials(s: string): { value: Materials } | { error: strin
     for (const f of splitOutsideBrackets(body)) {
       const t = f.trim();
       if (!t) continue;
-      const m = t.match(/^(\d+(?:[.,]\d+)?)\s*%\s*(.+)$/);
-      if (!m) return { error: `"${t}" should look like "95% cotton" or "100% polyester (recycled)".` };
-      const pct = Number(m[1].replace(",", "."));
+      // Decimal point only: the comma separates fibres, so "95,5% cotton" leaves a fibre "95".
+      if (/^\d+$/.test(t)) return { error: `materials: decimal comma: "${t}" is a number without a material, probably from a decimal comma. Write percentages with a point (95.5%).` };
+      const m = t.match(/^(?:(\d+(?:\.\d+)?)\s*%\s*)?(.+)$/);
+      if (!m || /^\s*[\d.,]+\s*%/.test(m[2])) return { error: `"${t}" should look like "95% cotton", "100% polyester (recycled)" or "leather".` };
+      const pct = m[1] === undefined ? null : Number(m[1]);
       let rest = m[2].trim();
       const qualifiers: string[] = [];
       for (;;) {
@@ -135,7 +152,7 @@ export function parseMaterials(s: string): { value: Materials } | { error: strin
         if (!KEY_RE.test(code)) return { error: `"(${q})" is not a valid qualifier code such as (organic) or (recycled).` };
         if (!quals.includes(code)) quals.push(code);
       }
-      if (!(pct > 0) || pct > 100) return { error: `${m[1]}% is not a valid percentage.` };
+      if (pct !== null && (!(pct > 0) || pct > 100)) return { error: `${m[1]}% is not a valid percentage.` };
       fibers.push({ material: { code: key }, percentage: pct, ...(quals.length ? { qualifiers: quals.map((code) => ({ code })) } : {}) });
     }
     if (!fibers.length) return { error: `Part "${name}" has no fibres.` };
@@ -166,7 +183,7 @@ function splitOutsideBrackets(s: string): string[] {
 export function formatMaterials(m: unknown): string {
   if (!Array.isArray(m) || !m.length) return "";
   return (m as Materials)
-    .map((p) => `${p.part?.code}: ${(p.fibers ?? []).map((f) => `${f.percentage}% ${f.material?.code}${(f.qualifiers ?? []).map((q) => ` (${q.code})`).join("")}`).join(", ")}`)
+    .map((p) => `${p.part?.code}: ${(p.fibers ?? []).map((f) => `${typeof f.percentage === "number" ? `${f.percentage}% ` : ""}${f.material?.code}${(f.qualifiers ?? []).map((q) => ` (${q.code})`).join("")}`).join(", ")}`)
     .join("; ");
 }
 
@@ -185,7 +202,8 @@ export interface ProductGroup {
   brandRef: string | null;
   product: Record<string, unknown>;
   status: string | null;
-  variants: { row: number; externalId: string; data: Record<string, unknown> }[];
+  /** externalId: the variant_id cell (explicit) or the default id; the import resolves it (import-format.md §1.2.1). */
+  variants: { row: number; externalId: string; explicit: boolean; data: Record<string, unknown> }[];
   rows: number[];
   /** The columns of the file this group came from (import rule 9). */
   present: PresentColumns;
@@ -548,7 +566,7 @@ export function parseProductsCsv(text: string, file: string, defaultLanguage: st
 
     // variant columns
     const anyVariant = [I.variant_id, I.gtin, I.sku, I.color, I.size].some((i) => cell(cells, i) !== "");
-    let variant: { row: number; externalId: string; data: Record<string, unknown> } | null = null;
+    let variant: ProductGroup["variants"][number] | null = null;
     if (!anyVariant) {
       for (const [column, i] of [["color_family", I.color_family], ["size_length", I.size_length], ...measurementCols.map((m) => [m.key, m.i] as const)] as const)
         if (cell(cells, i)) warn(column, `${column} is ignored on a row without variant columns (gtin, variant_id, sku, color_code or size).`, cell(cells, i));
@@ -606,8 +624,11 @@ export function parseProductsCsv(text: string, file: string, defaultLanguage: st
         if (vs !== "published" && vs !== "unpublished") fail("variant_status", 'variant_status must be "published" or "unpublished".', vs);
         else v.status = vs;
       }
-      const vid = cell(cells, I.variant_id) || gtinWritten || `${style}-${color}-${cell(cells, I.size)}`;
-      variant = { row, externalId: vid, data: v };
+      void gtinWritten;
+      const explicitId = cell(cells, I.variant_id);
+      const vid = explicitId || defaultVariantId(style, color, cell(cells, I.size), cell(cells, I.size_length));
+      if (!explicitId && vid.length > 200) fail("variant_id", `The default variant id "${vid.slice(0, 40)}…" is longer than 200 characters; give a variant_id.`, vid);
+      variant = { row, externalId: vid, explicit: !!explicitId, data: v };
     }
     if (!rowOk) continue;
 

@@ -2,7 +2,8 @@
 // usage, webhooks.
 import { Hono } from "hono";
 import type { AppEnv, C } from "./common";
-import { ctxOf, json, noContent, readObject, intQuery, clientIp, idParam, encodeListCursor, decodeListCursor } from "./common";
+import { ctxOf, json, noContent, readObject, limitQuery, clientIp, idParam, encodeListCursor, decodeListCursor } from "./common";
+import { checkIdempotencyKey, idempotencyLookup, idempotencyStore } from "../core/idempotency";
 import { ObxError, fieldError } from "../lib/problem";
 import {
   authenticateClient,
@@ -121,7 +122,7 @@ protocol.post("/obx/v1/access-requests", async (c) => {
     name: v.str(k.name, "/contact/name", { required: true, min: 1, max: 200 }),
     email: v.email(k.email, "/contact/email", true),
     phone: v.str(k.phone, "/contact/phone", { max: 40 }),
-    language: v.str(k.language, "/contact/language", { pattern: /^[a-z]{2,3}(-[A-Z]{2})?$/, msg: "Use a language tag such as nl or en." }),
+    language: v.str(k.language, "/contact/language", { pattern: /^[a-z]{2,3}(-[A-Z][a-z]{3})?(-([A-Z]{2}|[0-9]{3}))?$/, msg: "Use a language tag such as nl or en." }),
   };
   // No language given: remember the browser's language at request time, so later e-mails use it.
   if (!contact.language) contact.language = pickLanguage(c.req.header("accept-language"), s.portal.default_language);
@@ -282,7 +283,7 @@ protocol.get("/obx/v1/grant", async (c) => {
 protocol.get("/obx/v1/changes", async (c) => {
   const a = await client(c, "catalog:read");
   const ctx = ctxOf(c);
-  const limit = intQuery(c, "limit", 100, 1, 500);
+  const limit = limitQuery(c, 100, 500);
   const page = await readChanges(ctx, { viewer: a.viewer, retailer: a.retailer, client: a.client }, c.req.query("cursor") || undefined, limit, await ctx.baseUrl());
   return json(c, page);
 });
@@ -323,7 +324,7 @@ protocol.post("/obx/v1/products:by-gtin", async (c) => {
 protocol.get("/obx/v1/products", async (c) => {
   const a = await client(c, "catalog:read");
   const ctx = ctxOf(c);
-  const limit = intQuery(c, "limit", 25, 1, 100);
+  const limit = limitQuery(c, 25, 100);
   const settings = await ctx.settings();
   const base = await ctx.baseUrl();
   const idsQ = c.req.query("ids");
@@ -421,8 +422,11 @@ protocol.on(["GET", "HEAD"], "/obx/v1/assets/:id/renditions/:name", async (c) =>
   const path = `/obx/v1/assets/${id}/renditions/${name}`;
   let viewer: Viewer;
   const q = { exp: c.req.query("exp"), a: c.req.query("a"), sig: c.req.query("sig") };
-  if (q.sig) {
-    const v = await verifySignedPath(ctx, path, q);
+  // protocol.md §5.5: a valid Bearer token is served whatever the signature says; a signed link (or what is
+  // left of one) that expired or does not match is 403 forbidden; neither signature nor token is 401.
+  const bearer = /^bearer\s/i.test(c.req.header("authorization") ?? "");
+  if (!bearer && (q.sig || q.exp || q.a)) {
+    const v = q.sig ? await verifySignedPath(ctx, path, q) : null;
     if (v === "expired") throw new ObxError("forbidden", "This link has expired. Read the asset again for a fresh link.");
     if (!v) throw new ObxError("forbidden", "This link is not valid.");
     viewer = await viewerForActor(c, v.actor);
@@ -468,14 +472,14 @@ protocol.on(["GET", "HEAD"], "/obx/v1/assets/:id/renditions/:name", async (c) =>
 protocol.post("/obx/v1/exports", async (c) => {
   const a = await client(c, "catalog:read");
   const ctx = ctxOf(c);
-  const idem = c.req.header("idempotency-key");
-  if (idem) {
-    if (idem.length > 200) throw new ObxError("invalid_request", "Idempotency-Key is too long.");
-    const prev = await ctx.db.first<{ body: string }>("SELECT body FROM idempotency WHERE key = ?", [`exp:${a.client.id}:${idem}`]);
-    if (prev) {
-      const job = await getJob(ctx, prev.body);
-      if (job) return json(c, await exportJson(ctx, job, a.viewer.actor), 202, { location: `/obx/v1/exports/${job.id}` });
-    }
+  // Idempotency-Key (protocol.md §7): the same key and body give the same export, also while it runs.
+  const idem = checkIdempotencyKey(c.req.header("idempotency-key"));
+  const idemKey = idem ? `exp:${a.client.id}:${idem}` : null;
+  const reqHash = idemKey ? await sha256Hex(await c.req.raw.clone().text()) : "";
+  if (idemKey) {
+    const prev = await idempotencyLookup(ctx, idemKey, reqHash);
+    const job = prev ? await getJob(ctx, prev.body) : null;
+    if (job) return json(c, await exportJson(ctx, job, a.viewer.actor), 202, { location: `/obx/v1/exports/${job.id}` });
   }
   const body = await readObject(c);
   const v = new V();
@@ -512,7 +516,7 @@ protocol.post("/obx/v1/exports", async (c) => {
     base: await ctx.baseUrl(),
   };
   const job = await enqueueJob(ctx, { kind: "export", owner: `client:${a.client.id}`, input, idempotencyKey: idem ?? null });
-  if (idem) await ctx.db.run("INSERT OR IGNORE INTO idempotency (key, status, body, created_at) VALUES (?, 202, ?, ?)", [`exp:${a.client.id}:${idem}`, job.id, ctx.iso()]);
+  if (idemKey) await idempotencyStore(ctx, idemKey, 202, job.id, reqHash);
   return json(c, await exportJson(ctx, job, a.viewer.actor), 202, { location: `/obx/v1/exports/${job.id}` });
 });
 

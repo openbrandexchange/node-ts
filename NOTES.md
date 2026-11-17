@@ -121,9 +121,7 @@ Open questions reported to the spec maintainers (0.3.0):
   cursor_invalid`). No migration or stored state: the upgrade is the deploy. Bump the epoch only on an
   incompatible shape change. The conformance action `simulate_spec_upgrade` is not offered (P-FEED-7 SKIPs);
   `test/protocol.test.ts` covers it by sealing a 0.2 cursor.
-- S6. **Leftovers of the single qualifier in spec 5737aa2** (reported): protocol.md §2 ("Null vs absent") still says
-  "a fibre's `qualifier` [is] `null` when there is none", and conformance.md P-CAT-6 says "every … non-null
-  `qualifier`". This node follows §5.9.1 and Materials.json: `qualifiers`, `[]` when none.
+- S6. **Leftovers of the single qualifier in spec 5737aa2** (reported; fixed in spec 8747066).
 
 ## Admin and portal API
 
@@ -274,3 +272,26 @@ The recipient's language is the user's language, the requester's `contact.langua
    Reason: a per-request D1 write for every API call would cost more than it protects.
 8. **Streamed zip downloads on Bun** go out chunked without `Content-Length`, so browsers show no
    download progress. Reason: Bun.serve drops the header on streamed bodies; harmless.
+
+## Spec 0.3.0, second part (spec e74ccb2, 2026-11-17)
+
+- V1. **Variant identity** (`resolveVariants` in `src/core/importjob.ts`): resolved per product before the product
+  is written, so a product whose only rows fail (`gtin_conflict`, a repeated variant) is not written at all (as
+  `variant-identity.expected.json` counts it). The GTIN lookup is by `variants.gtin14` (also variants whose id is
+  their GTIN, made before 0.3); rows earlier in the same file are found by their GTIN too. The default id comes
+  from the row's cells (`defaultVariantId` in `importformat.ts`).
+- V2. **Unknown members** go through `V.known()` / `V.unknown()` everywhere (warnings `Unknown field <pointer> was
+  ignored.`); `x-` members are copied with `V.extensions()` on every object the schemas allow and are part of the
+  stored document, so the representation, `/changes`, exports and the record etag include them. An import keeps the
+  top-level and `color` extension members of the object it updates (`keepExtensions`); a `materials` cell replaces
+  the materials, including extension members inside them.
+- V3. **Warnings with a code** (`material_unknown`, `qualifier_deprecated`) go into `warning_details`; the import's
+  `value` of `material_unknown` travels in a WeakMap next to the IngestResult (`warningValues`), because
+  IngestResult's `warning_details` is a closed schema.
+- V4. **Idempotency-Key** rows live in `idempotency_keys` (migration 0008) with the sha256 of the request: the raw
+  body for `/batch` and `/exports`, the list of (part name, file name, sha256 of the part) for `/imports`, since the
+  multipart boundary differs per request. The import's body is stored before the comparison (it must be read to be
+  hashed) and removed again when the key replays or is refused.
+- V5. **Signed URLs**: a request with `Authorization: Bearer` ignores `exp`/`a`/`sig`; without it, any of the three
+  makes it a signed-link request (missing parts are `403`, as tampering); none of them and no token is `401`.
+

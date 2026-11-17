@@ -48,6 +48,9 @@ export interface WarningDetail {
   detail: string;
 }
 
+/** The cell value of a coded warning (material_unknown: the code), for ImportRowError.value; not part of IngestResult. */
+export const warningValues = new WeakMap<WarningDetail, string>();
+
 /** The 0.2 product and variant fields: stored only when stated, so data stored by 0.1 compares equal. */
 function withoutNull<T extends Record<string, unknown>>(o: T, keys: string[]): T {
   for (const k of keys) if (o[k] === null || o[k] === undefined) delete o[k];
@@ -519,6 +522,7 @@ export class CatalogSession {
     if (!isPlainObject(d.color)) v.err("/color", "This field is required (at least a colour code).");
     else {
       const c = d.color;
+      v.known(c, ["code", "name", "supplier_color", "family"], "/color");
       color = sortKeys(
         withoutNull(
           {
@@ -560,6 +564,7 @@ export class CatalogSession {
     let rights: Record<string, unknown> | null = null;
     if (isPlainObject(d.rights)) {
       const r = d.rights;
+      v.known(r, ["license", "license_text", "channels", "territories", "embargo_until", "expires_at", "credit", "model_release"], "/rights");
       rights = {};
       if ("license" in r) rights.license = v.enumv(r.license, "/rights/license", ["retailer-use", "custom"] as const, true);
       if ("license_text" in r) rights.license_text = v.str(r.license_text, "/rights/license_text", { max: 20000 });
@@ -599,6 +604,7 @@ export class CatalogSession {
     } else if (d.rights !== undefined && d.rights !== null) v.err("/rights", "Must be an object.");
     const p = isPlainObject(d.provenance) ? d.provenance : {};
     if (d.provenance !== undefined && d.provenance !== null && !isPlainObject(d.provenance)) v.err("/provenance", "Must be an object.");
+    v.known(p, ["ai_generated", "ai_edited", "source", "c2pa", "c2pa_manifest_url", "generator"], "/provenance");
     const aiGen = v.bool(p.ai_generated, "/provenance/ai_generated") ?? false;
     const provenance = sortKeys({
       ai_generated: aiGen,
@@ -744,10 +750,12 @@ export class CatalogSession {
     }
     const status: Status = norm.status ?? existing?.status ?? this.settings.defaults.ingest_status;
     // Label completeness warnings (ingest.md §3.4, import-format.md rule 10): never block the write.
-    const details: WarningDetail[] = [];
+    const details: WarningDetail[] = [...v.details];
     if (kind === "product")
       for (const w of labelWarnings(norm.stored)) {
-        details.push({ code: w.code, pointer: w.pointer, detail: w.detail });
+        const d: WarningDetail = { code: w.code, pointer: w.pointer, detail: w.detail };
+        if (w.value !== undefined) warningValues.set(d, w.value);
+        details.push(d);
         v.warnings.push(labelWarningText(w));
       }
 
@@ -815,10 +823,13 @@ export class CatalogSession {
       const og = o.stored.gtin_original as string | null;
       if (og) {
         const pg = parseIngestGtin(og);
-        if (!("error" in pg) && pg.gtin14 === g.gtin14) throw gtinConflict(o.ext);
+        if (!("error" in pg) && pg.gtin14 === g.gtin14) throw gtinConflict(o.ext, this.externalIdOf(o.parent));
       }
     }
-    const row = await this.ctx.db.first<{ id: string; external_id: string }>("SELECT id, external_id FROM variants WHERE gtin14 = ?", [g.gtin14]);
+    const row = await this.ctx.db.first<{ id: string; external_id: string; product_ext: string | null }>(
+      "SELECT v.id, v.external_id, p.external_id AS product_ext FROM variants v LEFT JOIN products p ON p.id = v.product_id WHERE v.gtin14 = ?",
+      [g.gtin14],
+    );
     if (row && row.external_id !== ext) {
       const inSession = this.byId.get(row.id);
       if (inSession && (inSession.deleted || inSession.stored.gtin_original !== gtinOriginal)) {
@@ -826,7 +837,7 @@ export class CatalogSession {
         const same = sg ? (parseIngestGtin(sg) as { gtin14?: string }).gtin14 === g.gtin14 : false;
         if (inSession.deleted || !same) return;
       }
-      throw gtinConflict(row.external_id);
+      throw gtinConflict(row.external_id, row.product_ext);
     }
   }
 
@@ -1226,8 +1237,10 @@ export class CatalogSession {
   }
 }
 
-function gtinConflict(holder: string) {
-  return new ObxError("gtin_conflict", `This GTIN already belongs to variant "${holder}".`, [fieldError("/gtin", "GTIN already in use.", "gtin_conflict")]);
+/** gtin_conflict (ingest.md §3.4): errors[0] points at /gtin and names the variant that has the GTIN and its product. */
+function gtinConflict(holder: string, product: string | null) {
+  const detail = `This GTIN already belongs to variant "${holder}"${product ? ` of product "${product}"` : ""}.`;
+  return new ObxError("gtin_conflict", detail, [fieldError("/gtin", detail, "gtin_conflict")]);
 }
 
 function positionConflict(holder: string, position: number) {

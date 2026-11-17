@@ -23,7 +23,7 @@ import {
   type Term,
 } from "./article";
 
-export const LANG_RE = /^[a-z]{2,3}(-[A-Z]{2})?$/;
+export const LANG_RE = /^[a-z]{2,3}(-[A-Z][a-z]{3})?(-([A-Z]{2}|[0-9]{3}))?$/;
 export const KEY_RE = /^[a-z][a-z0-9_]{0,63}$/;
 export const COUNTRY_RE = /^[A-Z]{2}$/;
 export const EXT_RE = /^x-[a-z0-9]+-[a-z0-9_-]+$/;
@@ -39,6 +39,8 @@ export const INGEST_SCOPES = ["ingest:read", "ingest:write", "ingest:delete"];
 export class V {
   errors: FieldError[] = [];
   warnings: string[] = [];
+  /** Warnings with a stable code (IngestResult.warning_details), e.g. qualifier_deprecated. */
+  details: { code: string; pointer: string; detail: string }[] = [];
 
   err(pointer: string, detail: string, code: ErrorCode = "validation_failed") {
     this.errors.push(fieldError(pointer, detail, code));
@@ -47,12 +49,19 @@ export class V {
     return this.errors.length === 0;
   }
 
-  /** Warn about unknown members (forward compatibility: ignored, not rejected). */
+  /**
+   * Warn about unknown members (ingest.md §3.1: ignored with a warning naming the JSON Pointer, at any
+   * depth, never a 422). Extension members (x-vendor-name) are not unknown: they are stored.
+   */
   known(obj: Record<string, unknown>, keys: string[], base: string) {
     for (const k of Object.keys(obj)) {
       if (keys.includes(k) || EXT_RE.test(k)) continue;
-      this.warnings.push(`Unknown field ${base}/${k} was ignored.`);
+      this.unknown(`${base}/${k}`);
     }
+  }
+
+  unknown(pointer: string) {
+    this.warnings.push(`Unknown field ${pointer} was ignored.`);
   }
 
   str(v: unknown, p: string, opts: { required?: boolean; min?: number; max?: number; pattern?: RegExp; nullable?: boolean; msg?: string } = {}): string | null {
@@ -196,7 +205,7 @@ export class V {
       this.err(p, typeof v === "string" ? `Must be an object {"code": "${v}"} since OBX 0.3.` : 'Must be an object {"code": …, "name": …}.');
       return null;
     }
-    for (const k of Object.keys(v)) if (k !== "code" && k !== "name" && !EXT_RE.test(k)) this.err(`${p}/${k}`, "Unknown field.");
+    this.known(v, ["code", "name"], p);
     if (v.code === undefined || v.code === null) this.err(`${p}/code`, "This field is required.");
     const code = this.key(v.code, `${p}/code`);
     const name = this.localized(v.name, `${p}/name`);
@@ -218,28 +227,35 @@ export class V {
     const out: Materials = [];
     v.forEach((part, i) => {
       if (!isPlainObject(part)) return this.err(`${p}/${i}`, "Must be an object.");
-      for (const k of Object.keys(part)) if (k !== "part" && k !== "fibers" && !EXT_RE.test(k)) this.err(`${p}/${i}/${k}`, "Unknown field.");
+      this.known(part, ["part", "fibers"], `${p}/${i}`);
       const term = this.term(part.part, `${p}/${i}/part`);
       if (!Array.isArray(part.fibers) || part.fibers.length === 0) return this.err(`${p}/${i}/fibers`, "At least one fibre is required.");
       const fibers: Fiber[] = [];
       part.fibers.forEach((f: unknown, j: number) => {
         const fp = `${p}/${i}/fibers/${j}`;
         if (!isPlainObject(f)) return this.err(fp, "Must be an object.");
-        for (const k of Object.keys(f))
-          if (!["material", "percentage", "qualifiers"].includes(k) && !EXT_RE.test(k))
-            this.err(
-              `${fp}/${k}`,
-              k === "fiber" || k === "recycled" || k === "organic" || k === "qualifier" ? "Since OBX 0.3 a fibre is {material, percentage, qualifiers} (qualifiers a list of {code})." : "Unknown field.",
-            );
+        this.known(f, ["material", "percentage", "qualifiers", "qualifier"], fp);
         const material = this.term(f.material, `${fp}/material`);
-        const pct = f.percentage;
-        if (typeof pct !== "number" || !(pct > 0) || pct > 100) return this.err(`${fp}/percentage`, "Must be a number above 0 and at most 100.");
+        // percentage may be left out or null: not stated (protocol.md §5.9.1, 0.3).
+        const pct = f.percentage ?? null;
+        if (pct !== null && (typeof pct !== "number" || !(pct > 0) || pct > 100)) return this.err(`${fp}/percentage`, "Must be a number above 0 and at most 100, or null when not stated.");
         const qualifiers: Term[] = [];
-        if (f.qualifiers !== undefined && f.qualifiers !== null) {
-          if (!Array.isArray(f.qualifiers)) this.err(`${fp}/qualifiers`, "Must be a list of qualifiers such as [{\"code\": \"recycled\"}].");
+        if ("qualifier" in f) {
+          // The draft single qualifier (ingest.md §3.1): read as a list of one when `qualifiers` is absent
+          // (null = none); `qualifiers` wins when both are there. One warning per write.
+          if (!this.details.some((d) => d.code === "qualifier_deprecated")) {
+            const detail = 'The single "qualifier" of drafts of OBX 0.3 is deprecated; send "qualifiers", a list of {"code": …}.';
+            this.details.push({ code: "qualifier_deprecated", pointer: `${fp}/qualifier`, detail });
+            this.warnings.push(`qualifier_deprecated: ${detail} (${fp}/qualifier)`);
+          }
+        }
+        const qs = f.qualifiers !== undefined ? f.qualifiers : "qualifier" in f && f.qualifier !== null ? [f.qualifier] : null;
+        const qp = f.qualifiers !== undefined ? `${fp}/qualifiers` : `${fp}/qualifier`;
+        if (qs !== undefined && qs !== null) {
+          if (!Array.isArray(qs)) this.err(qp, "Must be a list of qualifiers such as [{\"code\": \"recycled\"}].");
           else
-            f.qualifiers.forEach((q: unknown, k: number) => {
-              const t = this.term(q, `${fp}/qualifiers/${k}`);
+            qs.forEach((q: unknown, k: number) => {
+              const t = this.term(q, f.qualifiers !== undefined ? `${qp}/${k}` : qp);
               if (t) qualifiers.push(t);
             });
         }
@@ -259,9 +275,9 @@ export class V {
     }
     const out = { upper: null, lining_and_sock: null, outer_sole: null } as FootwearMaterials;
     for (const [k, val] of Object.entries(v)) {
-      if (k.startsWith("x-")) continue;
+      if (EXT_RE.test(k)) continue;
       if (!(FOOTWEAR_PARTS as readonly string[]).includes(k)) {
-        this.err(`${p}/${k}`, "The parts are upper, lining_and_sock and outer_sole.");
+        this.unknown(`${p}/${k}`);
         continue;
       }
       if (val === null) continue;
@@ -282,7 +298,7 @@ export class V {
     const out: Certification[] = [];
     v.forEach((c, i) => {
       if (!isPlainObject(c)) return this.err(`${p}/${i}`, "Must be an object with scheme and scope.");
-      for (const k of Object.keys(c)) if (!["scheme", "licence_number", "scope"].includes(k) && !EXT_RE.test(k)) this.err(`${p}/${i}/${k}`, "Unknown field.");
+      this.known(c, ["scheme", "licence_number", "scope"], `${p}/${i}`);
       const scheme = this.key(c.scheme, `${p}/${i}/scheme`);
       if (c.scheme === undefined || c.scheme === null) this.err(`${p}/${i}/scheme`, "This field is required.");
       const licence = this.str(c.licence_number, `${p}/${i}/licence_number`, { min: 1, max: 200 });
@@ -328,7 +344,7 @@ export class V {
         continue;
       }
       if (!(MEASUREMENT_KEYS as readonly string[]).includes(k)) {
-        this.err(`${p}/${k}`, `Unknown measurement; the keys are ${MEASUREMENT_KEYS.join(", ")}.`);
+        this.unknown(`${p}/${k}`);
         continue;
       }
       if (val === null) continue;
@@ -358,7 +374,7 @@ export class V {
     const out: CareEntry[] = [];
     v.forEach((c, i) => {
       if (!isPlainObject(c)) return this.err(`${p}/${i}`, "Must be an object.");
-      for (const k of Object.keys(c)) if (!["code", "category", "symbol", "name", "text"].includes(k) && !EXT_RE.test(k)) this.err(`${p}/${i}/${k}`, "Unknown field.");
+      this.known(c, ["code", "category", "symbol", "name", "text"], `${p}/${i}`);
       if (c.code === undefined || c.code === null) this.err(`${p}/${i}/code`, "This field is required.");
       const code = this.key(c.code, `${p}/${i}/code`);
       const category = this.enumv(c.category, `${p}/${i}/category`, CARE_CATEGORIES);

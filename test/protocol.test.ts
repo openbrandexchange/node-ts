@@ -156,6 +156,11 @@ describe("catalog reads (P-CAT-2..4)", () => {
     } while (cursor);
     expect(seen.length).toBe(11);
     expect([...seen].sort()).toEqual(seen);
+    // A limit above the maximum is clamped; not a whole number or below 1 is 400 (protocol.md §2.1).
+    const big = await node.api(at, "GET", "/obx/v1/products?limit=100000");
+    expect([big.status, big.json.items.length]).toEqual([200, 11]);
+    expect((await node.api(at, "GET", "/obx/v1/changes?limit=100000")).status).toBe(200);
+    for (const bad of ["0", "abc", "-1", "2.5"]) expect((await node.api(at, "GET", `/obx/v1/products?limit=${bad}`)).json.obx_error).toBe("invalid_request");
     const ids = await node.api(at, "GET", `/obx/v1/products?ids=${seen[0]},prd_unknown,${seen[1]}`);
     expect(ids.json.items.map((p: any) => p.id)).toEqual([seen[0], seen[1]]);
   });
@@ -209,6 +214,14 @@ describe("media (P-MEDIA-2, P-MEDIA-3, P-AUTH-3)", () => {
     const tampered = new URL(a.renditions.web.url);
     tampered.searchParams.set("exp", String(Number(tampered.searchParams.get("exp")) + 60));
     expect((await node.request("GET", tampered.pathname + tampered.search)).status).toBe(403);
+    // protocol.md §5.5: tampered or stripped → 403 forbidden; neither signature nor token → 401; a valid token is served whatever the signature says.
+    expect((await node.request("GET", tampered.pathname + tampered.search)).json.obx_error).toBe("forbidden");
+    const stripped = new URL(a.renditions.web.url);
+    stripped.searchParams.delete("sig");
+    expect((await node.request("GET", stripped.pathname + stripped.search)).json.obx_error).toBe("forbidden");
+    const none = await node.request("GET", tampered.pathname);
+    expect([none.status, none.json.obx_error]).toEqual([401, "unauthorized"]);
+    expect((await node.api(at, "GET", tampered.pathname + tampered.search)).status).toBe(200);
     expect(a.renditions.web.width).toBe(1600);
     expect(a.renditions.web.height).toBe(2000);
   });
@@ -287,8 +300,14 @@ describe("access request from the web form: the brand shows the key", () => {
 
 describe("exports, usage, rate limits (P-EXP-1, P-USE-1, P-RATE-1, P-ERR-1)", () => {
   test("export of brand kestrel with web renditions: manifest and zip parts agree", async () => {
-    const r = await node.api(at, "POST", "/obx/v1/exports", { json: { filter: { brand_ids: [brandIds["kestrel"]] }, renditions: ["web"] } });
+    const body = { filter: { brand_ids: [brandIds["kestrel"]] }, renditions: ["web"] };
+    const r = await node.api(at, "POST", "/obx/v1/exports", { json: body, headers: { "idempotency-key": "exp-1" } });
     expect(r.status).toBe(202);
+    // The same key and body while it runs: the same export (not 409 conflict); another body: 409 idempotency_key_reused.
+    const again = await node.api(at, "POST", "/obx/v1/exports", { json: body, headers: { "idempotency-key": "exp-1" } });
+    expect([again.status, again.json.id]).toEqual([202, r.json.id]);
+    const other = await node.api(at, "POST", "/obx/v1/exports", { json: { ...body, renditions: ["thumb"] }, headers: { "idempotency-key": "exp-1" } });
+    expect([other.status, other.json.obx_error]).toEqual([409, "idempotency_key_reused"]);
     await node.drain();
     const e = (await node.api(at, "GET", `/obx/v1/exports/${r.json.id}`)).json;
     expect(e.status).toBe("succeeded");

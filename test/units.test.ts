@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { parseCsv, writeCsv, normHeader } from "../src/lib/csv";
 import { parseIngestGtin, normaliseLookupGtin } from "../src/lib/gtin";
-import { formatMaterials, parseImageName, parseMaterials, parseProductsCsv } from "../src/core/importformat";
+import { defaultVariantId, formatMaterials, parseImageName, parseMaterials, parseProductsCsv } from "../src/core/importformat";
 import { isBlockedIp, assertSafeUrl, safeFetch, checkUrl, pinnedRequest } from "../src/lib/ssrf";
 import { readZipDirectory, readZipEntry, zipBytes, unsafeEntryReason, zipStream, zipSize } from "../src/lib/zip";
 import { bytesReader, scanMultipart } from "../src/lib/multipart";
@@ -111,14 +111,30 @@ describe("import format", () => {
     ).toBe("main: 70% cotton (regenerative), 30% hemp");
     const m = parseMaterials("outer: 65% cotton, 35% polyamide; lining: 100% polyester");
     expect("value" in m && m.value.map((x) => x.part.code)).toEqual(["outer", "lining"]);
-    expect("error" in parseMaterials("cotton")).toBe(true);
+    // 0.3: a fibre without a percentage is null; decimal point only.
+    expect(parseMaterials("outer: leather; lining: 60% cotton, polyester")).toEqual({
+      value: [
+        { part: { code: "outer" }, fibers: [{ material: { code: "leather" }, percentage: null }] },
+        { part: { code: "lining" }, fibers: [{ material: { code: "cotton" }, percentage: 60 }, { material: { code: "polyester" }, percentage: null }] },
+      ],
+    });
+    expect(parseMaterials("95.5% cotton, 4.5% elastane")).toEqual({ value: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 95.5 }, { material: { code: "elastane" }, percentage: 4.5 }] }] });
+    const comma = parseMaterials("main: 95,5% polyester, 4,5% elastane");
+    expect("error" in comma && comma.error.startsWith("materials: decimal comma")).toBe(true);
+    expect(formatMaterials((parseMaterials("outer: leather; lining: 100% cotton") as { value: never }).value)).toBe("outer: leather; lining: 100% cotton");
+    expect("error" in parseMaterials("95.5.5% cotton")).toBe(true);
   });
   test("products.csv: aliases, language columns, first value wins with a warning", () => {
     const csv = "Style,name,name:de,EAN,Colour Code,size\nKO-1,Trui,Pullover,2000100101018,NVY,S\nKO-1,Other,,2000100101025,NVY,M\n";
     const r = parseProductsCsv(csv, "products.csv", "nl");
     expect(r.groups.length).toBe(1);
     expect(r.groups[0].product.name).toEqual({ nl: "Trui", de: "Pullover" });
-    expect(r.groups[0].variants.map((v) => v.externalId)).toEqual(["2000100101018", "2000100101025"]);
+    // The default variant id is style-colour-size[-size_length], never the GTIN (import-format.md §1.2.1).
+    expect(r.groups[0].variants.map((v) => v.externalId)).toEqual(["KO-1-NVY-S", "KO-1-NVY-M"]);
+    expect(defaultVariantId("KO-1004", "IND", "32/34", "")).toBe("KO-1004-IND-32_34");
+    expect(defaultVariantId("KO-1004", "IND", "32", "34")).toBe("KO-1004-IND-32-34");
+    expect(defaultVariantId("KO-1005", "COG", "ONE SIZE", "")).toBe("KO-1005-COG-ONE SIZE");
+    expect(defaultVariantId("KO-1", "A\tB", "", "")).toBe("KO-1-A_B");
     expect(r.errors.some((e) => e.severity === "warning" && e.column === "name")).toBe(true);
   });
 });

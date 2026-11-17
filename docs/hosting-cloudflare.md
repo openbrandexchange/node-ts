@@ -12,6 +12,10 @@ The Portal for Cloudflare runs as one Cloudflare Worker with:
 
 ## Option A: the Deploy to Cloudflare button
 
+About 10 minutes the first time: a few minutes to sign in to Cloudflare and connect your GitHub or
+GitLab account, then 3 to 5 minutes for the first build and deploy (Cloudflare shows its progress), and
+a minute for the setup wizard. With both accounts already in place it is closer to 5 minutes.
+
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/openbrandexchange/node-ts)
 
 1. Click the button and sign in to Cloudflare.
@@ -29,13 +33,14 @@ The Portal for Cloudflare runs as one Cloudflare Worker with:
 5. Open `https://brand-portal.<your-subdomain>.workers.dev`, enter the setup code, your company, your
    languages and your admin account.
 
-> The button can only copy a **public** repository. While `openbrandexchange/node-ts` is private, use option B.
-
 Every later push to your copy of the repository deploys again (Workers Builds). To take a new
 release, merge the upstream tag into your copy (`git pull https://github.com/openbrandexchange/node-ts v0.2.1`)
 and push; read [upgrading.md](upgrading.md) first.
 
 ## Option B: from your computer
+
+About 10 minutes, most of it installing Bun and signing in with `wrangler login`; the deploy itself takes
+under a minute.
 
 ```sh
 git clone https://github.com/openbrandexchange/node-ts && cd node-ts

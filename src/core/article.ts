@@ -63,7 +63,8 @@ export const CERTIFICATION_SCOPES = ["product", "material"];
 export type LocalizedText = Record<string, string>;
 /** A code with its name per language (Materials.json $defs/term). */
 export type Term = { code: string; name?: LocalizedText | null };
-export type Fiber = { material: Term; percentage: number; qualifiers?: Term[] };
+/** A fibre; `percentage` null (or left out on write) = not stated (protocol.md §5.9.1, 0.3). */
+export type Fiber = { material: Term; percentage?: number | null; qualifiers?: Term[] };
 export type Materials = { part: Term; fibers: Fiber[] }[];
 export type CareCategory = "washing" | "bleaching" | "drying" | "ironing" | "professional_care";
 export type CareEntry = { code: string; category?: CareCategory | null; symbol?: string | null; name?: LocalizedText | null; text?: LocalizedText | null };
@@ -140,7 +141,7 @@ export function storeMaterials(m: Materials): Materials {
       const legacy = splitLegacyMaterial(f.material.code);
       const material = storeTerm({ ...f.material, code: legacy.code }, MATERIAL_NAMES);
       const qualifiers = uniqueQualifiers([...legacy.qualifiers.map((code) => ({ code })), ...(f.qualifiers ?? [])]);
-      const out: Fiber = { ...extMembers(f), material, percentage: f.percentage };
+      const out: Fiber = { ...extMembers(f), material, percentage: f.percentage ?? null };
       if (qualifiers.length) out.qualifiers = qualifiers.map((q) => storeTerm(q, QUALIFIER_NAMES));
       return out;
     }),
@@ -156,7 +157,7 @@ export function expandMaterials(m: unknown): unknown {
           part: expandTerm(p.part, PART_NAMES),
           fibers: Array.isArray(p.fibers)
             ? p.fibers.map((f: unknown) =>
-                isObj(f) ? { material: expandTerm(f.material, MATERIAL_NAMES), percentage: f.percentage, qualifiers: storedQualifiers(f).map((q) => expandTerm(q, QUALIFIER_NAMES)), ...extMembers(f) } : f,
+                isObj(f) ? { material: expandTerm(f.material, MATERIAL_NAMES), percentage: f.percentage ?? null, qualifiers: storedQualifiers(f).map((q) => expandTerm(q, QUALIFIER_NAMES)), ...extMembers(f) } : f,
               )
             : p.fibers,
           ...extMembers(p),
@@ -445,7 +446,7 @@ export function formatFeature(v: unknown): string {
 
 // ------------------------------------------------------------------ label completeness (import-format.md rule 10)
 
-export const LABEL_WARNING_CODES = ["fibre_composition_missing", "animal_origin_unknown", "footwear_materials_missing", "fibre_percentages_not_100"] as const;
+export const LABEL_WARNING_CODES = ["fibre_composition_missing", "animal_origin_unknown", "footwear_materials_missing", "fibre_percentages_not_100", "material_unknown"] as const;
 export type LabelWarningCode = (typeof LABEL_WARNING_CODES)[number];
 
 export interface LabelWarning {
@@ -455,6 +456,8 @@ export interface LabelWarning {
   /** JSON Pointer into the product write model. */
   pointer: string;
   detail: string;
+  /** The cell value the warning is about (material_unknown: the code). */
+  value?: string;
 }
 
 /** Recommended apparel keys (t_shirt … socks, hat, cap, scarf, gloves, tie), bag, backpack, luggage. */
@@ -502,8 +505,11 @@ export function labelWarnings(p: Record<string, unknown>): LabelWarning[] {
         });
     }
     materials.forEach((m, i) => {
-      const sum = (m.fibers ?? []).reduce((a, f) => a + (typeof f.percentage === "number" ? f.percentage : 0), 0);
-      if (Math.abs(sum - 100) > 0.01)
+      // Only when every fibre states a percentage, or the stated ones exceed 100 (import-format.md rule 10).
+      const fibers = m.fibers ?? [];
+      const all = fibers.every((f) => typeof f.percentage === "number");
+      const sum = fibers.reduce((a, f) => a + (typeof f.percentage === "number" ? f.percentage : 0), 0);
+      if (all ? Math.abs(sum - 100) > 0.01 : sum > 100.01)
         out.push({
           code: "fibre_percentages_not_100",
           column: "materials",
@@ -522,6 +528,22 @@ export function labelWarnings(p: Record<string, unknown>): LabelWarning[] {
         detail: `The footwear materials of ${missing.join(", ")} are missing; they must be on the label of footwear (Directive 94/11/EC).`,
       });
   }
+  // material_unknown (import-format.md §1.4): every item type, once per code, after the label warnings.
+  const seen = new Set<string>();
+  materials.forEach((m, i) =>
+    (m.fibers ?? []).forEach((f, j) => {
+      const code = isObj(f.material) && typeof f.material.code === "string" ? splitLegacyMaterial(f.material.code).code : null;
+      if (!code || MATERIAL_NAMES.has(code) || seen.has(code)) return;
+      seen.add(code);
+      out.push({
+        code: "material_unknown",
+        column: "materials",
+        pointer: `/materials/${i}/fibers/${j}/material/code`,
+        detail: `"${code}" is not a material code of the vocabulary (vocabularies/materials.json); it is kept as written. Check the spelling, e.g. cotton, polyester, wool.`,
+        value: code,
+      });
+    }),
+  );
   return out;
 }
 

@@ -2,7 +2,8 @@
 // handlers with session auth (same semantics, same results).
 import { Hono } from "hono";
 import type { AppEnv, C } from "./common";
-import { ctxOf, json, noContent, readObject, readJson, intQuery, idParam, encodeListCursor, decodeListCursor } from "./common";
+import { ctxOf, json, noContent, readObject, readJson, limitQuery, idParam, encodeListCursor, decodeListCursor } from "./common";
+import { checkIdempotencyKey, idempotencyLookup, idempotencyStore } from "../core/idempotency";
 import { ObxError } from "../lib/problem";
 import { authenticateIngest, type IngestAuth } from "../core/auth";
 import { CatalogSession, applyOne, resultStatus, errorResult, type Kind } from "../core/catalog";
@@ -170,11 +171,7 @@ export async function handleImport(c: C, w: Writer, trigger: Writer["trigger"]) 
   const ctx = ctxOf(c);
   const boundary = boundaryOf(c.req.header("content-type"));
   if (!boundary) throw new ObxError("unsupported_media_type", "Send the import as multipart/form-data (fields: package, csv, assets_csv, images, images_manifest, options).");
-  const idem = c.req.header("idempotency-key");
-  if (idem) {
-    const prev = await ctx.db.first<{ id: string }>("SELECT id FROM jobs WHERE idempotency_key = ? AND owner = ? AND created_at > ?", [idem, w.owner, ctx.iso(-24 * 3600 * 1000)]);
-    if (prev) return { job: (await getJob(ctx, prev.id))!, reused: true };
-  }
+  const idem = checkIdempotencyKey(c.req.header("idempotency-key"));
   const jobId = newId("job");
   const key = `imports/${jobId}/request`;
   const size = await storeRequestBody(ctx, key, c.req.raw, MAX_IMPORT_BYTES);
@@ -183,6 +180,30 @@ export async function handleImport(c: C, w: Writer, trigger: Writer["trigger"]) 
     parts = await scanMultipart(storeReader(ctx, key), size, boundary);
   } catch (e) {
     throw new ObxError("invalid_request", `The multipart body could not be read: ${e instanceof Error ? e.message : "malformed"}.`);
+  }
+  // Idempotency-Key (ingest.md §3.5): the request is compared by the sha256 of every part (the boundary differs per request).
+  const idemKey = idem ? `import:${w.owner}:${idem}` : null;
+  let reqHash = "";
+  if (idemKey) {
+    const fp: string[] = [];
+    for (const p of parts) {
+      const h = sha256Hasher();
+      for (let o = 0; o < p.length; o += 8 * 1048576) h.update(await storeReader(ctx, key)(p.offset + o, Math.min(8 * 1048576, p.length - o)));
+      fp.push(`${p.name}\u0000${p.filename ?? ""}\u0000${h.hex()}`);
+    }
+    reqHash = await sha256Hex(fp.join("\n"));
+    let prev: { body: string } | null;
+    try {
+      prev = await idempotencyLookup(ctx, idemKey, reqHash);
+    } catch (e) {
+      await ctx.blobs.delete([key]);
+      throw e;
+    }
+    const prevJob = prev ? await getJob(ctx, prev.body) : null;
+    if (prevJob) {
+      await ctx.blobs.delete([key]);
+      return { job: prevJob, reused: true };
+    }
   }
   const inputs: ImportInputs = { csv: null, assets: null, zips: [], files: [], manifest: null };
   let options: Record<string, unknown> = {};
@@ -215,7 +236,7 @@ export async function handleImport(c: C, w: Writer, trigger: Writer["trigger"]) 
   if (mode !== "upsert" && mode !== "mirror") throw new ObxError("validation_failed", 'options.mode must be "upsert" or "mirror".');
   if (mode === "mirror") need(w, "ingest:delete");
   const lang = options.default_language;
-  if (lang !== undefined && lang !== null && (typeof lang !== "string" || !/^[a-z]{2,3}(-[A-Z]{2})?$/.test(lang))) throw new ObxError("validation_failed", "options.default_language must be a language tag like nl.");
+  if (lang !== undefined && lang !== null && (typeof lang !== "string" || !/^[a-z]{2,3}(-[A-Z][a-z]{3})?(-([A-Z]{2}|[0-9]{3}))?$/.test(lang))) throw new ObxError("validation_failed", "options.default_language must be a language tag like nl.");
   if (!inputs.csv && !inputs.zips.length && !inputs.files.length && !inputs.manifest) throw new ObxError("invalid_request", "Nothing to import: send package, csv, images or images_manifest.");
   const job = await startImport(
     ctx,
@@ -231,6 +252,7 @@ export async function handleImport(c: C, w: Writer, trigger: Writer["trigger"]) 
     },
     { owner: w.owner, idempotencyKey: idem ?? null, id: jobId },
   );
+  if (idemKey) await idempotencyStore(ctx, idemKey, 202, job.id, reqHash);
   return { job, reused: false };
 }
 
@@ -344,14 +366,15 @@ ingest.post("/uploads/:id/complete", async (c) => {
 ingest.post("/batch", async (c) => {
   const w = await writer(c);
   const ctx = ctxOf(c);
-  const idem = c.req.header("idempotency-key");
+  const idem = checkIdempotencyKey(c.req.header("idempotency-key"));
   const idemKey = idem ? `batch:${w.owner}:${idem}` : null;
-  if (idemKey) {
-    const prev = await ctx.db.first<{ status: number; body: string }>("SELECT status, body FROM idempotency WHERE key = ?", [idemKey]);
-    if (prev) return new Response(prev.body, { status: prev.status, headers: { "content-type": "application/json" } });
-  }
   const text = await c.req.text();
   if (text.length > 64 * 1048576) throw new ObxError("payload_too_large", "The batch body is too large.");
+  const reqHash = idemKey ? await sha256Hex(text) : "";
+  if (idemKey) {
+    const prev = await idempotencyLookup(ctx, idemKey, reqHash);
+    if (prev) return new Response(prev.body, { status: prev.status, headers: { "content-type": "application/json" } });
+  }
   const ops = parseOps(text, c.req.header("content-type") ?? null);
   if (ops.length > 1000) throw new ObxError("limit_exceeded", "At most 1000 operations per batch.");
   const opts: BatchOptions = { allowedBrands: w.brands, canDelete: w.scopes.includes("ingest:delete"), canWrite: w.scopes.includes("ingest:write") };
@@ -372,7 +395,7 @@ ingest.post("/batch", async (c) => {
     body = { results, summary: summarize(results) };
   }
   const text2 = JSON.stringify(body);
-  if (idemKey) await ctx.db.run("INSERT OR IGNORE INTO idempotency (key, status, body, created_at) VALUES (?, ?, ?, ?)", [idemKey, status, text2, ctx.iso()]);
+  if (idemKey) await idempotencyStore(ctx, idemKey, status, text2, reqHash);
   const headers: Record<string, string> = { "content-type": "application/json", ...(c.get("rl") ?? {}) };
   if (status === 202) headers.location = `/obx/v1/ingest/jobs/${(body as { id: string }).id}`;
   return new Response(text2, { status, headers });
@@ -388,7 +411,7 @@ ingest.get("/jobs", async (c) => {
   const w = await writer(c);
   need(w, "ingest:read");
   const ctx = ctxOf(c);
-  const limit = intQuery(c, "limit", 25, 1, 100);
+  const limit = limitQuery(c, 25, 100);
   const status = c.req.query("status");
   const cur = await decodeListCursor<{ t: string; id: string }>(ctx, "jobs", c.req.query("cursor") || undefined);
   const params: (string | number)[] = [];
@@ -428,7 +451,7 @@ ingest.get("/jobs/:id/results", async (c) => {
   need(w, "ingest:read");
   const ctx = ctxOf(c);
   const job = await visibleJob(c, w);
-  const limit = intQuery(c, "limit", 100, 1, 1000);
+  const limit = limitQuery(c, 100, 1000);
   const errorsOnly = c.req.query("errors_only") === "true";
   const after = (await decodeListCursor<number>(ctx, "results", c.req.query("cursor") || undefined)) ?? 0;
   const items = await jobItems(ctx, job.id, job.kind === "batch" ? "result" : "row", after, limit + 1, errorsOnly);

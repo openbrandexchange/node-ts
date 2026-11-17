@@ -2,7 +2,7 @@
 // accounts, API keys, automatic-upload tokens, webhooks and statistics.
 import { Hono } from "hono";
 import type { AppEnv, C } from "./common";
-import { ctxOf, json, noContent, readObject, readOptionalObject, intQuery, idParam, encodeListCursor, decodeListCursor } from "./common";
+import { ctxOf, json, noContent, readObject, readOptionalObject, limitQuery, idParam, encodeListCursor, decodeListCursor } from "./common";
 import { requireAdmin } from "./admin-auth";
 import { ObxError, fieldError } from "../lib/problem";
 import { SPEC_DEFAULT_RIGHTS, RETENTION_LIMITS, defaultSettings, type SettingsData } from "../core/ctx";
@@ -201,7 +201,7 @@ adminManage.put("/admin/api/catalog/blobs/:sha256", async (c) => (requireAdmin(c
 adminManage.get("/admin/api/catalog/products", async (c) => {
   const sess = requireAdmin(c);
   const ctx = ctxOf(c);
-  const limit = intQuery(c, "limit", 50, 1, 200);
+  const limit = limitQuery(c, 50, 200);
   const s = await ctx.settings();
   const where: string[] = ["1 = 1"];
   const params: (string | number)[] = [];
@@ -320,7 +320,7 @@ adminManage.get("/admin/api/catalog/products/:external_id", async (c) => {
 adminManage.get("/admin/api/imports", async (c) => {
   requireAdmin(c);
   const ctx = ctxOf(c);
-  const limit = intQuery(c, "limit", 50, 1, 200);
+  const limit = limitQuery(c, 50, 200);
   const cur = await decodeListCursor<{ t: string; id: string }>(ctx, "imports", c.req.query("cursor") || undefined);
   const params: string[] = [];
   let where = "kind = 'import'";
@@ -360,7 +360,7 @@ adminManage.get("/admin/api/imports/:id/errors", async (c) => {
   requireAdmin(c);
   const ctx = ctxOf(c);
   const job = await importJob(c);
-  const limit = intQuery(c, "limit", 50, 1, 200);
+  const limit = limitQuery(c, 50, 200);
   const after = (await decodeListCursor<number>(ctx, "import-errors", c.req.query("cursor") || undefined)) ?? 0;
   const items = await jobItems(ctx, job.id, "row", after, limit + 1);
   const page = items.slice(0, limit);
@@ -582,7 +582,7 @@ function retailerInput(v: V, body: Record<string, unknown>, partial: boolean) {
 adminManage.get("/admin/api/retailers", async (c) => {
   requireAdmin(c);
   const ctx = ctxOf(c);
-  const limit = intQuery(c, "limit", 50, 1, 200);
+  const limit = limitQuery(c, 50, 200);
   const where: string[] = ["1 = 1"];
   const params: string[] = [];
   const q = c.req.query("q");
@@ -648,7 +648,7 @@ adminManage.delete("/admin/api/retailers/:id", async (c) => {
 adminManage.get("/admin/api/access-requests", async (c) => {
   requireAdmin(c);
   const ctx = ctxOf(c);
-  const limit = intQuery(c, "limit", 50, 1, 200);
+  const limit = limitQuery(c, 50, 200);
   const params: string[] = [];
   let where = "1 = 1";
   const st = c.req.query("status");
@@ -707,7 +707,7 @@ adminManage.post("/admin/api/access-requests/:id/reject", async (c) => {
 adminManage.get("/admin/api/users", async (c) => {
   requireAdmin(c);
   const ctx = ctxOf(c);
-  const limit = intQuery(c, "limit", 50, 1, 200);
+  const limit = limitQuery(c, 50, 200);
   const where: string[] = ["1 = 1"];
   const params: string[] = [];
   const role = c.req.query("role");
@@ -994,7 +994,7 @@ adminManage.get("/admin/api/webhooks/:id/deliveries", async (c) => {
   requireAdmin(c);
   const ctx = ctxOf(c);
   const w = await brandHook(c);
-  const limit = intQuery(c, "limit", 50, 1, 200);
+  const limit = limitQuery(c, 50, 200);
   const cur = await decodeListCursor<{ t: string; id: string }>(ctx, "deliveries", c.req.query("cursor") || undefined);
   const rows = await ctx.db.all<DeliveryRow>(
     `SELECT * FROM webhook_deliveries WHERE webhook_id = ? AND created_at > ?${cur ? " AND (created_at < ? OR (created_at = ? AND id < ?))" : ""} ORDER BY created_at DESC, id DESC LIMIT ?`,
@@ -1017,7 +1017,7 @@ adminManage.get("/admin/api/stats", async (c) => {
 adminManage.get("/admin/api/stats/events", async (c) => {
   requireAdmin(c);
   const ctx = ctxOf(c);
-  const limit = intQuery(c, "limit", 50, 1, 200);
+  const limit = limitQuery(c, 50, 200);
   const where: string[] = ["1 = 1"];
   const params: string[] = [];
   const rid = c.req.query("retailer_id");

@@ -90,6 +90,7 @@ export async function housekeeping(ctx: Ctx) {
     { sql: "DELETE FROM sessions WHERE expires_at < ?", params: [now] },
     { sql: "DELETE FROM password_resets WHERE expires_at < ?", params: [ctx.iso(-24 * 3600 * 1000)] },
     { sql: "DELETE FROM idempotency WHERE created_at < ?", params: [ctx.iso(-24 * 3600 * 1000)] },
+    { sql: "DELETE FROM idempotency_keys WHERE created_at < ?", params: [ctx.iso(-24 * 3600 * 1000)] },
     { sql: "DELETE FROM rate_limits WHERE window_start < ?", params: [Math.floor(ctx.now() / 1000) - 7200] },
     { sql: "DELETE FROM webhook_deliveries WHERE created_at < ? AND state != 'pending'", params: [ctx.iso(-7 * 24 * 3600 * 1000)] },
     ...(await retentionStmts(ctx)),

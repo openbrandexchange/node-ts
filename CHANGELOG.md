@@ -9,15 +9,20 @@ always forward-only and applied automatically.
 
 Implements Open Brand Exchange spec 0.3.0: materials and care as terms with names (spec proposal 0004,
 [openbrandexchange/spec#3](https://github.com/openbrandexchange/spec/pull/3)), with a list of qualifiers per fibre
-(`recycled` + `post_consumer`). Also: demo mode, a one-command local run, and the retailer portal filter on
-qualifiers. **Breaking for retailers' software that reads `materials` or `care`**; everything else is unchanged.
+(`recycled` + `post_consumer`), a `percentage` that may be `null`, stable default variant ids, extension members
+kept everywhere, and the behaviours every node now shares (spec e74ccb2). Also: demo mode, a one-command local run,
+and the retailer portal filter on qualifiers. **Breaking for retailers' software that reads `materials` or
+`care`**; everything else is unchanged. From 0.3.0 on, `/obx/v1` changes only by addition (spec versioning.md).
 
 ### Upgrading
 - Migrations run at start (on Cloudflare also with `npm run deploy`). `0006_terms.sql` rewrites stored 0.2
   materials to the 0.3 form: the part and the material become `{"code": …}`, the flags `recycled: true` /
   `organic: true` become a qualifier. `0007_qualifiers.sql` turns the single `qualifier` of a fibre (stored by
-  0006 and by builds of this branch before the release) into the list `qualifiers`. Care needs no change. No new
-  columns.
+  0006 and by builds of this branch before the release) into the list `qualifiers`. Care needs no change.
+  `0008_idempotency_keys.sql` adds the table that keeps Idempotency-Keys with the hash of their request.
+- **Variant ids in imports**: a CSV/Excel row without `variant_id` now makes the variant
+  `<style>-<color>-<size>[-<size_length>]` instead of using the GTIN. Existing variants keep their ids (a row
+  finds them by GTIN first), so nothing changes for a catalog that is already there; new variants get the new id.
 - Retailers' software sees `OBX-Version: 0.3` and, in discovery, `obx_version` 0.3 and `spec_version` 0.3.0. It
   must read `part.code`, `fibers[].material.code` and `fibers[].qualifiers[].code` instead of `part`, `fiber` and
   the flags, and can show the `name` in the shopper's language.
@@ -25,9 +30,27 @@ qualifiers. **Breaking for retailers' software that reads `materials` or `care`*
   (spec protocol.md §6.4, conformance P-FEED-7): retailers' software restarts without a cursor and gets a snapshot
   in the 0.3 shapes. Cursors now carry a cursor epoch (2; pre-release 0.3 builds issued epoch 1, which expires too).
 - Brands' own systems that write through the Ingest API must send the 0.3 shapes (see Changed); CSV files keep
-  working as they are.
+  working as they are, except that a percentage with a decimal comma (`95,5% cotton`) is now a row error (write
+  `95.5%`).
 
 ### Added
+- **Variant identity in imports** (spec import-format.md §1.2.1, conformance I-IMP-12): `variant_id`, else the
+  variant of this product that has the row's GTIN (it keeps its external id and protocol id, also when its size
+  changes), else the default id `<style>-<color>-<size>[-<size_length>]` (`/` and control characters as `_`). A
+  GTIN of another product's variant is the row error `gtin_conflict` (column `gtin`); a second row of the file
+  for the same variant is `validation_failed` on `variant_id`. A GTIN can arrive or change later without a new
+  variant. The Ingest API's `gtin_conflict` names the variant that has the GTIN and its product.
+- **A fibre without a percentage** (`percentage: null`, `outer: leather` in the CSV); `fibre_percentages_not_100`
+  only when every fibre of the part states one, or the stated ones exceed 100.
+- **Warnings `material_unknown`** (a material code outside the vocabulary, once per code; imports with the code
+  as `value`, Ingest API `warning_details` with the pointer to the fibre) and **`qualifier_deprecated`**.
+- **Extension members** (`x-<vendor>-<name>`) are stored and returned on every object the schemas allow,
+  including inside `color`, material terms, fibres, care entries and certifications; imports keep them.
+- **Idempotency-Key with the body compared** on `POST /batch`, `POST /imports` (sha256 of every part) and
+  `POST /exports` (same export, also while it runs): another body with the same key is `409
+  idempotency_key_reused`.
+- **Language tags with script and numeric region** (`zh-Hant`, `sr-Latn-RS`, `es-419`); `name:<lang>` columns
+  are matched case-insensitively with `_` read as `-` and stored in canonical case.
 - **Names for parts, materials, qualifiers and care instructions** in English, Dutch, German and French, from
   the spec's vocabularies (`src/vocabularies/`, copied by `scripts/sync-fixtures.sh` and bundled into the Bun
   and Workers builds), including the new qualifier codes `in_conversion`, `pre_consumer` and `post_consumer`.
@@ -64,12 +87,28 @@ qualifiers. **Breaking for retailers' software that reads `materials` or `care`*
   (a string `part`, `fiber`, `recycled`, `organic`) and a single `qualifier` are `422 validation_failed`; the 0.1
   keys `recycled_*` / `organic_*` still become the material with that qualifier, first in the list.
 - Imports: the label warning `animal_origin_unknown` is decided on the material code. Exports write every
-  qualifier in its own brackets.
-- Test fixtures follow spec 0.3.0 (spec commit 5737aa2).
+  qualifier in its own brackets, and always fill `variant_id`.
+- **Unknown members never fail a write** (ingest.md §3.1): any unknown member, at any depth (a fibre, a term, a
+  care entry, a certification, `color`, `rights`, `provenance`, `measurements`, `footwear_materials`), is ignored
+  with a warning naming its JSON Pointer; before, unknown members inside materials, care, certifications,
+  measurements and footwear materials were `422`. The 0.2 members `fiber`, `recycled` and `organic` are such
+  unknown members now.
+- **The draft single `qualifier`** of a fibre is read as `qualifiers: [it]` (`null` = none; `qualifiers` wins when
+  both are sent) with one warning `qualifier_deprecated` per write, on every JSON write path (I-MAT-1); it is
+  never stored or returned. It was a `422` before.
+- **`limit` above the maximum is clamped** on every list (protocol, Ingest, admin, portal); not a whole number or
+  below 1 is `400 invalid_request`.
+- **Signed rendition URLs**: a tampered, stripped or expired link is `403 forbidden`; neither signature nor token
+  is `401 unauthorized`; a valid Bearer token is served whatever the signature says.
+- Test fixtures follow spec 0.3.0 (spec commit e74ccb2): Kestrel variant ids `KO-1001-NVY-M` …, KO-1005's
+  outer part `leather` without a percentage, the import fixtures `id-1` … `id-4`, `5-invalid.csv` and
+  `label-warnings.csv`.
 
-### Open
-- The web interface is still admin-ui `e8e142f` (0.2.1 with the demo mode): the article pages and the article form
-  do not show the 0.3 terms or the qualifier filter yet. They come with the admin-ui build for 0.3.
+### Web interface
+- admin-ui 0.3.0 (`5ad8f05`): several sustainability claims per fibre and the portal filter on them, an empty
+  percentage in the materials editor, the default variant id in the new-variant form, extension members kept when
+  a form is saved, the warnings `material_unknown`, `qualifier_deprecated` and `idempotency_key_reused`, and
+  language tags with script and numeric region.
 
 ### Fixed
 - `GET /obx/v1/products/{id}` with `If-None-Match` uses the weak comparison (RFC 9110 §13.1.2), so it

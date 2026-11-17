@@ -37,7 +37,7 @@ sign-in, hourly reset, [docs/demo.md](docs/demo.md)) with its data in `./data-de
 
 ---
 
-## Quickstart (60 seconds)
+## Quickstart (about 10 minutes)
 
 ### Option A: the Deploy to Cloudflare button
 
@@ -50,9 +50,12 @@ sign-in, hourly reset, [docs/demo.md](docs/demo.md)) with its data in `./data-de
 3. Cloudflare creates the database (D1), the file storage (R2), the minute timer (Cron Trigger) and the portal, applies the database migrations, and shows you its address (`https://brand-portal.<you>.workers.dev`).
 4. Open that address, enter the setup code, your company name, your languages and your admin account. Done.
 
-> The button works once this repository is public. Until then, use option B.
+The first time takes about 10 minutes: signing in to Cloudflare and connecting GitHub or GitLab, then 3 to 5
+minutes for the first build (Cloudflare shows the progress), then the setup wizard.
 
 ### Option B: one command
+
+About 10 minutes, mostly installing Bun and `wrangler login`; the deploy itself takes under a minute.
 
 ```sh
 git clone https://github.com/openbrandexchange/node-ts && cd node-ts
@@ -139,7 +142,9 @@ Everything below works against **any** Open Brand Exchange portal, because it on
 Article data has one plain column each (spec import format 0.3): `item_subtype`, `contains_animal_origin` (`yes`/`no`),
 `footwear_materials` (`upper: leather; lining_and_sock: textile; outer_sole: other`), `certifications`
 (`gots:CU 123456; rws:CU 200101 (material)`), `feature:<key>` (`feature:wheels` = `4`), and per size `size_length`,
-`color_family` and the measurements (`height_cm`, `weight_kg`, `strap_length_cm` = `80-130` …). Materials take
+`color_family` and the measurements (`height_cm`, `weight_kg`, `strap_length_cm` = `80-130` …). A row without `variant_id` is the variant of this article with
+its GTIN, else `<style>-<colour>-<size>[-<size_length>]` (`KO-1004-IND-30-32`), so a GTIN may arrive or change later.
+A fibre may go without a percentage (`outer: leather`); use a decimal point (`95.5%`). Materials take
 qualifiers in brackets after a fibre, one code per bracket, such as `(recycled)`, `(post_consumer)`, `(organic)` or
 `(regenerative)`: `outer: 100% polyester (recycled) (post_consumer)`; the file
 holds codes only and the portal adds the names. A column your file does not have leaves that field as it

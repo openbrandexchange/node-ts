@@ -2,7 +2,7 @@
 // and erasure of one's own retailer account. Retention periods are part of the settings.
 import { Hono } from "hono";
 import type { AppEnv, C } from "./common";
-import { ctxOf, decodeListCursor, encodeListCursor, idParam, intQuery, json, noContent } from "./common";
+import { ctxOf, decodeListCursor, encodeListCursor, idParam, limitQuery, json, noContent } from "./common";
 import { requireAdmin, requireUser, setSessionCookies } from "./admin-auth";
 import { ObxError } from "../lib/problem";
 import { getRetailer } from "../core/accounts";
@@ -24,7 +24,7 @@ function download(c: C, name: string, body: unknown) {
 adminPrivacy.get("/admin/api/audit-log", async (c) => {
   requireAdmin(c);
   const ctx = ctxOf(c);
-  const limit = intQuery(c, "limit", 50, 1, 200);
+  const limit = limitQuery(c, 50, 200);
   const where: string[] = ["1 = 1"];
   const params: string[] = [];
   for (const [q, col] of [

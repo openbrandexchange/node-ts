@@ -95,7 +95,21 @@ export function normHeader(h: string): string {
   const [base, ...rest] = trimWs(h).split(":");
   const b = trimWs(base).toLowerCase().replace(/[ \t\r\n-]+/g, "_");
   if (!rest.length) return b;
-  return `${b}:${trimWs(rest.join(":"))}`;
+  const tail = trimWs(rest.join(":"));
+  return `${b}:${b === "attr" || b === "feature" ? tail : canonicalLangTag(tail)}`;
+}
+
+/**
+ * A language tag of a `name:<lang>` column in canonical case (import-format.md §1.3): matched
+ * case-insensitively, `_` read as `-`; language lowercase, script title case, region uppercase
+ * (`ZH_hant` → `zh-Hant`, `es-419`). Anything else is returned as written (and refused as a tag later).
+ */
+export function canonicalLangTag(tag: string): string {
+  const parts = tag.replace(/_/g, "-").split("-");
+  if (!/^[a-z]{2,3}$/i.test(parts[0] ?? "")) return tag;
+  return parts
+    .map((p, i) => (i === 0 ? p.toLowerCase() : /^[a-z]{4}$/i.test(p) ? p[0].toUpperCase() + p.slice(1).toLowerCase() : /^[a-z]{2}$/i.test(p) ? p.toUpperCase() : p))
+    .join("-");
 }
 
 function escapeFormula(v: string): string {

@@ -1,7 +1,8 @@
 // Import jobs: canonical CSV + images (upload, API, CLI, scheduled pull). Runs in checkpointed phases:
 // fetch (scheduled sources) → prepare → images → mirror check → apply (per product) → orphan images → mirror.
 import type { Ctx } from "./ctx";
-import { CatalogSession, type IngestResult } from "./catalog";
+import { CatalogSession, warningValues, type IngestResult } from "./catalog";
+import { EXT_RE } from "./validate";
 import { enqueueJob, jobItemStmt, jobItems, registerJob, type JobRow, type StepOutcome } from "./jobs";
 import { ObxError, type ErrorCode } from "../lib/problem";
 import { getBlob, storeBlob, fileRef, blobKey } from "./blobs";
@@ -20,6 +21,7 @@ const LABEL_WARNING_COLUMN: Record<string, string> = {
   animal_origin_unknown: "contains_animal_origin",
   footwear_materials_missing: "footwear_materials",
   fibre_percentages_not_100: "materials",
+  material_unknown: "materials",
 };
 
 export interface Loc {
@@ -746,27 +748,85 @@ async function applyGroup(ctx: Ctx, job: JobRow, st: State, input: ImportInput, 
       }
     }
   }
+  const variants = await resolveVariants(ctx, s, g, file, sink);
+  if (!variants) return;
   const pdata: Record<string, unknown> = { ...g.product };
   if (brandExt) pdata.brand_external_id = brandExt;
   if (g.status) pdata.status = g.status;
   const storedProduct = await s.load("product", g.key);
-  if (storedProduct) keepAbsentColumns(pdata, s.recordData(storedProduct), PRODUCT_COLUMN_FIELDS, g.present);
+  if (storedProduct) {
+    keepAbsentColumns(pdata, s.recordData(storedProduct), PRODUCT_COLUMN_FIELDS, g.present);
+    keepExtensions(pdata, s.recordData(storedProduct));
+  }
   const pr = await s.apply("upsert", "product", g.key, pdata);
   results.push({ r: pr, row: g.firstRow, file });
   if (pr.result === "error") {
     for (const x of results) if (x.r.result === "error") resultErrors(x.r, file, g.firstRow, sink);
     return;
   }
-  for (const v of g.variants) {
+  for (const v of variants) {
     const vdata: Record<string, unknown> = structuredClone(v.data);
     const storedVariant = await s.load("variant", v.externalId);
-    if (storedVariant) keepAbsentColumns(vdata, s.recordData(storedVariant), VARIANT_COLUMN_FIELDS, g.present);
+    if (storedVariant) {
+      keepAbsentColumns(vdata, s.recordData(storedVariant), VARIANT_COLUMN_FIELDS, g.present);
+      keepExtensions(vdata, s.recordData(storedVariant));
+    }
     const r = await s.apply("upsert", "variant", v.externalId, vdata);
     results.push({ r, row: v.row, file });
   }
   const product = s.get("product", g.key)!;
   await applyAssets(ctx, job, st, input, s, product.ext, String(product.stored.style_number), sink, results, g);
   await finishSession(ctx, st, input, s, results, sink);
+}
+
+/** Extension members have no columns: an import keeps the ones the object (and its colour) has (import-format.md rule 2). */
+function keepExtensions(data: Record<string, unknown>, stored: Record<string, unknown>) {
+  const ext = (o: unknown) => (o && typeof o === "object" && !Array.isArray(o) ? Object.entries(o as Record<string, unknown>).filter(([k]) => EXT_RE.test(k)) : []);
+  for (const [k, v] of ext(stored)) if (!(k in data)) data[k] = v;
+  if (data.color && typeof data.color === "object") for (const [k, v] of ext(stored.color)) if (!(k in (data.color as Record<string, unknown>))) (data.color as Record<string, unknown>)[k] = v;
+}
+
+/**
+ * Which variant each row is (import-format.md §1.2.1): the variant_id cell; else the variant of this product
+ * that has the row's GTIN (it keeps its external id); else the default id. A GTIN of another product's variant
+ * is gtin_conflict, a second row of the file for the same variant is validation_failed on variant_id; both
+ * skip the row. Returns null when every row of the product was skipped (then nothing is written).
+ */
+async function resolveVariants(ctx: Ctx, s: CatalogSession, g: ProductGroup, file: string, sink: ErrSink): Promise<ProductGroup["variants"] | null> {
+  const product = s.get("product", g.key) ?? (await s.load("product", g.key));
+  const out: ProductGroup["variants"] = [];
+  const seen = new Set<string>();
+  const failed = new Set<number>();
+  const byGtin = new Map<string, string>(); // gtin14 → external id, for rows earlier in this file
+  for (const v of g.variants) {
+    const raw = typeof v.data.gtin === "string" ? v.data.gtin : null;
+    const g14 = raw ? raw.replace(/\s+/g, "").padStart(14, "0") : null;
+    let ext = v.externalId;
+    if (!v.explicit && g14) {
+      const local = byGtin.get(g14);
+      const row = local ? null : await ctx.db.first<{ external_id: string; product_id: string; style: string | null }>(
+        "SELECT v.external_id, v.product_id, p.style_number AS style FROM variants v LEFT JOIN products p ON p.id = v.product_id WHERE v.gtin14 = ?",
+        [g14],
+      );
+      if (local) ext = local;
+      else if (row && product && row.product_id === product.id) ext = row.external_id;
+      else if (row && (!product || row.product_id !== product.id)) {
+        sink.add({ file, row: v.row, column: "gtin", severity: "error", obx_error: "gtin_conflict", detail: `This GTIN belongs to variant "${row.external_id}" of product "${row.style ?? "?"}". Remove it there first (an empty gtin cell) or give another GTIN.`, value: raw });
+        failed.add(v.row);
+        continue;
+      }
+    }
+    if (seen.has(ext)) {
+      sink.add({ file, row: v.row, column: "variant_id", severity: "error", obx_error: "validation_failed", detail: `This row is the same variant as an earlier row of the file (${ext}); the earlier row stands. Give each variant its own GTIN or variant_id.`, value: ext });
+      failed.add(v.row);
+      continue;
+    }
+    seen.add(ext);
+    if (g14) byGtin.set(g14, ext);
+    out.push({ ...v, externalId: ext });
+  }
+  if (failed.size && g.rows.every((r) => failed.has(r))) return null;
+  return out;
 }
 
 async function applyOrphans(ctx: Ctx, job: JobRow, st: State, input: ImportInput, styleLower: string, sink: ErrSink) {
@@ -898,7 +958,7 @@ async function finishSession(ctx: Ctx, st: State, input: ImportInput, s: Catalog
     if (x.r.result !== "error")
       for (const d of x.r.warning_details ?? []) {
         coded.add(`${d.code}: ${d.detail}`);
-        sink.add({ file: x.file, row: x.row, column: LABEL_WARNING_COLUMN[d.code] ?? null, severity: "warning", obx_error: d.code, detail: d.detail, value: null });
+        sink.add({ file: x.file, row: x.row, column: LABEL_WARNING_COLUMN[d.code] ?? null, severity: "warning", obx_error: d.code, detail: d.detail, value: warningValues.get(d) ?? null });
       }
     for (const w of x.r.warnings) if (!coded.has(w)) sink.add({ file: x.file, row: x.row, column: null, severity: "warning", obx_error: "validation_failed", detail: w, value: null });
   }
