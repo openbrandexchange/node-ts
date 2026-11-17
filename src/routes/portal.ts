@@ -8,7 +8,7 @@ import { ObxError } from "../lib/problem";
 import { grantOf, retailerOriginalAllowed, type RetailerRow, type ClientRow, type Viewer, type SessionInfo } from "../core/auth";
 import { PROTOCOL_SCOPES } from "../core/validate";
 import { assetVisibleSql, loadAssetForViewer, placeholders, productDetails, productVisibleSql, renditionUrl, signedExpiry, visibleBrands, type AssetRow, type ProductRow } from "../core/read";
-import { filterSql, pickFile, zipEntryName, downloadJobJson, type PortalFilter, type DownloadInput } from "../core/bulk";
+import { QUALIFIER_ROWS, filterSql, pickFile, zipEntryName, downloadJobJson, type PortalFilter, type DownloadInput } from "../core/bulk";
 import { gtinLookup } from "../core/gtinlookup";
 import { safeJsonParse, contentDisposition, sanitizeFilename, normDateTime } from "../lib/util";
 import { assetFilename, type Files } from "../core/reps";
@@ -23,6 +23,8 @@ import { clientJson, clientWithSecret, createClient, rotateClient } from "../cor
 import { V } from "../core/validate";
 import { logoUrl } from "./protocol";
 import { memLimit, enforce } from "../core/ratelimit";
+import { QUALIFIER_NAMES } from "../core/article";
+import type { Ctx } from "../core/ctx";
 
 export const portal = new Hono<AppEnv>();
 
@@ -65,6 +67,7 @@ function filterFrom(c: C): PortalFilter {
     season: listQuery(c, "season"),
     collection: listQuery(c, "collection"),
     target_group: listQuery(c, "target_group"),
+    qualifier: listQuery(c, "qualifier"),
     updated_since: norm ?? undefined,
   };
 }
@@ -196,6 +199,24 @@ portal.get("/admin/api/portal/products", async (c) => {
   return json(c, { items, next_cursor: rows.length > limit ? await encodeListCursor(ctx, "portal-products", off + limit) : null, total });
 });
 
+/**
+ * Facet `qualifiers` (spec node-admin.yaml Facets): every qualifier code on any fibre of the matching
+ * products, with the vocabulary's name as label (else the name written with it, else the code) and the
+ * number of products.
+ */
+async function qualifierFacet(ctx: Ctx, w: { sql: string; params: (string | number)[] }) {
+  const rows = await ctx.db.all<{ code: string; n: number; name: string | null }>(
+    `SELECT json_extract(q.value, '$.code') AS code, COUNT(DISTINCT p.id) AS n, MAX(json_extract(q.value, '$.name')) AS name FROM products p JOIN brands b ON b.id = p.brand_id, ${QUALIFIER_ROWS} WHERE ${w.sql} AND json_type(q.value, '$.code') = 'text' GROUP BY code ORDER BY n DESC, code LIMIT 200`,
+    w.params,
+  );
+  return rows.map((r) => {
+    const known = QUALIFIER_NAMES.get(r.code);
+    const written = r.name ? safeJsonParse<unknown>(r.name, null) : null;
+    const label = known ?? (written && typeof written === "object" && !Array.isArray(written) ? written : r.code);
+    return { value: r.code, label, count: r.n };
+  });
+}
+
 portal.get("/admin/api/portal/facets", async (c) => {
   const { viewer } = await viewerOf(c);
   const ctx = ctxOf(c);
@@ -229,6 +250,7 @@ portal.get("/admin/api/portal/facets", async (c) => {
     seasons: await simple("p.season", "season"),
     collections: await simple("p.collection", "collection"),
     target_groups: await simple("p.target_group", "target_group"),
+    qualifiers: await qualifierFacet(ctx, filterSql(f, viewer, now, "qualifier")),
   });
 });
 
@@ -455,6 +477,7 @@ portal.post("/admin/api/portal/download-jobs", async (c) => {
       season: arr(f.season),
       collection: arr(f.collection),
       target_group: arr(f.target_group),
+      qualifier: arr(f.qualifier),
       updated_since: typeof f.updated_since === "string" ? (normDateTime(f.updated_since) ?? undefined) : undefined,
     };
   }

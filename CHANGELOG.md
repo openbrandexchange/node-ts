@@ -5,53 +5,46 @@ All notable changes to the Portal for Cloudflare (`node-ts`) are listed here. Th
 than replacing the software (see [docs/upgrading.md](docs/upgrading.md)); database migrations are
 always forward-only and applied automatically.
 
-## [0.3.0] - Unreleased
+## [0.3.0] - 2026-11-17
 
 Implements Open Brand Exchange spec 0.3.0: materials and care as terms with names (spec proposal 0004,
-[openbrandexchange/spec#3](https://github.com/openbrandexchange/spec/pull/3)). **Breaking for retailers' software
-that reads `materials` or `care`**; everything else is unchanged.
+[openbrandexchange/spec#3](https://github.com/openbrandexchange/spec/pull/3)), with a list of qualifiers per fibre
+(`recycled` + `post_consumer`). Also: demo mode, a one-command local run, and the retailer portal filter on
+qualifiers. **Breaking for retailers' software that reads `materials` or `care`**; everything else is unchanged.
 
 ### Upgrading
-- Migration `0006_terms.sql` runs at start (on Cloudflare also with `npm run deploy`). It rewrites stored
+- Migrations run at start (on Cloudflare also with `npm run deploy`). `0006_terms.sql` rewrites stored 0.2
   materials to the 0.3 form: the part and the material become `{"code": …}`, the flags `recycled: true` /
-  `organic: true` become the qualifier. Care needs no change. No new columns.
+  `organic: true` become a qualifier. `0007_qualifiers.sql` turns the single `qualifier` of a fibre (stored by
+  0006 and by builds of this branch before the release) into the list `qualifiers`. Care needs no change. No new
+  columns.
 - Retailers' software sees `OBX-Version: 0.3` and, in discovery, `obx_version` 0.3 and `spec_version` 0.3.0. It
-  must read `part.code`, `fibers[].material.code` and `fibers[].qualifier.code` instead of `part`, `fiber` and
+  must read `part.code`, `fibers[].material.code` and `fibers[].qualifiers[].code` instead of `part`, `fiber` and
   the flags, and can show the `name` in the shopper's language.
 - Every `/changes` cursor issued before the upgrade (also an export's `changes_cursor`) is `410 cursor_expired`
   (spec protocol.md §6.4, conformance P-FEED-7): retailers' software restarts without a cursor and gets a snapshot
-  in the 0.3 shapes. Cursors now carry a cursor epoch.
+  in the 0.3 shapes. Cursors now carry a cursor epoch (2; pre-release 0.3 builds issued epoch 1, which expires too).
 - Brands' own systems that write through the Ingest API must send the 0.3 shapes (see Changed); CSV files keep
   working as they are.
 
 ### Added
 - **Names for parts, materials, qualifiers and care instructions** in English, Dutch, German and French, from
   the spec's vocabularies (`src/vocabularies/`, copied by `scripts/sync-fixtures.sh` and bundled into the Bun
-  and Workers builds). Every care entry has its ISO 3758 `category` and its GINETEX `symbol` (e.g. `1_D_30`).
-  Codes outside the vocabularies keep the name, category and symbol that were written, or `null`.
-- Imports: any qualifier code in brackets after a fibre, e.g. `100% cotton (regenerative)`; one per fibre.
-
-### Changed
-- `materials`: `{"part": {"code", "name"}, "fibers": [{"material": {"code", "name"}, "percentage",
-  "qualifier": {"code", "name"} | null}]}`; `fiber` and the flags `recycled`/`organic` are gone. The part
-  `main` has the name `null`.
-- `care`: every entry is `{"code", "category", "symbol", "name", "text"}`; `text` is the brand's own extra text.
-- Ingest API and admin: `name`, `category` and `symbol` may be left out on write; names of known codes are
-  not stored, so PUTting back a record's `data` is `unchanged`. The 0.2 shapes (a string `part`, `fiber`,
-  `recycled`, `organic`) are `422 validation_failed`; the 0.1 keys `recycled_*` / `organic_*` still become the
-  material with that qualifier.
-- Imports: two qualifiers on one fibre are a row error. The label warning `animal_origin_unknown` is decided on
-  the material code.
-- Test fixtures follow spec 0.3.0.
-
-### Open
-- The web interface (admin-ui) is not re-vendored in this version yet: the label information on the article
-  pages and the article form still need the admin-ui build for 0.3.
-
-<!-- DEMO -->
-## [Unreleased]
-
-### Added
+  and Workers builds), including the new qualifier codes `in_conversion`, `pre_consumer` and `post_consumer`.
+  Every care entry has its ISO 3758 `category` and its GINETEX `symbol` (e.g. `1_D_30`). Codes outside the
+  vocabularies keep the name, category and symbol that were written, or `null`.
+- **Several qualifiers per fibre**: `qualifiers` is a list of terms in the brand's order, `[]` when none; a repeated
+  code counts once. Imports: one code per bracket, as many brackets as needed, e.g.
+  `100% polyester (recycled) (post_consumer)`; `(organic, recycled)` is a row error.
+- **Retailer portal filter on qualifiers** (Node Admin API): `qualifier` (repeatable, or comma-separated) on
+  `/admin/api/portal/products`, `/admin/api/portal/facets`, the article data CSV and `DownloadJobInput.filter`;
+  a product matches when any fibre of any part has any of the codes (OR within the parameter, AND with the
+  others). New facet `qualifiers` (`value` the code, `label` the name per language, `count` the products).
+- **Run it locally with one command**: `bun run dev` starts the portal with SQLite in `./data-dev`, the setup code
+  `KESTREL-LOCAL`, the admin screens, the Kestrel example catalog with images, a brand admin and a retailer
+  account, and prints the address and logins (README, "Run it locally"). `bun run dev:demo` does the same in demo
+  mode (`./data-demo`). The previous `bun run dev` (Bun with reload, nothing seeded) is what `bun run dev` does
+  after the first run.
 - **Demo mode** (`OBX_DEMO=true`, off by default; [docs/demo.md](docs/demo.md)): a public demo portal
   with a one-click sign-in as a fixed demo retailer or a fixed demo brand admin (optionally behind
   Cloudflare Turnstile), the banner "Demo, fictional data" (admin-ui), a public read-only API key,
@@ -60,7 +53,23 @@ that reads `materials` or `care`**; everything else is unchanged.
   large uploads are refused or neutralised; per-address rate limits (Workers rate limiting bindings).
   `scripts/demo-seed.ts` builds the seed archive; `deploy/demo/wrangler.jsonc` is the Open Brand
   Exchange demo deployment. Problems may carry `x-obx-…` extension members.
-- admin-ui with the demo banner and sign-in buttons (vendored from admin-ui `main`).
+
+### Changed
+- `materials`: `{"part": {"code", "name"}, "fibers": [{"material": {"code", "name"}, "percentage",
+  "qualifiers": [{"code", "name"}, …]}]}`; `fiber` and the flags `recycled`/`organic` are gone. The part
+  `main` has the name `null`.
+- `care`: every entry is `{"code", "category", "symbol", "name", "text"}`; `text` is the brand's own extra text.
+- Ingest API and admin: `name`, `category` and `symbol` may be left out on write, and so may `qualifiers`
+  (= none); names of known codes are not stored, so PUTting back a record's `data` is `unchanged`. The 0.2 shapes
+  (a string `part`, `fiber`, `recycled`, `organic`) and a single `qualifier` are `422 validation_failed`; the 0.1
+  keys `recycled_*` / `organic_*` still become the material with that qualifier, first in the list.
+- Imports: the label warning `animal_origin_unknown` is decided on the material code. Exports write every
+  qualifier in its own brackets.
+- Test fixtures follow spec 0.3.0 (spec commit 5737aa2).
+
+### Open
+- The web interface is still admin-ui `e8e142f` (0.2.1 with the demo mode): the article pages and the article form
+  do not show the 0.3 terms or the qualifier filter yet. They come with the admin-ui build for 0.3.
 
 ### Fixed
 - `GET /obx/v1/products/{id}` with `If-None-Match` uses the weak comparison (RFC 9110 §13.1.2), so it

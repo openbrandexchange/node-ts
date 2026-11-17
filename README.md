@@ -2,11 +2,34 @@
 
 Your own **brand portal** for retailers, running on your own Cloudflare account. It gives your brand:
 
-1. **A portal for your retailers** ("*Kestrel · Beeldbank*", "*Kestrel · Händlerportal*", "*Kestrel · Brand portal*"…). Retailers ask for access, log in, search and filter your products, paste a list of EANs, pick products and download images (original, web or square) and article data (CSV) as zip files.
-2. **A standard API for your retailers' software.** Shops, PIMs and ERPs pull your products, EANs, images, rights and AI labels automatically, using the open [Open Brand Exchange](https://openbrandexchange.com) protocol (version 0.3). That includes the article data shops need for their product pages and filters: composition with recycled, organic and regenerative fibres (with the names of parts, materials and care instructions in English, Dutch, German and French), "contains non-textile parts of animal origin", footwear materials, care, certifications, features (wheels, lock, closure, fit …) and per size the measurements (cm, kg, litres), second size and colour family. You hand out an *API key for their software* in the admin.
+1. **A portal for your retailers** ("*Kestrel · Beeldbank*", "*Kestrel · Händlerportal*", "*Kestrel · Brand portal*"…). Retailers ask for access, log in, search and filter your products (also on recycled, organic or regenerative fibres), paste a list of EANs, pick products and download images (original, web or square) and article data (CSV) as zip files.
+2. **A standard API for your retailers' software.** Shops, PIMs and ERPs pull your products, EANs, images, rights and AI labels automatically, using the open [Open Brand Exchange](https://openbrandexchange.com) protocol (version 0.3). That includes the article data shops need for their product pages and filters: composition with recycled (pre- or post-consumer), organic, in-conversion and regenerative fibres (with the names of parts, materials, qualifiers and care instructions in English, Dutch, German and French), "contains non-textile parts of animal origin", footwear materials, care, certifications, features (wheels, lock, closure, fit …) and per size the measurements (cm, kg, litres), second size and colour family. You hand out an *API key for their software* in the admin.
 3. **Automatic upload from your own systems.** Publish from your PIM, ERP, DAM or a shared folder: a nightly CSV + images from a web address or an S3/R2 bucket, the `obx` command-line tool, a GitHub Action, n8n/Make/Zapier or the upload API. Nothing is published twice: unchanged products and images cost nothing.
 
 It is free and open source (AGPL-3.0). You own the data; there is no vendor in between.
+
+## Run it locally (2 minutes)
+
+You need [Bun](https://bun.sh) (`curl -fsSL https://bun.sh/install | bash`). No Docker, no Cloudflare account.
+
+```sh
+git clone https://github.com/openbrandexchange/node-ts && cd node-ts
+bun install
+bun run dev
+```
+
+The first run sets up a portal with SQLite in `./data-dev`, the setup code `KESTREL-LOCAL`, the admin screens
+and the fictional brand Kestrel (11 articles with images), and prints the address and the logins:
+
+| | |
+|---|---|
+| Address | http://localhost:8080 (`PORT=…` for another port) |
+| Brand admin | `admin@kestrel.example` / `kestrel-local-admin` |
+| Retailer | `retailer@northwind.example` / `northwind-local-retailer` |
+
+The portal restarts when you change the code. Delete `./data-dev` to start over. Image previews are drawn with
+macOS `sips` or ImageMagick, whichever you have. `bun run dev:demo` runs the public demo instead (one-click
+sign-in, hourly reset, [docs/demo.md](docs/demo.md)) with its data in `./data-demo`.
 
 > This repository is the TypeScript edition. The same portal also exists as
 > **Portal for Google Cloud & Docker** (`node-go`) and **Portal for web hosting** (`node-php`).
@@ -116,8 +139,9 @@ Everything below works against **any** Open Brand Exchange portal, because it on
 Article data has one plain column each (spec import format 0.3): `item_subtype`, `contains_animal_origin` (`yes`/`no`),
 `footwear_materials` (`upper: leather; lining_and_sock: textile; outer_sole: other`), `certifications`
 (`gots:CU 123456; rws:CU 200101 (material)`), `feature:<key>` (`feature:wheels` = `4`), and per size `size_length`,
-`color_family` and the measurements (`height_cm`, `weight_kg`, `strap_length_cm` = `80-130` …). Materials take one
-qualifier per fibre in brackets, such as `(recycled)`, `(organic)` or `(regenerative)`: `outer: 100% polyester (recycled)`; the file
+`color_family` and the measurements (`height_cm`, `weight_kg`, `strap_length_cm` = `80-130` …). Materials take
+qualifiers in brackets after a fibre, one code per bracket, such as `(recycled)`, `(post_consumer)`, `(organic)` or
+`(regenerative)`: `outer: 100% polyester (recycled) (post_consumer)`; the file
 holds codes only and the portal adds the names. A column your file does not have leaves that field as it
 is (per feature and per measurement). The import warns, without blocking anything, when a label would miss what EU law
 requires: the fibre composition, whether there are non-textile parts of animal origin, the footwear materials, or
@@ -223,7 +247,8 @@ bun run audit && bun run licenses   # dependency vulnerabilities and licences
 sh e2e/run.sh                 # browser tests with axe and keyboard checks (needs Node.js)
 bun run loadtest              # 10,000-product load test (docs/performance.md)
 bun run smoke:workers         # the whole flow in the local Workers runtime (wrangler dev, D1 + R2)
-bun run dev                   # Bun server with reload on http://localhost:8080
+bun run dev                   # Bun + SQLite with the Kestrel catalog and reload on http://localhost:8080 (see the top)
+bun run dev:demo              # the same in demo mode (docs/demo.md)
 bunx wrangler dev             # Workers runtime locally
 ```
 

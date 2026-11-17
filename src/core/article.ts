@@ -63,7 +63,7 @@ export const CERTIFICATION_SCOPES = ["product", "material"];
 export type LocalizedText = Record<string, string>;
 /** A code with its name per language (Materials.json $defs/term). */
 export type Term = { code: string; name?: LocalizedText | null };
-export type Fiber = { material: Term; percentage: number; qualifier?: Term | null };
+export type Fiber = { material: Term; percentage: number; qualifiers?: Term[] };
 export type Materials = { part: Term; fibers: Fiber[] }[];
 export type CareCategory = "washing" | "bleaching" | "drying" | "ironing" | "professional_care";
 export type CareEntry = { code: string; category?: CareCategory | null; symbol?: string | null; name?: LocalizedText | null; text?: LocalizedText | null };
@@ -98,17 +98,24 @@ export const CARE_CATEGORIES = ["washing", "bleaching", "drying", "ironing", "pr
 
 /**
  * The 0.1 keys recycled_<material> / organic_<material> become the material with that qualifier
- * (protocol.md §5.9.1); the key wins over a qualifier that was also given (ingest.md §3.4).
+ * (protocol.md §5.9.1). The key's qualifier comes first in the list, before the qualifiers that were
+ * also given (ingest.md §3.4); nested keys (organic_recycled_cotton) give one each, in their order.
  */
-export function splitLegacyMaterial(code: string): { code: string; qualifier: string | null } {
-  let qualifier: string | null = null;
+export function splitLegacyMaterial(code: string): { code: string; qualifiers: string[] } {
+  const qualifiers: string[] = [];
   for (;;) {
     const m = code.match(/^(recycled|organic)_(.+)$/);
     if (!m) break;
-    qualifier ??= m[1];
+    qualifiers.push(m[1]);
     code = m[2];
   }
-  return { code, qualifier };
+  return { code, qualifiers };
+}
+
+/** Qualifier terms without repeats (the first of a code is kept, in order; protocol.md §5.9.1). */
+export function uniqueQualifiers(qs: Term[]): Term[] {
+  const seen = new Set<string>();
+  return qs.filter((q) => !seen.has(q.code) && (seen.add(q.code), true));
 }
 
 /** A term as stored: the code, and the name only for a code outside the vocabulary. */
@@ -124,7 +131,7 @@ export function expandTerm(t: unknown, names: Map<string, LocalizedText | null>)
   return { code: t.code, name: names.has(t.code) ? (names.get(t.code) ?? null) : ((t.name as LocalizedText | undefined) ?? null), ...extMembers(t) };
 }
 
-/** Materials as stored (codes only for known codes, one qualifier per fibre, 0.1 keys normalised). */
+/** Materials as stored (codes only for known codes, qualifiers without repeats and only when there are any, 0.1 keys normalised). */
 export function storeMaterials(m: Materials): Materials {
   return m.map((p) => ({
     ...extMembers(p),
@@ -132,15 +139,15 @@ export function storeMaterials(m: Materials): Materials {
     fibers: p.fibers.map((f) => {
       const legacy = splitLegacyMaterial(f.material.code);
       const material = storeTerm({ ...f.material, code: legacy.code }, MATERIAL_NAMES);
-      const qualifier = legacy.qualifier ? { code: legacy.qualifier } : (f.qualifier ?? null);
+      const qualifiers = uniqueQualifiers([...legacy.qualifiers.map((code) => ({ code })), ...(f.qualifiers ?? [])]);
       const out: Fiber = { ...extMembers(f), material, percentage: f.percentage };
-      if (qualifier) out.qualifier = storeTerm(qualifier, QUALIFIER_NAMES);
+      if (qualifiers.length) out.qualifiers = qualifiers.map((q) => storeTerm(q, QUALIFIER_NAMES));
       return out;
     }),
   }));
 }
 
-/** Materials as the protocol returns them: every term with its name, `qualifier` null when none. */
+/** Materials as the protocol returns them: every term with its name, `qualifiers` [] when none. */
 export function expandMaterials(m: unknown): unknown {
   if (!Array.isArray(m)) return m;
   return m.map((p) =>
@@ -149,7 +156,7 @@ export function expandMaterials(m: unknown): unknown {
           part: expandTerm(p.part, PART_NAMES),
           fibers: Array.isArray(p.fibers)
             ? p.fibers.map((f: unknown) =>
-                isObj(f) ? { material: expandTerm(f.material, MATERIAL_NAMES), percentage: f.percentage, qualifier: f.qualifier ? expandTerm(f.qualifier, QUALIFIER_NAMES) : null, ...extMembers(f) } : f,
+                isObj(f) ? { material: expandTerm(f.material, MATERIAL_NAMES), percentage: f.percentage, qualifiers: storedQualifiers(f).map((q) => expandTerm(q, QUALIFIER_NAMES)), ...extMembers(f) } : f,
               )
             : p.fibers,
           ...extMembers(p),
@@ -186,6 +193,12 @@ export function expandCare(c: unknown): unknown {
   });
 }
 
+/** The qualifiers of a stored fibre: `qualifiers`, or the single `qualifier` of a pre-release 0.3 row. */
+function storedQualifiers(f: Record<string, unknown>): unknown[] {
+  if (Array.isArray(f.qualifiers)) return f.qualifiers;
+  return isObj(f.qualifier) ? [f.qualifier] : [];
+}
+
 function extMembers(o: object): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(o)) if (k.startsWith("x-")) out[k] = v;
@@ -193,9 +206,9 @@ function extMembers(o: object): Record<string, unknown> {
 }
 
 /**
- * Materials stored by a 0.2 node (part a string; fibre {fiber, percentage, recycled?, organic?}) in the
- * 0.3 stored form. Migration 0006 converts the database; this covers rows written by an older node
- * while the migration ran, and backups restored from 0.2.
+ * Materials stored by a 0.2 node (part a string; fibre {fiber, percentage, recycled?, organic?}) or by a
+ * pre-release 0.3 node (one `qualifier` per fibre) in the 0.3 stored form. Migrations 0006 and 0007
+ * convert the database; this covers rows written by an older node while a migration ran, and backups.
  */
 function upgradeMaterials(m: unknown[]): unknown[] {
   return m.map((p) => {
@@ -203,10 +216,15 @@ function upgradeMaterials(m: unknown[]): unknown[] {
     const part = typeof p.part === "string" ? { code: p.part } : p.part;
     const fibers = Array.isArray(p.fibers)
       ? p.fibers.map((f: unknown) => {
-          if (!isObj(f) || typeof f.fiber !== "string") return f;
-          const { fiber, recycled, organic, ...rest } = f;
+          if (!isObj(f)) return f;
+          if (typeof f.fiber !== "string") {
+            if (!("qualifier" in f)) return f;
+            const { qualifier, ...rest } = f;
+            return { ...rest, qualifiers: isObj(qualifier) ? [qualifier] : [] };
+          }
+          const { fiber, recycled, organic, qualifier: _q, ...rest } = f;
           const q = recycled === true ? "recycled" : organic === true ? "organic" : null;
-          return { ...rest, material: { code: fiber }, ...(q ? { qualifier: { code: q } } : {}) };
+          return { ...rest, material: { code: fiber }, qualifiers: q ? [{ code: q }] : [] };
         })
       : p.fibers;
     return { ...p, part, fibers };
@@ -216,7 +234,7 @@ function upgradeMaterials(m: unknown[]): unknown[] {
 /** A stored product in the 0.3 stored form (materials and care of data stored before 0.3 upgraded). */
 export function normalizeStoredProduct(s: Record<string, unknown>): Record<string, unknown> {
   if (!Array.isArray(s.materials)) return s;
-  const legacyFiber = (f: unknown) => isObj(f) && ("fiber" in f || (isObj(f.material) && typeof f.material.code === "string" && /^(recycled|organic)_./.test(f.material.code)));
+  const legacyFiber = (f: unknown) => isObj(f) && ("fiber" in f || "qualifier" in f || (isObj(f.material) && typeof f.material.code === "string" && /^(recycled|organic)_./.test(f.material.code)));
   const legacy = s.materials.some((p) => isObj(p) && (typeof p.part === "string" || (Array.isArray(p.fibers) && p.fibers.some(legacyFiber))));
   if (!legacy) return s;
   return { ...s, materials: storeMaterials(upgradeMaterials(s.materials) as Materials) };

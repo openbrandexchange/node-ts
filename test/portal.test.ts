@@ -67,6 +67,41 @@ describe("retailer portal (A-INV-1, A-PORT-1, A-PORT-2)", () => {
     expect((await node.request("GET", img.pathname + img.search)).status).toBe(200);
   });
 
+  test("filter and facet on material qualifiers (node-admin.yaml: qualifier, Facets.qualifiers)", async () => {
+    const { QUALIFIER_NAMES } = await import("../src/core/article");
+    const styles = async (qs: string) => ((await retailer.req("GET", `/admin/api/portal/products?limit=50&${qs}`)).json.items as any[]).map((p) => p.style_number).sort();
+    // Any fibre of any part with any of the codes; OR within the parameter, AND with the others.
+    expect(await styles("qualifier=recycled")).toEqual(["KO-1008", "KO-1009", "KT-2001", "KT-2002"]);
+    expect(await styles("qualifier=organic&qualifier=post_consumer")).toEqual(["KO-1003", "KO-1009"]);
+    expect(await styles("qualifier=organic,post_consumer")).toEqual(["KO-1003", "KO-1009"]);
+    expect(await styles(`qualifier=recycled&brand_id=${brandIds["kestrel-trail"]}`)).toEqual(["KT-2001", "KT-2002"]);
+    expect(await styles("qualifier=upcycled")).toEqual([]);
+    const facets = (await retailer.req("GET", "/admin/api/portal/facets")).json;
+    expect(facets.qualifiers).toEqual([
+      { value: "recycled", label: QUALIFIER_NAMES.get("recycled"), count: 4 },
+      { value: "organic", label: QUALIFIER_NAMES.get("organic"), count: 1 },
+      { value: "post_consumer", label: QUALIFIER_NAMES.get("post_consumer"), count: 1 },
+      { value: "regenerative", label: QUALIFIER_NAMES.get("regenerative"), count: 1 },
+    ]);
+    // A facet ignores its own filter and follows the others.
+    const narrowed = (await retailer.req("GET", `/admin/api/portal/facets?qualifier=organic&brand_id=${brandIds["kestrel-trail"]}`)).json;
+    expect(narrowed.qualifiers).toEqual([{ value: "recycled", label: QUALIFIER_NAMES.get("recycled"), count: 2 }]);
+    expect(narrowed.brands).toEqual([{ value: brandIds["kestrel"], label: expect.any(String), count: 1 }]);
+    expect((await restricted.req("GET", "/admin/api/portal/facets")).json.qualifiers.find((q: any) => q.value === "recycled").count).toBe(2);
+    // The same filter in a download job.
+    const job = await retailer.req("POST", "/admin/api/portal/download-jobs", { json: { source: "filter", filter: { qualifier: ["organic", "post_consumer"] }, variant: "web" } });
+    expect(job.status).toBe(202);
+    await node.drain();
+    const done = await retailer.req("GET", `/admin/api/portal/download-jobs/${job.json.id}`);
+    expect(done.json.status).toBe("succeeded");
+    const file = await retailer.req("GET", done.json.file_url);
+    const entries = await readZipDirectory(bytesReader(file.bytes), file.bytes.length);
+    const data = entries.find((e) => e.name === "data.csv")!;
+    const parsed = parseCsv(new TextDecoder().decode(await readZipEntry(bytesReader(file.bytes), data, 1_000_000)));
+    const col = parsed.header.indexOf("style_number");
+    expect([...new Set(parsed.rows.map((r) => r.cells[col]))].sort()).toEqual(["KO-1003", "KO-1009"]);
+  });
+
   test("restricted retailer never sees the other brand; originals hidden", async () => {
     const list = await restricted.req("GET", "/admin/api/portal/products?limit=50");
     expect(list.json.total).toBe(9);

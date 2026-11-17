@@ -24,8 +24,16 @@ export interface PortalFilter {
   season?: string[];
   collection?: string[];
   target_group?: string[];
+  qualifier?: string[];
   updated_since?: string;
 }
+
+/**
+ * The qualifiers of every fibre of every part of product `p` as rows `q` (q.value is the stored term
+ * {code, name?}). Plain json_each, so the same SQL runs on D1 and bun:sqlite (spec node-admin.yaml,
+ * portal filter `qualifier`, facet `qualifiers`).
+ */
+export const QUALIFIER_ROWS = "json_each(p.stored, '$.materials') AS mp, json_each(mp.value, '$.fibers') AS mf, json_each(mf.value, '$.qualifiers') AS q";
 
 /** SQL WHERE for the portal filters (products p joined with brands b), excluding one facet if asked. */
 export function filterSql(f: PortalFilter, viewer: Viewer, nowIso: string, exclude?: keyof PortalFilter): { sql: string; params: (string | number)[] } {
@@ -45,6 +53,10 @@ export function filterSql(f: PortalFilter, viewer: Viewer, nowIso: string, exclu
   if (f.color?.length && exclude !== "color") {
     parts.push(`EXISTS (SELECT 1 FROM variants v WHERE v.product_id = p.id AND v.status = 'published' AND v.color_code IN (${placeholders(f.color.length)}))`);
     params.push(...f.color);
+  }
+  if (f.qualifier?.length && exclude !== "qualifier") {
+    parts.push(`EXISTS (SELECT 1 FROM ${QUALIFIER_ROWS} WHERE json_extract(q.value, '$.code') IN (${placeholders(f.qualifier.length)}))`);
+    params.push(...f.qualifier);
   }
   if (f.q && f.q.trim()) {
     const q = f.q.trim().toLowerCase().replace(/[%_\\]/g, (m) => "\\" + m);

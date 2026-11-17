@@ -35,9 +35,10 @@ interface CursorPayload {
  * Cursor epoch (protocol.md §6.4, conformance P-FEED-7). Every cursor this node issues carries it; a cursor
  * from another epoch is `410 cursor_expired`, so consumers restart with a snapshot in the current shapes.
  * Bump it only when an upgrade changes object shapes incompatibly. Epoch 1 is spec 0.3 (materials and care as
- * terms); cursors issued by 0.1/0.2 have no epoch (0) and expire on the upgrade to 0.3.
+ * terms, with one qualifier per fibre) as built before the release; epoch 2 is the released 0.3 (a list of
+ * qualifiers per fibre). Cursors issued by 0.1/0.2 have no epoch (0) and expire on the upgrade to 0.3.
  */
-export const CURSOR_EPOCH = 1;
+export const CURSOR_EPOCH = 2;
 
 const SNAPSHOT_TTL_MS = 24 * 3600 * 1000;
 export const RETENTION_DAYS = 90;

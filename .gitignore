@@ -1,5 +1,7 @@
 node_modules/
 data/
+data-dev/
+data-demo/
 .wrangler/
 .dev.vars
 *.log

@@ -205,8 +205,9 @@ export class V {
   }
 
   /**
-   * Materials (protocol.md §5.9.1, 0.3): parts, materials and qualifiers are terms; one qualifier per
-   * fibre. The 0.1 keys recycled_* / organic_* become the material with that qualifier.
+   * Materials (protocol.md §5.9.1, 0.3): parts, materials and qualifiers are terms; a fibre has a list of
+   * qualifiers (may be left out = none; repeats are dropped). The 0.1 keys recycled_* / organic_* become
+   * the material with that qualifier, first in the list.
    */
   materials(v: unknown, p: string): Materials | null {
     if (v === undefined || v === null) return null;
@@ -225,13 +226,24 @@ export class V {
         const fp = `${p}/${i}/fibers/${j}`;
         if (!isPlainObject(f)) return this.err(fp, "Must be an object.");
         for (const k of Object.keys(f))
-          if (!["material", "percentage", "qualifier"].includes(k) && !EXT_RE.test(k))
-            this.err(`${fp}/${k}`, k === "fiber" || k === "recycled" || k === "organic" ? "Since OBX 0.3 a fibre is {material, percentage, qualifier}." : "Unknown field.");
+          if (!["material", "percentage", "qualifiers"].includes(k) && !EXT_RE.test(k))
+            this.err(
+              `${fp}/${k}`,
+              k === "fiber" || k === "recycled" || k === "organic" || k === "qualifier" ? "Since OBX 0.3 a fibre is {material, percentage, qualifiers} (qualifiers a list of {code})." : "Unknown field.",
+            );
         const material = this.term(f.material, `${fp}/material`);
         const pct = f.percentage;
         if (typeof pct !== "number" || !(pct > 0) || pct > 100) return this.err(`${fp}/percentage`, "Must be a number above 0 and at most 100.");
-        const qualifier = f.qualifier === undefined || f.qualifier === null ? null : this.term(f.qualifier, `${fp}/qualifier`);
-        if (material) fibers.push({ ...this.extensions(f), material, percentage: pct, ...(qualifier ? { qualifier } : {}) });
+        const qualifiers: Term[] = [];
+        if (f.qualifiers !== undefined && f.qualifiers !== null) {
+          if (!Array.isArray(f.qualifiers)) this.err(`${fp}/qualifiers`, "Must be a list of qualifiers such as [{\"code\": \"recycled\"}].");
+          else
+            f.qualifiers.forEach((q: unknown, k: number) => {
+              const t = this.term(q, `${fp}/qualifiers/${k}`);
+              if (t) qualifiers.push(t);
+            });
+        }
+        if (material) fibers.push({ ...this.extensions(f), material, percentage: pct, ...(qualifiers.length ? { qualifiers } : {}) });
       });
       if (term) out.push({ ...this.extensions(part), part: term, fibers });
     });

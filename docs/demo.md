@@ -8,6 +8,9 @@ a public read-only API key, and an automatic reset to the fixtures. Open Brand E
 Demo mode is **off by default**. It is switched on with `OBX_DEMO=true`; never set it on a real
 portal: every reset **deletes all data** (catalog, retailers, accounts, files) and puts the fixtures back.
 
+On your own computer: `bun run dev:demo` (Bun and SQLite in `./data-demo`; it builds the seed archive below
+on its first run and prints the address).
+
 ## What it does
 
 | | |

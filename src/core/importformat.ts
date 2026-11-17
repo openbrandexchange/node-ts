@@ -92,9 +92,10 @@ export function parseImageName(file: string): ParsedImageName | { error: string 
 
 /**
  * The materials grammar (import-format.md §1.4): `part: 95% cotton, 5% elastane; lining: 100%
- * polyester (recycled)`. Codes only: the node adds the names from the vocabularies. One qualifier in
- * brackets per fibre (two are an error); the 0.1 keys recycled_<material> / organic_<material> give
- * the material with that qualifier. Percentages that do not add up to 100 are not an error: the label
+ * polyester (recycled) (post_consumer)`. Codes only: the node adds the names from the vocabularies. Each
+ * bracket holds one qualifier code, in order, a repeated code counts once; `(organic, recycled)` is an
+ * error (the comma separates fibres). The 0.1 keys recycled_<material> / organic_<material> give the
+ * material with that qualifier, first in the list. Percentages that do not add up to 100 are not an error: the label
  * warning fibre_percentages_not_100 reports them (rule 10).
  */
 export function parseMaterials(s: string): { value: Materials } | { error: string } {
@@ -111,7 +112,7 @@ export function parseMaterials(s: string): { value: Materials } | { error: strin
     }
     if (!KEY_RE.test(name)) return { error: `"${name}" is not a valid part code (use e.g. main, outer, lining).` };
     const fibers: Fiber[] = [];
-    for (const f of body.split(",")) {
+    for (const f of splitOutsideBrackets(body)) {
       const t = f.trim();
       if (!t) continue;
       const m = t.match(/^(\d+(?:[.,]\d+)?)\s*%\s*(.+)$/);
@@ -125,13 +126,17 @@ export function parseMaterials(s: string): { value: Materials } | { error: strin
         qualifiers.unshift(q[1]);
         rest = rest.slice(0, rest.length - q[0].length);
       }
-      if (qualifiers.length > 1) return { error: `"${t}" has more than one qualifier; a fibre has one (organic, recycled, regenerative, …).` };
       const key = normKey(rest);
       if (!KEY_RE.test(key)) return { error: `"${rest.trim()}" is not a valid material code.` };
-      const qual = qualifiers.length ? normKey(qualifiers[0]) : null;
-      if (qual !== null && !KEY_RE.test(qual)) return { error: `"(${qualifiers[0]})" is not a valid qualifier code such as (organic) or (recycled).` };
+      const quals: string[] = [];
+      for (const q of qualifiers) {
+        if (q.includes(",")) return { error: `"(${q})": one qualifier per bracket, e.g. (recycled) (post_consumer).` };
+        const code = normKey(q);
+        if (!KEY_RE.test(code)) return { error: `"(${q})" is not a valid qualifier code such as (organic) or (recycled).` };
+        if (!quals.includes(code)) quals.push(code);
+      }
       if (!(pct > 0) || pct > 100) return { error: `${m[1]}% is not a valid percentage.` };
-      fibers.push({ material: { code: key }, percentage: pct, ...(qual ? { qualifier: { code: qual } } : {}) });
+      fibers.push({ material: { code: key }, percentage: pct, ...(quals.length ? { qualifiers: quals.map((code) => ({ code })) } : {}) });
     }
     if (!fibers.length) return { error: `Part "${name}" has no fibres.` };
     out.push({ part: { code: name }, fibers });
@@ -140,11 +145,28 @@ export function parseMaterials(s: string): { value: Materials } | { error: strin
   return { value: storeMaterials(out) };
 }
 
+/** Splits fibres at commas outside brackets, so "(organic, recycled)" reaches the bracket check. */
+function splitOutsideBrackets(s: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (const ch of s) {
+    if (ch === "(") depth++;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    if (ch === "," && depth === 0) {
+      out.push(cur);
+      cur = "";
+    } else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
 /** Materials in the products.csv grammar (codes only). */
 export function formatMaterials(m: unknown): string {
   if (!Array.isArray(m) || !m.length) return "";
   return (m as Materials)
-    .map((p) => `${p.part?.code}: ${(p.fibers ?? []).map((f) => `${f.percentage}% ${f.material?.code}${f.qualifier?.code ? ` (${f.qualifier.code})` : ""}`).join(", ")}`)
+    .map((p) => `${p.part?.code}: ${(p.fibers ?? []).map((f) => `${f.percentage}% ${f.material?.code}${(f.qualifiers ?? []).map((q) => ` (${q.code})`).join("")}`).join(", ")}`)
     .join("; ");
 }
 

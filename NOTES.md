@@ -77,27 +77,38 @@ Materials and care as terms: protocol.md §5.9.1, import-format.md §1.4 and §1
 Code: `src/core/article.ts` (store/expand), `src/core/validate.ts` (write path), `src/core/importformat.ts` (CSV).
 
 T1. **Codes are stored, names are added when read.** The stored document keeps `{"part": {"code": …}, "fibers":
-    [{"material": {"code": …}, "percentage": …, "qualifier": {"code": …}}]}` (no `qualifier` key when there is
-    none) and care `{"code", "text"}`. A name, category or symbol written for a code that is in the vocabulary is
+    [{"material": {"code": …}, "percentage": …, "qualifiers": [{"code": …}, …]}]}` (no `qualifiers` key when
+    there are none; the representation always has `qualifiers`, `[]` when none) and care `{"code", "text"}`. A name, category or symbol written for a code that is in the vocabulary is
     dropped; for a code outside the vocabulary it is stored as written. The protocol representation, `/changes`,
     exports and the IngestRecord (Ingest API and admin) add the vocabulary's names, categories and symbols when
     they read. A newer vocabulary therefore needs no data migration, and PUTting back a GET's `data` (with names)
     or the same data with codes only is `unchanged`.
 T2. **Vocabularies** are `src/vocabularies/*.json`, copied from the spec's `vocabularies/` by
     `scripts/sync-fixtures.sh` and imported as JSON, so both the Bun build and the Workers bundle carry them.
-T3. **0.1 keys** `recycled_<material>` / `organic_<material>` are normalised on every write path (the key wins over
-    a qualifier written next to it, ingest.md §3.4) and when a stored document is read (protocol, admin record, CSV).
+T3. **0.1 keys** `recycled_<material>` / `organic_<material>` are normalised on every write path (the key's
+    qualifier comes first in the list, before the qualifiers written next to it, ingest.md §3.4; repeats of a code
+    are dropped, the first kept) and when a stored document is read (protocol, admin record, CSV).
 T4. **The 0.2 write shapes are refused** (`422 validation_failed`): a `part` that is a string, a fibre with `fiber`,
-    `recycled` or `organic`, a `qualifier` that is not a term. Terms, fibres, parts and care entries are closed
+    `recycled` or `organic`, the pre-release 0.3 `qualifier` (one term; now `qualifiers`, a list), a `qualifiers`
+    that is not a list of terms. `qualifiers` may be left out (= none). Terms, fibres, parts and care entries are closed
     objects apart from `x-` members, as in the 0.3 schemas.
 T5. **Upgrading.** `migrations/0006_terms.sql` rewrites stored 0.2 materials with SQLite's JSON functions (D1 and
     bun:sqlite), keeping `x-` members; a 0.2 document that is still found when read (a restored backup) is
-    upgraded in memory and stored in the 0.3 form on its next write. The migration does not change `updated_at`
-    and writes no change entries.
-T6. **CSV**: one qualifier per fibre, any code (`(regenerative)`, `(upcycled)`); two qualifiers, or one that is not
-    a code, are a `validation_failed` error of the row. Exports write codes only (`100% cotton (organic)`).
+    upgraded in memory and stored in the 0.3 form on its next write. `migrations/0007_qualifiers.sql` turns the
+    single `qualifier` of rows stored before the 0.3 release (and by 0006) into `qualifiers` (`null` → none); such
+    a row found when read is upgraded the same way. The migrations do not change `updated_at` and write no change
+    entries; the cursor epoch (S5) makes consumers restart.
+T6. **CSV**: one qualifier code per bracket, any code, as many brackets as needed, in order
+    (`100% polyester (recycled) (post_consumer)`); a repeated code counts once. Fibres are split at commas outside
+    brackets, so `(organic, recycled)` is a `validation_failed` error of the row ("one qualifier per bracket"), as
+    is a bracket that is not a code. Exports write codes only (`100% cotton (organic) (regenerative)`).
 T7. **Label warnings** look at the material code (also written as a 0.1 key): `animal_origin_unknown` for
     `wool (recycled)` as for `wool`.
+T8. **Portal filter and facet on qualifiers** (node-admin.yaml): `qualifier` on `/admin/api/portal/products`,
+    `/admin/api/portal/facets`, `products/data.csv` and `DownloadJobInput.filter`, and the facet `qualifiers`
+    (label: the vocabulary's LocalizedText name, else the name written with an unknown code, else the code).
+    Plain `json_each` over `stored` (`QUALIFIER_ROWS` in `src/core/bulk.ts`), the same SQL on D1 and bun:sqlite;
+    no extra column or index, as the portal reads at most a catalog's products per request.
 
 Open questions reported to the spec maintainers (0.3.0):
 
@@ -105,11 +116,14 @@ Open questions reported to the spec maintainers (0.3.0):
   that do not change after the upgrade are not sent again in `/changes`, so a consumer keeping its cursor would keep
   their 0.2 shape. The spec now says a node that upgrades 0.2 → 0.3 MUST answer every cursor issued before the
   upgrade with `410 cursor_expired`. This node puts a cursor epoch `e` (`CURSOR_EPOCH` in `src/core/changes.ts`,
-  1 for 0.3) in every `/changes` cursor (also the export's `changes_cursor`); a cursor without it (0.1/0.2) or
+  1 for the pre-release 0.3 with one qualifier per fibre, 2 for the released 0.3) in every `/changes` cursor (also the export's `changes_cursor`); a cursor without it (0.1/0.2) or
   with another epoch is `410 cursor_expired` (after the node-id check, so a foreign cursor stays `400
   cursor_invalid`). No migration or stored state: the upgrade is the deploy. Bump the epoch only on an
   incompatible shape change. The conformance action `simulate_spec_upgrade` is not offered (P-FEED-7 SKIPs);
   `test/protocol.test.ts` covers it by sealing a 0.2 cursor.
+- S6. **Leftovers of the single qualifier in spec 5737aa2** (reported): protocol.md §2 ("Null vs absent") still says
+  "a fibre's `qualifier` [is] `null` when there is none", and conformance.md P-CAT-6 says "every … non-null
+  `qualifier`". This node follows §5.9.1 and Materials.json: `qualifiers`, `[]` when none.
 
 ## Admin and portal API
 

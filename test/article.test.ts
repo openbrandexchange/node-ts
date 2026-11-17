@@ -59,10 +59,12 @@ describe("article data in the protocol (P-CAT-5, P-CAT-6)", () => {
           if (PART_NAMES.has(part.part.code)) expect(part.part).toEqual({ code: part.part.code, name: PART_NAMES.get(part.part.code) });
           if (part.part.code === "main") expect(part.part.name).toBeNull();
           for (const f of part.fibers) {
-            expect(Object.keys(f)).toEqual(["material", "percentage", "qualifier"]);
+            expect(Object.keys(f)).toEqual(["material", "percentage", "qualifiers"]);
+            expect(Array.isArray(f.qualifiers)).toBe(true);
+            expect(new Set(f.qualifiers.map((q: any) => q.code)).size).toBe(f.qualifiers.length);
             expect(f.material.code).not.toMatch(/^(recycled|organic)_/);
             if (MATERIAL_NAMES.has(f.material.code)) expect(f.material.name).toEqual(MATERIAL_NAMES.get(f.material.code));
-            if (f.qualifier) expect(f.qualifier).toEqual({ code: f.qualifier.code, name: QUALIFIER_NAMES.get(f.qualifier.code) });
+            for (const q of f.qualifiers) if (QUALIFIER_NAMES.has(q.code)) expect(q).toEqual({ code: q.code, name: QUALIFIER_NAMES.get(q.code) });
           }
         }
         for (const c of e.data.care ?? []) {
@@ -88,7 +90,7 @@ describe("article data in the protocol (P-CAT-5, P-CAT-6)", () => {
     ]);
     const ko1003 = entries.find((e) => e.type === "product" && e.external_id === "KO-1003");
     expect(ko1003.data.materials).toEqual([
-      { part: { code: "main", name: null }, fibers: [{ material: { code: "cotton", name: MATERIAL_NAMES.get("cotton") }, percentage: 100, qualifier: { code: "organic", name: QUALIFIER_NAMES.get("organic") } }] },
+      { part: { code: "main", name: null }, fibers: [{ material: { code: "cotton", name: MATERIAL_NAMES.get("cotton") }, percentage: 100, qualifiers: [{ code: "organic", name: QUALIFIER_NAMES.get("organic") }, { code: "regenerative", name: QUALIFIER_NAMES.get("regenerative") }] }] },
     ]);
     expect(ko1003.data.certifications).toEqual([
       { scheme: "gots", licence_number: "CU 200301", scope: "product" },
@@ -185,7 +187,7 @@ describe("imports of the article data columns (I-IMP-7, I-IMP-8)", () => {
     expect(labelWarnings({ item_type: "sweater", materials: [{ part: { code: "main" }, fibers: [{ material: { code: "lambswool" }, percentage: 100 }] }] }).map((w) => w.code)).toEqual(["animal_origin_unknown"]);
     // The material code decides, also with a qualifier or written as a 0.1 key.
     expect(labelWarnings({ item_type: "coat", materials: [{ part: { code: "main" }, fibers: [{ material: { code: "recycled_wool" }, percentage: 100 }] }] }).map((w) => w.code)).toEqual(["animal_origin_unknown"]);
-    expect(labelWarnings({ item_type: "coat", materials: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 100, qualifier: { code: "regenerative" } }] }] })).toEqual([]);
+    expect(labelWarnings({ item_type: "coat", materials: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 100, qualifiers: [{ code: "regenerative" }] }] }] })).toEqual([]);
     expect(labelWarnings({ item_type: "boots", footwear_materials: { upper: "leather", lining_and_sock: "textile", outer_sole: "other" } })).toEqual([]);
   });
 });
@@ -204,9 +206,10 @@ describe("Ingest API (ingest.md §3.4)", () => {
           {
             part: { code: "outer", name: { en: "Ignored" } },
             fibers: [
-              { material: { code: "organic_cotton" }, percentage: 60, qualifier: { code: "recycled" } },
-              { material: { code: "polyester" }, percentage: 20, qualifier: null },
-              { material: { code: "pinatex", name: { en: "Piñatex", nl: "Piñatex" } }, percentage: 10, qualifier: { code: "upcycled", name: { en: "Upcycled" } } },
+              { material: { code: "organic_cotton" }, percentage: 60, qualifiers: [{ code: "regenerative" }, { code: "organic" }] },
+              { material: { code: "polyester" }, percentage: 20 },
+              { material: { code: "pinatex", name: { en: "Piñatex", nl: "Piñatex" } }, percentage: 5, qualifiers: [{ code: "upcycled", name: { en: "Upcycled" } }, { code: "post_consumer" }] },
+              { material: { code: "linen" }, percentage: 5, qualifiers: [] },
             ],
           },
         ],
@@ -219,15 +222,17 @@ describe("Ingest API (ingest.md §3.4)", () => {
     // Stored: codes, plus what was written for codes outside the vocabularies.
     const stored = JSON.parse((await node.platform.db.first<{ stored: string }>("SELECT stored FROM products WHERE external_id = 'KX-9'"))!.stored);
     expect(stored.materials[0].part).toEqual({ code: "outer" });
+    expect(stored.materials[0].fibers.map((f: any) => f.qualifiers)).toEqual([[{ code: "organic" }, { code: "regenerative" }], undefined, [{ code: "upcycled", name: { en: "Upcycled" } }, { code: "post_consumer" }], undefined]);
     expect(stored.care[0]).toEqual({ code: "wash_30", text: { en: "Wash inside out" } });
     const expected = [
       {
         part: { code: "outer", name: PART_NAMES.get("outer") },
         fibers: [
-          // The 0.1 key wins over the qualifier that was also given (ingest.md §3.4).
-          { material: { code: "cotton", name: MATERIAL_NAMES.get("cotton") }, percentage: 60, qualifier: { code: "organic", name: QUALIFIER_NAMES.get("organic") } },
-          { material: { code: "polyester", name: MATERIAL_NAMES.get("polyester") }, percentage: 20, qualifier: null },
-          { material: { code: "pinatex", name: { en: "Piñatex", nl: "Piñatex" } }, percentage: 10, qualifier: { code: "upcycled", name: { en: "Upcycled" } } },
+          // The 0.1 key's qualifier comes first, before those also given; a repeat counts once (ingest.md §3.4).
+          { material: { code: "cotton", name: MATERIAL_NAMES.get("cotton") }, percentage: 60, qualifiers: [{ code: "organic", name: QUALIFIER_NAMES.get("organic") }, { code: "regenerative", name: QUALIFIER_NAMES.get("regenerative") }] },
+          { material: { code: "polyester", name: MATERIAL_NAMES.get("polyester") }, percentage: 20, qualifiers: [] },
+          { material: { code: "pinatex", name: { en: "Piñatex", nl: "Piñatex" } }, percentage: 5, qualifiers: [{ code: "upcycled", name: { en: "Upcycled" } }, { code: "post_consumer", name: QUALIFIER_NAMES.get("post_consumer") }] },
+          { material: { code: "linen", name: MATERIAL_NAMES.get("linen") }, percentage: 5, qualifiers: [] },
         ],
       },
     ];
@@ -246,7 +251,7 @@ describe("Ingest API (ingest.md §3.4)", () => {
     expect(back.json.result).toBe("unchanged");
     const codesOnly = {
       ...rec.data,
-      materials: [{ part: { code: "outer" }, fibers: [{ material: { code: "cotton" }, percentage: 60, qualifier: { code: "organic" } }, { material: { code: "polyester" }, percentage: 20 }, expected[0].fibers[2]] }],
+      materials: [{ part: { code: "outer" }, fibers: [{ material: { code: "cotton" }, percentage: 60, qualifiers: [{ code: "organic" }, { code: "regenerative" }] }, { material: { code: "polyester" }, percentage: 20 }, expected[0].fibers[2], { material: { code: "linen" }, percentage: 5 }] }],
       care: [{ code: "wash_30", text: { en: "Wash inside out" } }, care[1], { code: "air_out" }],
     };
     expect((await node.api(token, "PUT", "/obx/v1/ingest/products/KX-9", { json: codesOnly })).json.result).toBe("unchanged");
@@ -261,7 +266,9 @@ describe("Ingest API (ingest.md §3.4)", () => {
       [{ ...base, materials: [{ part: "main", fibers: [{ material: { code: "cotton" }, percentage: 100 }] }] }, "/materials/0/part"],
       [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ fiber: "cotton", percentage: 100 }] }] }, "/materials/0/fibers/0/fiber"],
       [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ material: { code: "polyester" }, percentage: 100, recycled: true }] }] }, "/materials/0/fibers/0/recycled"],
-      [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 100, qualifier: "organic" }] }] }, "/materials/0/fibers/0/qualifier"],
+      [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 100, qualifier: { code: "organic" } }] }] }, "/materials/0/fibers/0/qualifier"],
+      [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 100, qualifiers: { code: "organic" } }] }] }, "/materials/0/fibers/0/qualifiers"],
+      [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 100, qualifiers: ["organic"] }] }] }, "/materials/0/fibers/0/qualifiers/0"],
       [{ ...base, materials: [{ part: { code: "Main" }, fibers: [{ material: { code: "cotton" }, percentage: 100 }] }] }, "/materials/0/part/code"],
       [{ ...base, materials: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton", name: { en: "" } }, percentage: 100 }] }] }, "/materials/0/fibers/0/material/name/en"],
       [{ ...base, care: [{ code: "wash_30", category: "rinsing" }] }, "/care/0/category"],
@@ -348,7 +355,7 @@ describe("article data CSV for retailers (admin-ui node-integration.md)", () => 
   });
 });
 
-describe("upgrading a 0.1 or 0.2 database (migrations 0005_fibre_flags.sql and 0006_terms.sql)", () => {
+describe("upgrading a 0.1, 0.2 or pre-release 0.3 database (migrations 0005_fibre_flags.sql, 0006_terms.sql, 0007_qualifiers.sql)", () => {
   test("stored 0.1 fibre keys and 0.2 materials become terms; other 0.1 keys are normalised when read", async () => {
     const { sqliteDb } = await import("../src/adapters/bun/sqlite");
     const { migrate, resetMigrationCache } = await import("../src/db/migrate");
@@ -378,22 +385,36 @@ describe("upgrading a 0.1 or 0.2 database (migrations 0005_fibre_flags.sql and 0
       name: { en: "Old" },
       materials: [{ part: "main", fibers: [{ fiber: "cotton", percentage: 95, organic: true }, { fiber: "elastane", percentage: 5, "x-acme-lot": "7" }] }],
     });
-    await db.run("DELETE FROM d1_migrations WHERE name IN ('0005_fibre_flags.sql', '0006_terms.sql')");
+    // Written by a pre-release 0.3 node.
+    await insert("PRE-3", {
+      style_number: "PRE-3",
+      name: { en: "Pre" },
+      materials: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 90, qualifier: { code: "upcycled", name: { en: "Upcycled" } }, "x-acme-lot": "8" }, { material: { code: "elastane" }, percentage: 10, qualifier: null }] }],
+    });
+    await db.run("DELETE FROM d1_migrations WHERE name IN ('0005_fibre_flags.sql', '0006_terms.sql', '0007_qualifiers.sql')");
     resetMigrationCache();
     await migrate(db);
     const row = async (id: string) => (await db.first<{ id: string; external_id: string; brand_id: string; stored: string; created_at: string; updated_at: string }>("SELECT * FROM products WHERE id = ?", [id]))!;
     const old1 = await row("OLD-1");
     expect(JSON.parse(old1.stored).materials).toEqual([
-      { part: { code: "outer" }, fibers: [{ material: { code: "polyester" }, percentage: 60, qualifier: { code: "recycled" } }, { material: { code: "cotton" }, percentage: 40, qualifier: { code: "organic" } }] },
+      { part: { code: "outer" }, fibers: [{ material: { code: "polyester" }, percentage: 60, qualifiers: [{ code: "recycled" }] }, { material: { code: "cotton" }, percentage: 40, qualifiers: [{ code: "organic" }] }] },
       { part: { code: "lining" }, fibers: [{ material: { code: "recycled_wool" }, percentage: 100 }] },
     ]);
     expect(JSON.parse((await row("OLD-2")).stored).materials).toEqual([
-      { part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 95, qualifier: { code: "organic" } }, { material: { code: "elastane" }, percentage: 5, "x-acme-lot": "7" }] },
+      { part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 95, qualifiers: [{ code: "organic" }] }, { material: { code: "elastane" }, percentage: 5, "x-acme-lot": "7" }] },
+    ]);
+    // Written by a pre-release 0.3 node (one qualifier per fibre): migration 0007 makes it a list.
+    expect(JSON.parse((await row("PRE-3")).stored).materials).toEqual([
+      { part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 90, qualifiers: [{ code: "upcycled", name: { en: "Upcycled" } }], "x-acme-lot": "8" }, { material: { code: "elastane" }, percentage: 10 }] },
+    ]);
+    expect((productRep(await row("PRE-3")) as any).materials[0].fibers).toEqual([
+      { material: { code: "cotton", name: MATERIAL_NAMES.get("cotton") }, percentage: 90, qualifiers: [{ code: "upcycled", name: { en: "Upcycled" } }], "x-acme-lot": "8" },
+      { material: { code: "elastane", name: MATERIAL_NAMES.get("elastane") }, percentage: 10, qualifiers: [] },
     ]);
     const rep = productRep(old1) as any;
     expect(rep.materials[1]).toEqual({
       part: { code: "lining", name: PART_NAMES.get("lining") },
-      fibers: [{ material: { code: "wool", name: MATERIAL_NAMES.get("wool") }, percentage: 100, qualifier: { code: "recycled", name: QUALIFIER_NAMES.get("recycled") } }],
+      fibers: [{ material: { code: "wool", name: MATERIAL_NAMES.get("wool") }, percentage: 100, qualifiers: [{ code: "recycled", name: QUALIFIER_NAMES.get("recycled") }] }],
     });
     expect(rep.care).toEqual([{ code: "wash_30", category: "washing", symbol: CARE_VOCAB.get("wash_30")!.symbol, name: CARE_VOCAB.get("wash_30")!.name, text: null }]);
     resetMigrationCache();

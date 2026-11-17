@@ -82,24 +82,32 @@ describe("import format", () => {
     expect("error" in parseImageName("KO-1001_NVY_01.jpg")).toBe(true);
   });
   test("materials grammar", () => {
-    // 0.3: codes only; one qualifier per fibre; the 0.1 keys organic_* / recycled_* give the qualifier.
-    expect(parseMaterials("100% organic cotton")).toEqual({ value: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 100, qualifier: { code: "organic" } }] }] });
+    // 0.3: codes only; one qualifier code per bracket, in order, repeats dropped; the 0.1 keys organic_* / recycled_* give the first qualifier.
+    expect(parseMaterials("100% organic cotton")).toEqual({ value: [{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 100, qualifiers: [{ code: "organic" }] }] }] });
     expect(parseMaterials("100% Cotton (Organic)")).toEqual(parseMaterials("100% organic_cotton"));
     expect(parseMaterials("outer: 100% polyester (recycled); lining: 88% polyamide, 12% elastane")).toEqual({
       value: [
-        { part: { code: "outer" }, fibers: [{ material: { code: "polyester" }, percentage: 100, qualifier: { code: "recycled" } }] },
+        { part: { code: "outer" }, fibers: [{ material: { code: "polyester" }, percentage: 100, qualifiers: [{ code: "recycled" }] }] },
         { part: { code: "lining" }, fibers: [{ material: { code: "polyamide" }, percentage: 88 }, { material: { code: "elastane" }, percentage: 12 }] },
       ],
     });
     expect(parseMaterials("Pocket Lining: 100% cotton (regenerative)")).toEqual({
-      value: [{ part: { code: "pocket_lining" }, fibers: [{ material: { code: "cotton" }, percentage: 100, qualifier: { code: "regenerative" } }] }],
+      value: [{ part: { code: "pocket_lining" }, fibers: [{ material: { code: "cotton" }, percentage: 100, qualifiers: [{ code: "regenerative" }] }] }],
     });
-    expect("error" in parseMaterials("100% cotton (organic) (recycled)")).toBe(true);
+    expect(parseMaterials("100% polyester (recycled) (Post-Consumer) (recycled)")).toEqual({
+      value: [{ part: { code: "main" }, fibers: [{ material: { code: "polyester" }, percentage: 100, qualifiers: [{ code: "recycled" }, { code: "post_consumer" }] }] }],
+    });
+    // The 0.1 key's qualifier comes first; a repeat of it counts once.
+    expect(parseMaterials("100% recycled_polyester (post_consumer) (recycled)")).toEqual(parseMaterials("100% polyester (recycled) (post_consumer)"));
+    // One code per bracket: "(organic, recycled)" is an error, also with fibres after it.
+    const two = parseMaterials("95% cotton (organic, recycled), 5% elastane");
+    expect("error" in two && two.error).toContain("one qualifier per bracket");
+    expect(formatMaterials((parseMaterials("100% cotton (organic) (regenerative)") as { value: never }).value)).toBe("main: 100% cotton (organic) (regenerative)");
     expect("error" in parseMaterials("100% cotton (organic!)")).toBe(true);
     const r = parseMaterials("main: 100% recycled_cotton");
     expect("value" in r && formatMaterials(r.value)).toBe("main: 100% cotton (recycled)");
     expect(
-      formatMaterials([{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 70, qualifier: { code: "regenerative" } }, { material: { code: "hemp" }, percentage: 30 }] }]),
+      formatMaterials([{ part: { code: "main" }, fibers: [{ material: { code: "cotton" }, percentage: 70, qualifiers: [{ code: "regenerative" }] }, { material: { code: "hemp" }, percentage: 30 }] }]),
     ).toBe("main: 70% cotton (regenerative), 30% hemp");
     const m = parseMaterials("outer: 65% cotton, 35% polyamide; lining: 100% polyester");
     expect("value" in m && m.value.map((x) => x.part.code)).toEqual(["outer", "lining"]);
