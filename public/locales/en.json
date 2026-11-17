@@ -1564,5 +1564,17 @@
       "why": "The percentages of this part do not add up to 100%. The composition is given as a share of the total fibre weight.",
       "law": "Regulation (EU) No 1007/2011, Art. 9 and 11"
     }
+  },
+  "demo": {
+    "banner": "Demo, fictional data",
+    "bannerNote": "Changes are undone automatically.",
+    "title": "Look around without an account",
+    "intro": "A fictional brand with test data. Choose how you want to look at it.",
+    "asRetailer": "View as retailer",
+    "asRetailerHint": "Search, EAN list, product pages, downloads",
+    "asBrand": "View as brand",
+    "asBrandHint": "Catalog, Excel import, access per retailer, statistics",
+    "refused": "This is not possible in the demo.",
+    "api": "Read-only API key for developers"
   }
 }

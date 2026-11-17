@@ -1624,5 +1624,17 @@
       "why": "Odstotki tega dela ne dajo skupaj 100 %. Sestava se navaja kot delež skupne mase vlaken.",
       "law": "Uredba (EU) št. 1007/2011, člena 9 in 11"
     }
+  },
+  "demo": {
+    "banner": "Demo, izmišljeni podatki",
+    "bannerNote": "Spremembe se samodejno razveljavijo.",
+    "title": "Oglejte si brez računa",
+    "intro": "Izmišljena blagovna znamka s preizkusnimi podatki. Izberite, kako si jo želite ogledati.",
+    "asRetailer": "Poglej kot trgovec",
+    "asRetailerHint": "Iskanje, seznam EAN, strani izdelkov, prenosi",
+    "asBrand": "Poglej kot blagovna znamka",
+    "asBrandHint": "Katalog, uvoz iz Excela, dostop po trgovcih, statistika",
+    "refused": "V predstavitvi to ni mogoče.",
+    "api": "API ključ samo za branje za razvijalce"
   }
 }

@@ -34,6 +34,8 @@ jobs:
         run: bun run licenses
       - name: Workers bundle
         run: bunx wrangler deploy --dry-run --outdir dist/workers
+      - name: Demo portal bundle (docs/demo.md)
+        run: bunx wrangler deploy --dry-run -c deploy/demo/wrangler.jsonc --outdir dist/demo
       - name: Whole flow in the local Workers runtime (D1 + R2)
         run: bun run smoke:workers
       - name: Shell scripts

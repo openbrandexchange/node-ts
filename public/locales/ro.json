@@ -1594,5 +1594,17 @@
       "why": "Procentele acestei părți nu însumează 100%. Compoziția se indică drept procent din greutatea totală a fibrelor.",
       "law": "Regulamentul (UE) nr. 1007/2011, art. 9 și 11"
     }
+  },
+  "demo": {
+    "banner": "Demo, date fictive",
+    "bannerNote": "Modificările sunt anulate automat.",
+    "title": "Explorați fără cont",
+    "intro": "O marcă fictivă cu date de test. Alegeți cum doriți să o vedeți.",
+    "asRetailer": "Vedeți ca și comerciant",
+    "asRetailerHint": "Căutare, listă EAN, pagini de produs, descărcări",
+    "asBrand": "Vedeți ca marcă",
+    "asBrandHint": "Catalog, import Excel, acces pe comerciant, statistici",
+    "refused": "Acest lucru nu este posibil în demo.",
+    "api": "Cheie API doar pentru citire pentru dezvoltatori"
   }
 }

@@ -1564,5 +1564,17 @@
       "why": "Procentsatserna för den här delen blir inte 100 %. Sammansättningen anges som andel av fibrernas totala vikt.",
       "law": "Förordning (EU) nr 1007/2011, art. 9 och 11"
     }
+  },
+  "demo": {
+    "banner": "Demo, fiktiva uppgifter",
+    "bannerNote": "Ändringar ångras automatiskt.",
+    "title": "Titta runt utan konto",
+    "intro": "Ett fiktivt varumärke med testdata. Välj hur du vill se det.",
+    "asRetailer": "Visa som återförsäljare",
+    "asRetailerHint": "Sök, EAN-lista, produktsidor, nedladdningar",
+    "asBrand": "Visa som varumärke",
+    "asBrandHint": "Katalog, Excel-import, åtkomst per återförsäljare, statistik",
+    "refused": "Det går inte i demon.",
+    "api": "Skrivskyddad API-nyckel för utvecklare"
   }
 }

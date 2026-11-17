@@ -105,6 +105,13 @@ export interface Config {
   /** Bun: how long a graceful shutdown waits for running requests and job steps. */
   shutdownTimeoutMs: number;
   customDomainHelp: string;
+  /** Public demo mode (OBX_DEMO, docs/demo.md): one-click demo accounts, risky actions refused, scheduled reset. */
+  demo: boolean;
+  demoResetMinutes: number;
+  /** Largest request body in demo mode. */
+  demoMaxUploadBytes: number;
+  demoTurnstileSiteKey: string | null;
+  demoTurnstileSecret: string | null;
 }
 
 export interface Platform {
@@ -125,5 +132,10 @@ export interface Platform {
   /** Ask the runtime to run background jobs soon (queue message / in-process timer). */
   kickJobs(): void;
   now(): number;
+  /**
+   * Demo mode: an abuse limit per client address (Workers rate limiting binding; in-memory window
+   * elsewhere). Returns false when the request is over the limit.
+   */
+  demoLimit?: (bucket: "read" | "write" | "login", key: string) => Promise<boolean>;
   log(level: "info" | "warn" | "error", msg: string, extra?: Record<string, unknown>): void;
 }

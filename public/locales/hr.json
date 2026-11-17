@@ -1594,5 +1594,17 @@
       "why": "Postoci ovog dijela ne daju ukupno 100 %. Sastav se navodi kao udio u ukupnoj masi vlakana.",
       "law": "Uredba (EU) br. 1007/2011, članci 9. i 11."
     }
+  },
+  "demo": {
+    "banner": "Demo, izmišljeni podaci",
+    "bannerNote": "Promjene se automatski poništavaju.",
+    "title": "Razgledajte bez računa",
+    "intro": "Izmišljena marka s testnim podacima. Odaberite kako je želite pogledati.",
+    "asRetailer": "Pogledaj kao trgovac",
+    "asRetailerHint": "Pretraživanje, popis EAN-ova, stranice proizvoda, preuzimanja",
+    "asBrand": "Pogledaj kao marka",
+    "asBrandHint": "Katalog, uvoz iz Excela, pristup po trgovcu, statistika",
+    "refused": "To nije moguće u demo verziji.",
+    "api": "API ključ samo za čitanje za programere"
   }
 }

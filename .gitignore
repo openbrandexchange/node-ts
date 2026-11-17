@@ -6,3 +6,4 @@ data/
 .DS_Store
 dist/
 coverage/
+demo-seed.zip

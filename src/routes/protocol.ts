@@ -82,8 +82,9 @@ protocol.get("/.well-known/obx", async (c) => {
       token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post"],
     },
     access_requests_url: s.portal.access_requests_enabled ? `${base}/obx/v1/access-requests` : null,
-    ingest_url: `${base}/obx/v1/ingest`,
-    capabilities: CAPABILITIES.filter((x) => x !== "access_requests" || s.portal.access_requests_enabled),
+    ingest_url: ctx.config.demo ? null : `${base}/obx/v1/ingest`,
+    // The demo portal (docs/demo.md) has no webhooks, Ingest API or usage events; those addresses answer 501 there.
+    capabilities: CAPABILITIES.filter((x) => (x !== "access_requests" || s.portal.access_requests_enabled) && !(ctx.config.demo && (x === "webhooks" || x === "ingest" || x === "usage"))),
     brands,
     languages: langs,
     limits: { changes_page_max: 500, products_page_max: 100, gtin_lookup_max: 2000, tombstone_retention_days: 90 },
@@ -374,7 +375,8 @@ protocol.get("/obx/v1/products/:id", async (c) => {
   if (!p) throw new ObxError("not_found", "Unknown product.");
   const etag = `"${await sha256Hex(canonicalJson(stripUrls(p)))}"`;
   const inm = c.req.header("if-none-match");
-  if (inm && inm.split(",").some((t) => t.trim() === etag)) return new Response(null, { status: 304, headers: { etag, ...(c.get("rl") ?? {}) } });
+  // Weak comparison (RFC 9110 §13.1.2): Cloudflare turns the ETag into W/"…" when it compresses the answer.
+  if (inm && inm.split(",").some((t) => t.trim().replace(/^W\//, "") === etag || t.trim() === "*")) return new Response(null, { status: 304, headers: { etag, ...(c.get("rl") ?? {}) } });
   return json(c, p, 200, { etag });
 });
 

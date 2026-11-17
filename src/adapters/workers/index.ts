@@ -7,13 +7,18 @@ import { httpMailer } from "../shared/mailer";
 import { s3Store } from "../shared/s3store";
 import { dohResolver } from "../../lib/ssrf";
 import { UNDERLYING_DB } from "../../db/migrate";
-import type { D1Database, ExecutionContext, Fetcher, MessageBatch, Queue, R2Bucket } from "./types";
+import type { D1Database, ExecutionContext, Fetcher, MessageBatch, Queue, R2Bucket, RateLimit } from "./types";
+import { memLimit } from "../../core/ratelimit";
 
 export interface Env {
   DB: D1Database;
   FILES: R2Bucket;
   ASSETS?: Fetcher;
   JOBS?: Queue;
+  /** Demo mode only (docs/demo.md): Workers rate limiting bindings, keyed by client address. */
+  DEMO_READ_LIMIT?: RateLimit;
+  DEMO_WRITE_LIMIT?: RateLimit;
+  DEMO_LOGIN_LIMIT?: RateLimit;
   [key: string]: unknown;
 }
 
@@ -181,13 +186,39 @@ function makePlatform(env: Env, ctx: ExecutionContext): Platform {
     now: () => Date.now(),
     log,
   };
+  if (platform.config.demo) {
+    const fallback = { read: 300, write: 40, login: 10 };
+    platform.demoLimit = async (bucket, key) => {
+      const binding = bucket === "read" ? env.DEMO_READ_LIMIT : bucket === "write" ? env.DEMO_WRITE_LIMIT : env.DEMO_LOGIN_LIMIT;
+      if (binding) return (await binding.limit({ key: `${bucket}:${key}` })).success;
+      return memLimit(Date.now(), `demo:${bucket}:${key}`, fallback[bucket], 60).ok;
+    };
+  }
   return platform;
+}
+
+const isDemo = (env: Env) => typeof env.OBX_DEMO === "string" && /^(1|true|yes|on)$/i.test(env.OBX_DEMO);
+
+/**
+ * Demo mode serves the UI through the Worker (run_worker_first in deploy/demo/wrangler.jsonc): its
+ * pages are not indexed, and with Turnstile the page may load the widget from Cloudflare.
+ */
+async function demoAsset(env: Env, assets: Fetcher, req: Request): Promise<Response> {
+  const res = await assets.fetch(req);
+  const out = new Response(res.body, res);
+  out.headers.set("x-robots-tag", "noindex, nofollow");
+  const csp = out.headers.get("content-security-policy");
+  if (csp && typeof env.OBX_DEMO_TURNSTILE_SITE_KEY === "string" && env.OBX_DEMO_TURNSTILE_SITE_KEY.trim()) {
+    const ts = "https://challenges.cloudflare.com";
+    out.headers.set("content-security-policy", csp.replace("script-src 'self'", `script-src 'self' ${ts}`).replace("connect-src 'self'", `connect-src 'self' ${ts}`) + `; frame-src ${ts}`);
+  }
+  return out;
 }
 
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const path = new URL(req.url).pathname;
-    if (!isApiPath(path) && env.ASSETS) return env.ASSETS.fetch(req);
+    if (!isApiPath(path) && env.ASSETS) return isDemo(env) ? demoAsset(env, env.ASSETS, req) : env.ASSETS.fetch(req);
     let platform: Platform;
     try {
       platform = makePlatform(env, ctx);

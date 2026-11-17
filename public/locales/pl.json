@@ -1624,5 +1624,17 @@
       "why": "Procenty tej części nie sumują się do 100%. Skład podaje się jako udział w całkowitej masie włókien.",
       "law": "Rozporządzenie (UE) nr 1007/2011, art. 9 i 11"
     }
+  },
+  "demo": {
+    "banner": "Demo, dane fikcyjne",
+    "bannerNote": "Zmiany są automatycznie cofane.",
+    "title": "Rozejrzyj się bez konta",
+    "intro": "Fikcyjna marka z danymi testowymi. Wybierz, jak chcesz ją oglądać.",
+    "asRetailer": "Zobacz jako sprzedawca",
+    "asRetailerHint": "Wyszukiwanie, lista EAN, strony produktów, pobieranie",
+    "asBrand": "Zobacz jako marka",
+    "asBrandHint": "Katalog, import z Excela, dostęp dla sprzedawców, statystyki",
+    "refused": "W wersji demo nie jest to możliwe.",
+    "api": "Klucz API tylko do odczytu dla programistów"
   }
 }

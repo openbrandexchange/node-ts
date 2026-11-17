@@ -30,6 +30,11 @@ export function configFromEnv(env: EnvLike, runtime: "workers" | "bun", secretKe
       runtime === "workers"
         ? "In the Cloudflare dashboard open **Workers & Pages → your portal → Settings → Domains & Routes → Add → Custom domain**, enter e.g. `brands.yourbrand.com` and wait for the certificate. Then set `OBX_PUBLIC_URL` to that address (Settings → Variables) and redeploy."
         : "Point a DNS record (CNAME or A) for e.g. `brands.yourbrand.com` to your server or Cloud Run service, put HTTPS in front (Caddy, a load balancer or Cloud Run domain mapping), and set `OBX_PUBLIC_URL=https://brands.yourbrand.com`.",
+    demo: bool(env.OBX_DEMO),
+    demoResetMinutes: num(env.OBX_DEMO_RESET_MINUTES, 60),
+    demoMaxUploadBytes: num(env.OBX_DEMO_MAX_UPLOAD_BYTES, 2 * 1048576),
+    demoTurnstileSiteKey: env.OBX_DEMO_TURNSTILE_SITE_KEY?.trim() || null,
+    demoTurnstileSecret: env.OBX_DEMO_TURNSTILE_SECRET?.trim() || null,
   };
 }
 
@@ -72,7 +77,7 @@ export function validateEnv(env: EnvLike, runtime: "workers" | "bun"): string[] 
     if (!u || !/^https?:$/.test(u.protocol)) out.push(`OBX_PUBLIC_URL must be a full address like https://brands.yourbrand.com (got "${pub}").`);
     else if (u.search || u.hash || (u.pathname !== "/" && u.pathname !== "")) out.push("OBX_PUBLIC_URL must be only scheme and host (no path, query or #), e.g. https://brands.yourbrand.com.");
   }
-  for (const k of ["OBX_ALLOW_PRIVATE_URLS", "OBX_TRUST_PROXY", "OBX_S3_CREATE_BUCKET", "OBX_S3_PATH_STYLE", "OBX_ACCESS_LOG"])
+  for (const k of ["OBX_ALLOW_PRIVATE_URLS", "OBX_TRUST_PROXY", "OBX_S3_CREATE_BUCKET", "OBX_S3_PATH_STYLE", "OBX_ACCESS_LOG", "OBX_DEMO"])
     if (v(k) !== undefined && !BOOL_RE.test(v(k)!)) out.push(`${k} must be true or false (got "${v(k)}").`);
   const ints: [string, number, number][] = [
     ["PORT", 1, 65535],
@@ -82,6 +87,8 @@ export function validateEnv(env: EnvLike, runtime: "workers" | "bun"): string[] 
     ["OBX_RATE_LIMIT_MEDIA", 1, 1_000_000],
     ["OBX_JOB_STEP_MS", 1000, 600_000],
     ["OBX_SHUTDOWN_TIMEOUT_MS", 0, 600_000],
+    ["OBX_DEMO_RESET_MINUTES", 5, 10080],
+    ["OBX_DEMO_MAX_UPLOAD_BYTES", 65536, 32 * 1048576],
   ];
   for (const [k, lo, hi] of ints) {
     const x = v(k);
@@ -91,6 +98,7 @@ export function validateEnv(env: EnvLike, runtime: "workers" | "bun"): string[] 
   if (level !== undefined && !(LOG_LEVELS as readonly string[]).includes(level.toLowerCase())) out.push(`OBX_LOG_LEVEL must be one of ${LOG_LEVELS.join(", ")} (got "${level}").`);
   const metrics = v("OBX_METRICS_TOKEN");
   if (metrics !== undefined && metrics.length < 16) out.push("OBX_METRICS_TOKEN must be at least 16 characters (it protects /metrics).");
+  if (bool(v("OBX_DEMO")) && v("OBX_DEMO_TURNSTILE_SECRET") !== undefined && v("OBX_DEMO_TURNSTILE_SITE_KEY") === undefined) out.push("OBX_DEMO_TURNSTILE_SECRET needs OBX_DEMO_TURNSTILE_SITE_KEY (the widget's public site key).");
   const storage = (v("OBX_STORAGE") ?? (runtime === "workers" ? "r2" : "disk")).toLowerCase();
   const storages = runtime === "workers" ? ["r2", "s3"] : ["disk", "s3"];
   if (!storages.includes(storage)) out.push(`OBX_STORAGE must be ${storages.join(" or ")} (got "${v("OBX_STORAGE")}").`);

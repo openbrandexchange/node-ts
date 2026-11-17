@@ -1624,5 +1624,17 @@
       "why": "Procenta této části nedávají dohromady 100 %. Složení se uvádí jako podíl na celkové hmotnosti vláken.",
       "law": "Nařízení (EU) č. 1007/2011, čl. 9 a 11"
     }
+  },
+  "demo": {
+    "banner": "Demo, smyšlená data",
+    "bannerNote": "Změny se automaticky vracejí zpět.",
+    "title": "Rozhlédněte se bez účtu",
+    "intro": "Smyšlená značka s testovacími daty. Vyberte, jak se na ni chcete dívat.",
+    "asRetailer": "Zobrazit jako prodejce",
+    "asRetailerHint": "Hledání, seznam EAN, stránky produktů, stahování",
+    "asBrand": "Zobrazit jako značka",
+    "asBrandHint": "Katalog, import z Excelu, přístup podle prodejce, statistiky",
+    "refused": "V ukázkové verzi to není možné.",
+    "api": "API klíč jen pro čtení pro vývojáře"
   }
 }

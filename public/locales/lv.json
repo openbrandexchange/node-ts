@@ -1594,5 +1594,17 @@
       "why": "Šīs daļas procenti kopā nav 100 %. Sastāvu norāda kā daļu no kopējā šķiedru svara.",
       "law": "Regula (ES) Nr. 1007/2011, 9. un 11. pants"
     }
+  },
+  "demo": {
+    "banner": "Demo, izdomāti dati",
+    "bannerNote": "Izmaiņas tiek automātiski atsauktas.",
+    "title": "Apskatieties bez konta",
+    "intro": "Izdomāts zīmols ar testa datiem. Izvēlieties, kā vēlaties to apskatīt.",
+    "asRetailer": "Skatīt kā tirgotājs",
+    "asRetailerHint": "Meklēšana, EAN saraksts, produktu lapas, lejupielādes",
+    "asBrand": "Skatīt kā zīmols",
+    "asBrandHint": "Katalogs, Excel imports, piekļuve pa tirgotājiem, statistika",
+    "refused": "Demo versijā tas nav iespējams.",
+    "api": "Tikai lasāma API atslēga izstrādātājiem"
   }
 }

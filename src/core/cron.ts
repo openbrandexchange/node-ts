@@ -9,6 +9,7 @@ import { gcBlobs } from "./blobs";
 import { nextRunAt, type SourceRow } from "./sources";
 import { startImport } from "./importjob";
 import { safeJsonParse } from "../lib/util";
+import { demoTick } from "./demo";
 
 export async function runScheduledImports(ctx: Ctx) {
   const due = await ctx.db.all<SourceRow>("SELECT * FROM import_sources WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ? LIMIT 20", [ctx.iso()]);
@@ -142,7 +143,6 @@ export async function refreshCountsSnapshot(ctx: Ctx) {
 
 /** Everything the minute tick does, bounded by `budgetMs`. */
 export async function tick(ctx: Ctx, budgetMs: number) {
-  if (!(await ctx.isSetUp())) return;
   const start = ctx.now();
   const safe = async (name: string, f: () => Promise<unknown>) => {
     try {
@@ -151,7 +151,10 @@ export async function tick(ctx: Ctx, budgetMs: number) {
       ctx.log("error", `cron: ${name} failed`, { error: e instanceof Error ? e.message : String(e) });
     }
   };
-  await safe("scheduled imports", () => runScheduledImports(ctx));
+  // Demo mode: the scheduled reset to the fixtures (docs/demo.md). Never pulls from other servers.
+  if (ctx.config.demo) await safe("demo reset", () => demoTick(ctx));
+  if (!(await ctx.isSetUp())) return;
+  if (!ctx.config.demo) await safe("scheduled imports", () => runScheduledImports(ctx));
   await safe("expiry", () => expireAssets(ctx));
   await safe("staged originals", () => promoteStaged(ctx));
   await safe("changes.available", () => notifyChanges(ctx));

@@ -48,3 +48,6 @@ export interface ExecutionContext {
 export interface MessageBatch {
   messages: { ack(): void }[];
 }
+export interface RateLimit {
+  limit(opts: { key: string }): Promise<{ success: boolean }>;
+}

@@ -1564,5 +1564,17 @@
       "why": "Ennek a résznek a százalékai nem adnak ki 100%-ot. Az összetételt a teljes száltömeg arányában kell megadni.",
       "law": "1007/2011/EU rendelet, 9. és 11. cikk"
     }
+  },
+  "demo": {
+    "banner": "Demó, kitalált adatok",
+    "bannerNote": "A módosítások automatikusan visszaállnak.",
+    "title": "Nézzen körül fiók nélkül",
+    "intro": "Kitalált márka tesztadatokkal. Válassza ki, hogyan szeretné megnézni.",
+    "asRetailer": "Megtekintés viszonteladóként",
+    "asRetailerHint": "Keresés, EAN-lista, termékoldalak, letöltések",
+    "asBrand": "Megtekintés márkaként",
+    "asBrandHint": "Katalógus, Excel-import, hozzáférés viszonteladónként, statisztika",
+    "refused": "Ez a demóban nem lehetséges.",
+    "api": "Csak olvasható API-kulcs fejlesztőknek"
   }
 }

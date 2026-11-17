@@ -106,15 +106,18 @@ export class ObxError extends Error {
     public code: ErrorCode,
     public detail: string | null = null,
     public errors: FieldError[] = [],
-    opts: { status?: number; retryAfter?: number; headers?: Record<string, string> } = {},
+    opts: { status?: number; retryAfter?: number; headers?: Record<string, string>; extensions?: Record<`x-${string}`, unknown> } = {},
   ) {
     super(detail ?? code);
+    this.extensions = opts.extensions ?? {};
     this.status = opts.status ?? ERROR_STATUS[code];
     this.retryAfter = opts.retryAfter ?? null;
     this.headers = opts.headers ?? {};
   }
   retryAfter: number | null;
   headers: Record<string, string>;
+  /** Implementation-specific members of the problem (protocol.md: always x-<vendor>-…). */
+  extensions: Record<string, unknown>;
 
   toProblem(): Record<string, unknown> {
     const p: Record<string, unknown> = {
@@ -126,7 +129,7 @@ export class ObxError extends Error {
     };
     if (this.errors.length) p.errors = this.errors;
     if (this.retryAfter !== null) p.retry_after = this.retryAfter;
-    return p;
+    return { ...p, ...this.extensions };
   }
 }
 
