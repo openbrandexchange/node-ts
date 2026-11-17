@@ -797,19 +797,23 @@ async function resolveVariants(ctx: Ctx, s: CatalogSession, g: ProductGroup, fil
   const out: ProductGroup["variants"] = [];
   const seen = new Set<string>();
   const failed = new Set<number>();
-  const byGtin = new Map<string, string>(); // gtin14 → external id, for rows earlier in this file
+  const gtinRow = new Map<string, number>(); // gtin14 → the earlier row of this file that has it
   for (const v of g.variants) {
     const raw = typeof v.data.gtin === "string" ? v.data.gtin : null;
     const g14 = raw ? raw.replace(/\s+/g, "").padStart(14, "0") : null;
     let ext = v.externalId;
+    if (g14 && gtinRow.has(g14)) {
+      // The same GTIN on two rows of one file: gtin_conflict on gtin for the later row (obx-go NOTES 8).
+      sink.add({ file, row: v.row, column: "gtin", severity: "error", obx_error: "gtin_conflict", detail: `This GTIN is also used on row ${gtinRow.get(g14)}; a GTIN belongs to one variant.`, value: raw });
+      failed.add(v.row);
+      continue;
+    }
     if (!v.explicit && g14) {
-      const local = byGtin.get(g14);
-      const row = local ? null : await ctx.db.first<{ external_id: string; product_id: string; style: string | null }>(
+      const row = await ctx.db.first<{ external_id: string; product_id: string; style: string | null }>(
         "SELECT v.external_id, v.product_id, p.style_number AS style FROM variants v LEFT JOIN products p ON p.id = v.product_id WHERE v.gtin14 = ?",
         [g14],
       );
-      if (local) ext = local;
-      else if (row && product && row.product_id === product.id) ext = row.external_id;
+      if (row && product && row.product_id === product.id) ext = row.external_id;
       else if (row && (!product || row.product_id !== product.id)) {
         sink.add({ file, row: v.row, column: "gtin", severity: "error", obx_error: "gtin_conflict", detail: `This GTIN belongs to variant "${row.external_id}" of product "${row.style ?? "?"}". Remove it there first (an empty gtin cell) or give another GTIN.`, value: raw });
         failed.add(v.row);
@@ -822,7 +826,7 @@ async function resolveVariants(ctx: Ctx, s: CatalogSession, g: ProductGroup, fil
       continue;
     }
     seen.add(ext);
-    if (g14) byGtin.set(g14, ext);
+    if (g14) gtinRow.set(g14, v.row);
     out.push({ ...v, externalId: ext });
   }
   if (failed.size && g.rows.every((r) => failed.has(r))) return null;

@@ -37,8 +37,9 @@ and the retailer portal filter on qualifiers. **Breaking for retailers' software
 - **Variant identity in imports** (spec import-format.md §1.2.1, conformance I-IMP-12): `variant_id`, else the
   variant of this product that has the row's GTIN (it keeps its external id and protocol id, also when its size
   changes), else the default id `<style>-<color>-<size>[-<size_length>]` (`/` and control characters as `_`). A
-  GTIN of another product's variant is the row error `gtin_conflict` (column `gtin`); a second row of the file
-  for the same variant is `validation_failed` on `variant_id`. A GTIN can arrive or change later without a new
+  GTIN of another product's variant, or a GTIN already used on an earlier row of the file, is the row error
+  `gtin_conflict` (column `gtin`); a second row of the file for the same variant is `validation_failed` on
+  `variant_id`. A GTIN can arrive or change later without a new
   variant. The Ingest API's `gtin_conflict` names the variant that has the GTIN and its product.
 - **A fibre without a percentage** (`percentage: null`, `outer: leather` in the CSV); `fibre_percentages_not_100`
   only when every fibre of the part states one, or the stated ones exceed 100.
@@ -98,8 +99,8 @@ and the retailer portal filter on qualifiers. **Breaking for retailers' software
   never stored or returned. It was a `422` before.
 - **`limit` above the maximum is clamped** on every list (protocol, Ingest, admin, portal); not a whole number or
   below 1 is `400 invalid_request`.
-- **Signed rendition URLs**: a tampered, stripped or expired link is `403 forbidden`; neither signature nor token
-  is `401 unauthorized`; a valid Bearer token is served whatever the signature says.
+- **Signed rendition URLs**: a tampered or expired link (also an expiry without its signature) is `403 forbidden`;
+  neither signature nor token is `401 unauthorized`; a valid Bearer token is served whatever the signature says.
 - Test fixtures follow spec 0.3.0 (spec commit e74ccb2): Kestrel variant ids `KO-1001-NVY-M` …, KO-1005's
   outer part `leather` without a percentage, the import fixtures `id-1` … `id-4`, `5-invalid.csv` and
   `label-warnings.csv`.

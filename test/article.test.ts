@@ -157,6 +157,12 @@ describe("imports of the article data columns (I-IMP-7, I-IMP-8)", () => {
       if (ids) expect(now).toEqual(ids);
       ids = now;
     }
+    // The same GTIN on two rows of one file: gtin_conflict on gtin for the later row.
+    const twice = await importCsv("twice.csv", "brand,style_number,name:en,gtin,color_code,size\nkestrel,KL-8102,Twice,2000999900013,BLK,S\nkestrel,KL-8102,Twice,2000999900013,BLK,M\n");
+    expect(twice.items.filter((i: any) => i.severity === "error").map((i: any) => [i.row, i.column, i.obx_error, i.value])).toEqual([[2, "gtin", "gtin_conflict", "2000999900013"]]);
+    expect((await productByExt("KL-8102")).variants.map((v: any) => v.external_id)).toEqual(["KL-8102-BLK-S"]);
+    await node.api(token, "DELETE", "/obx/v1/ingest/variants/KL-8102-BLK-S");
+    await node.api(token, "DELETE", "/obx/v1/ingest/products/KL-8102");
     // The Kestrel variants have the default ids although products.csv has their GTINs.
     expect((await productByExt("KO-1004")).variants.map((v: any) => v.external_id)).toContain("KO-1004-IND-30-32");
     expect((await node.api(token, "DELETE", "/obx/v1/ingest/products/KL-8101")).status).toBeLessThan(300);

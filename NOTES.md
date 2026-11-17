@@ -292,6 +292,14 @@ The recipient's language is the user's language, the requester's `contact.langua
   body for `/batch` and `/exports`, the list of (part name, file name, sha256 of the part) for `/imports`, since the
   multipart boundary differs per request. The import's body is stored before the comparison (it must be read to be
   hashed) and removed again when the key replays or is refused.
-- V5. **Signed URLs**: a request with `Authorization: Bearer` ignores `exp`/`a`/`sig`; without it, any of the three
-  makes it a signed-link request (missing parts are `403`, as tampering); none of them and no token is `401`.
+- V5. **Signed URLs**: a request with `Authorization: Bearer` ignores `exp`/`a`/`sig`; without it, `sig` or `exp`
+  makes it a signed-link request (an expiry without signature is `403`, as tampering); neither of them and no token is
+  `401` (as obx-go reads spec S-URL-1 and P-MEDIA-2, its NOTES 50).
 
+- Conformance (2026-11-17): `obx-conformance all` built from obx-go fe9b626 (spec e74ccb2) is **CONFORMANT** on Bun
+  and on `wrangler dev` (local D1 and R2): 70 passed, 0 failed, 2 skipped (the optional P-FEED-7, no operator
+  action `simulate_spec_upgrade`, and S-RATE-2 without `--rate-limit-test`). P-AUTH-2 rotates the secret through
+  the admin API, so the operator action `rotate_client_secret` is not needed.
+- V6. **The same GTIN on two rows of one file** is `gtin_conflict` on `gtin` for the later row ("also used on row
+  N"), as obx-go reads §1.2.1 (its NOTES 8); two rows without GTIN that give the same variant stay
+  `validation_failed` on `variant_id`.

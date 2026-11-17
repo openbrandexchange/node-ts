@@ -423,9 +423,10 @@ protocol.on(["GET", "HEAD"], "/obx/v1/assets/:id/renditions/:name", async (c) =>
   let viewer: Viewer;
   const q = { exp: c.req.query("exp"), a: c.req.query("a"), sig: c.req.query("sig") };
   // protocol.md §5.5: a valid Bearer token is served whatever the signature says; a signed link (or what is
-  // left of one) that expired or does not match is 403 forbidden; neither signature nor token is 401.
+  // left of one: an expiry without signature) that expired or does not match is 403 forbidden; neither
+  // signature nor token is 401 (obx-go NOTES 50).
   const bearer = /^bearer\s/i.test(c.req.header("authorization") ?? "");
-  if (!bearer && (q.sig || q.exp || q.a)) {
+  if (!bearer && (q.sig || q.exp)) {
     const v = q.sig ? await verifySignedPath(ctx, path, q) : null;
     if (v === "expired") throw new ObxError("forbidden", "This link has expired. Read the asset again for a fresh link.");
     if (!v) throw new ObxError("forbidden", "This link is not valid.");

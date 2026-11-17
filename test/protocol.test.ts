@@ -219,6 +219,10 @@ describe("media (P-MEDIA-2, P-MEDIA-3, P-AUTH-3)", () => {
     const stripped = new URL(a.renditions.web.url);
     stripped.searchParams.delete("sig");
     expect((await node.request("GET", stripped.pathname + stripped.search)).json.obx_error).toBe("forbidden");
+    const noSig = new URL(a.renditions.web.url);
+    noSig.searchParams.delete("sig");
+    noSig.searchParams.delete("exp");
+    expect((await node.request("GET", noSig.pathname + noSig.search)).json.obx_error).toBe("unauthorized");
     const none = await node.request("GET", tampered.pathname);
     expect([none.status, none.json.obx_error]).toEqual([401, "unauthorized"]);
     expect((await node.api(at, "GET", tampered.pathname + tampered.search)).status).toBe(200);
