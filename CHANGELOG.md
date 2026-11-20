@@ -8,6 +8,8 @@ always forward-only and applied automatically.
 ## [Unreleased]
 
 ### Added
+- The web interface is admin-ui 9bbfe9f: the showroom redesign (theme engine, Appearance editor, start page, quick
+  view), so the demo opens on the MAISON NOOR start page.
 - **Portal appearance** (spec node-admin.yaml, docs/node-admin.md "Portal appearance"): `branding.theme`
   (colour scheme, five colours, fonts, radius, grid density, card style, image fit and background),
   `branding.login` (centered or split layout with an image, title, text) and `branding.home` (start page of up to
