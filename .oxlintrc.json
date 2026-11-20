@@ -14,7 +14,14 @@
         "argsIgnorePattern": "^_",
         "varsIgnorePattern": "^_"
       }
-    ]
+    ],
+    // Type-aware rules that `bun run typecheck` (--type-aware) would turn on; they were never part
+    // of the checks under tsc. await-thenable misreads bun:test's expect().rejects.
+    "typescript/await-thenable": "off",
+    "typescript/no-base-to-string": "off",
+    "typescript/no-floating-promises": "off",
+    "typescript/restrict-template-expressions": "off",
+    "typescript/require-array-sort-compare": "off"
   },
   "ignorePatterns": [
     "dist",

@@ -246,7 +246,7 @@ The most used settings are below; every setting, health checks, logs, metrics, b
 ```sh
 bun install
 bun run lint                  # oxlint
-bun run typecheck
+bun run typecheck             # TypeScript diagnostics via oxlint --type-aware --type-check (tsgolint)
 bun run test                  # unit + HTTP tests (bun:sqlite, spec fixtures in test/fixtures)
 bun run audit && bun run licenses   # dependency vulnerabilities and licences
 sh e2e/run.sh                 # browser tests with axe and keyboard checks (needs Node.js)

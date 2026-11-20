@@ -11,7 +11,7 @@
     "start": "bun src/adapters/bun/main.ts",
     "gen": "bun scripts/gen-migrations.ts",
     "test": "bun scripts/gen-migrations.ts && bun test --timeout 120000 ./test/",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "oxlint --type-aware --type-check src scripts test",
     "dev:workers": "wrangler dev",
     "deploy": "wrangler deploy && wrangler d1 migrations apply DB --remote",
     "smoke:workers": "bun scripts/workers-smoke.ts",
@@ -36,7 +36,8 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "oxlint": "^1.86.0",
+    "oxlint": "^1.94.0",
+    "oxlint-tsgolint": "^7.0.2007",
     "typescript": "^5.9.3",
     "wrangler": "^4.160.1"
   },

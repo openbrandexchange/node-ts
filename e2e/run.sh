@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 # Starts a fresh node-ts (Bun) on a temporary data directory and walks the brand admin and the
 # retailer portal in a headless browser, with axe accessibility and keyboard checks.
-#   e2e/run.sh              (needs Bun, Node.js and zip; installs Playwright on first run)
+#   e2e/run.sh              (needs Bun, Node.js and zip; installs Playwright on first run; the
+#                            Playwright runner itself runs on Node.js)
 #   e2e/run.sh -g "axe"     (extra arguments go to playwright test)
 set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -17,8 +18,8 @@ mkdir -p "$TMP/export"
 cp -R "$FIX/." "$TMP/export/"
 sed 's/Merino Crew Sweater/Merino Crew Jumper/' "$FIX/products.csv" >"$TMP/export/products.csv"
 (cd "$TMP/export" && zip -qr "$TMP/package.zip" products.csv assets.csv images)
-[ -d "$HERE/node_modules" ] || (cd "$HERE" && npm ci)
-(cd "$HERE" && npx playwright install chromium >/dev/null)
+[ -d "$HERE/node_modules" ] || (cd "$HERE" && bun install --frozen-lockfile)
+(cd "$HERE" && bunx playwright install chromium >/dev/null)
 
 URL="http://localhost:$PORT"
 OBX_DATA_DIR="$TMP/data" PORT="$PORT" HOST=127.0.0.1 OBX_PUBLIC_URL="$URL" \
@@ -33,4 +34,4 @@ until curl -sf "http://127.0.0.1:$PORT/readyz" >/dev/null; do
 done
 cd "$HERE"
 OBX_E2E_URL="$URL" OBX_E2E_NODE_LOG="$TMP/node.log" OBX_E2E_FIXTURES="$FIX" OBX_E2E_IMAGES_ZIP="$TMP/images.zip" OBX_E2E_PACKAGE_ZIP="$TMP/package.zip" \
-  npx playwright test "$@"
+  bunx playwright test "$@"

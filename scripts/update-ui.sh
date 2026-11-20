@@ -25,7 +25,7 @@ if [ -n "$REF" ]; then
 else
   if [ ! -f "$UI/dist/index.html" ]; then
     echo "Building admin-ui in $UI ..."
-    (cd "$UI" && npm ci && npm run build)
+    (cd "$UI" && bun install --frozen-lockfile && bun run build)
   fi
   DIST="$UI/dist"
   VERSION="$(cd "$UI" && git describe --tags --always --dirty 2>/dev/null || echo unknown)"
