@@ -32,6 +32,9 @@
     }
   ],
   // Every minute: background jobs and the demo's scheduled reset (OBX_DEMO_RESET_MINUTES).
+  // Run the Worker next to its D1 database: every request makes several queries in a row, and a
+  // Worker at the visitor's edge pays the round trip to the database for each of them.
+  "placement": { "mode": "smart" },
   "triggers": {
     "crons": ["* * * * *"]
   },
