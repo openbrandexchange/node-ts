@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeAll } from "bun:test";
-import { TestNode, importKestrel, addRenditions, type Browser } from "./helpers";
+import { TestNode, importMaisonNoor, addRenditions, type Browser } from "./helpers";
 import { readZipDirectory, readZipEntry } from "../src/lib/zip";
 import { bytesReader } from "../src/lib/multipart";
 import { parseCsv } from "../src/lib/csv";
@@ -29,13 +29,13 @@ beforeAll(async () => {
   node = new TestNode();
   admin = await node.setup();
   token = await node.ingestToken(admin);
-  await importKestrel(node, token);
+  await importMaisonNoor(node, token);
   await addRenditions(node, token);
   brandIds = Object.fromEntries((await node.platform.db.all<{ id: string; external_id: string }>("SELECT id, external_id FROM brands")).map((b) => [b.external_id, b.id]));
   const r1 = await admin.req("POST", "/admin/api/retailers", { json: { name: "Fictional Fashion" } });
   retailer = await inviteAndAccept("rita@fictional.example", r1.json.id);
-  const r2 = await admin.req("POST", "/admin/api/retailers", { json: { name: "Kestrel Only Shop", brand_ids: [brandIds["kestrel"]], allow_original: false } });
-  restricted = await inviteAndAccept("kim@kestrelonly.example", r2.json.id);
+  const r2 = await admin.req("POST", "/admin/api/retailers", { json: { name: "MAISON NOOR Only Shop", brand_ids: [brandIds["maison-noor"]], allow_original: false } });
+  restricted = await inviteAndAccept("kim@nooronly.example", r2.json.id);
 }, 120_000);
 
 describe("retailer portal (A-INV-1, A-PORT-1, A-PORT-2)", () => {
@@ -53,13 +53,13 @@ describe("retailer portal (A-INV-1, A-PORT-1, A-PORT-2)", () => {
     const last = await retailer.req("GET", `/admin/api/portal/products?limit=5&cursor=${encodeURIComponent(more.json.next_cursor)}`);
     expect(last.json.items.length).toBe(1);
     const q = await retailer.req("GET", "/admin/api/portal/products?q=merino");
-    expect(q.json.items.map((p: any) => p.style_number)).toContain("KO-1001");
+    expect(q.json.items.map((p: any) => p.style_number)).toContain("MN-1001");
     const byGtin = await retailer.req("GET", "/admin/api/portal/products?q=2000100101025");
-    expect(byGtin.json.items.map((p: any) => p.style_number)).toEqual(["KO-1001"]);
-    const facets = await retailer.req("GET", `/admin/api/portal/facets?brand_id=${brandIds["kestrel"]}`);
+    expect(byGtin.json.items.map((p: any) => p.style_number)).toEqual(["MN-1001"]);
+    const facets = await retailer.req("GET", `/admin/api/portal/facets?brand_id=${brandIds["maison-noor"]}`);
     expect(facets.json.brands.length).toBe(2);
     expect(facets.json.item_types.length).toBeGreaterThan(0);
-    const filtered = await retailer.req("GET", `/admin/api/portal/products?brand_id=${brandIds["kestrel"]}`);
+    const filtered = await retailer.req("GET", `/admin/api/portal/products?brand_id=${brandIds["maison-noor"]}`);
     expect(filtered.json.total).toBe(9);
     const detail = await retailer.req("GET", `/admin/api/portal/products/${list.json.items[0].id}`);
     expect(detail.json.variants.length).toBeGreaterThan(0);
@@ -71,10 +71,10 @@ describe("retailer portal (A-INV-1, A-PORT-1, A-PORT-2)", () => {
     const { QUALIFIER_NAMES } = await import("../src/core/article");
     const styles = async (qs: string) => ((await retailer.req("GET", `/admin/api/portal/products?limit=50&${qs}`)).json.items as any[]).map((p) => p.style_number).sort();
     // Any fibre of any part with any of the codes; OR within the parameter, AND with the others.
-    expect(await styles("qualifier=recycled")).toEqual(["KO-1008", "KO-1009", "KT-2001", "KT-2002"]);
-    expect(await styles("qualifier=organic&qualifier=post_consumer")).toEqual(["KO-1003", "KO-1009"]);
-    expect(await styles("qualifier=organic,post_consumer")).toEqual(["KO-1003", "KO-1009"]);
-    expect(await styles(`qualifier=recycled&brand_id=${brandIds["kestrel-trail"]}`)).toEqual(["KT-2001", "KT-2002"]);
+    expect(await styles("qualifier=recycled")).toEqual(["MN-1008", "MN-1009", "NA-2001", "NA-2002"]);
+    expect(await styles("qualifier=organic&qualifier=post_consumer")).toEqual(["MN-1003", "MN-1009"]);
+    expect(await styles("qualifier=organic,post_consumer")).toEqual(["MN-1003", "MN-1009"]);
+    expect(await styles(`qualifier=recycled&brand_id=${brandIds["noor-atelier"]}`)).toEqual(["NA-2001", "NA-2002"]);
     expect(await styles("qualifier=upcycled")).toEqual([]);
     const facets = (await retailer.req("GET", "/admin/api/portal/facets")).json;
     expect(facets.qualifiers).toEqual([
@@ -84,9 +84,9 @@ describe("retailer portal (A-INV-1, A-PORT-1, A-PORT-2)", () => {
       { value: "regenerative", label: QUALIFIER_NAMES.get("regenerative"), count: 1 },
     ]);
     // A facet ignores its own filter and follows the others.
-    const narrowed = (await retailer.req("GET", `/admin/api/portal/facets?qualifier=organic&brand_id=${brandIds["kestrel-trail"]}`)).json;
+    const narrowed = (await retailer.req("GET", `/admin/api/portal/facets?qualifier=organic&brand_id=${brandIds["noor-atelier"]}`)).json;
     expect(narrowed.qualifiers).toEqual([{ value: "recycled", label: QUALIFIER_NAMES.get("recycled"), count: 2 }]);
-    expect(narrowed.brands).toEqual([{ value: brandIds["kestrel"], label: expect.any(String), count: 1 }]);
+    expect(narrowed.brands).toEqual([{ value: brandIds["maison-noor"], label: expect.any(String), count: 1 }]);
     expect((await restricted.req("GET", "/admin/api/portal/facets")).json.qualifiers.find((q: any) => q.value === "recycled").count).toBe(2);
     // The same filter in a download job.
     const job = await retailer.req("POST", "/admin/api/portal/download-jobs", { json: { source: "filter", filter: { qualifier: ["organic", "post_consumer"] }, variant: "web" } });
@@ -99,17 +99,17 @@ describe("retailer portal (A-INV-1, A-PORT-1, A-PORT-2)", () => {
     const data = entries.find((e) => e.name === "data.csv")!;
     const parsed = parseCsv(new TextDecoder().decode(await readZipEntry(bytesReader(file.bytes), data, 1_000_000)));
     const col = parsed.header.indexOf("style_number");
-    expect([...new Set(parsed.rows.map((r) => r.cells[col]))].sort()).toEqual(["KO-1003", "KO-1009"]);
+    expect([...new Set(parsed.rows.map((r) => r.cells[col]))].sort()).toEqual(["MN-1003", "MN-1009"]);
   });
 
   test("restricted retailer never sees the other brand; originals hidden", async () => {
     const list = await restricted.req("GET", "/admin/api/portal/products?limit=50");
     expect(list.json.total).toBe(9);
-    expect(list.json.items.every((p: any) => p.brand.id === brandIds["kestrel"])).toBe(true);
-    const trail = await node.platform.db.first<{ id: string }>("SELECT id FROM products WHERE brand_id = ?", [brandIds["kestrel-trail"]]);
+    expect(list.json.items.every((p: any) => p.brand.id === brandIds["maison-noor"])).toBe(true);
+    const trail = await node.platform.db.first<{ id: string }>("SELECT id FROM products WHERE brand_id = ?", [brandIds["noor-atelier"]]);
     expect((await restricted.req("GET", `/admin/api/portal/products/${trail!.id}`)).status).toBe(404);
     const facets = await restricted.req("GET", "/admin/api/portal/facets");
-    expect(facets.json.brands.map((b: any) => b.value)).toEqual([brandIds["kestrel"]]);
+    expect(facets.json.brands.map((b: any) => b.value)).toEqual([brandIds["maison-noor"]]);
     const v = await restricted.req("GET", "/admin/api/portal/viewer");
     expect(v.json.permissions.original_download).toBe(false);
     const detail = await restricted.req("GET", `/admin/api/portal/products/${list.json.items[0].id}`);
@@ -117,7 +117,7 @@ describe("retailer portal (A-INV-1, A-PORT-1, A-PORT-2)", () => {
     const asset = detail.json.assets[0];
     expect((await restricted.req("GET", `/admin/api/portal/assets/${asset.id}/download?variant=original`)).json.obx_error).toBe("original_not_allowed");
     const csv = await restricted.req("GET", "/admin/api/portal/products/data.csv");
-    expect(csv.text).not.toContain("KT-2001");
+    expect(csv.text).not.toContain("NA-2001");
   });
 
   test("EAN paste, selection, product zip, selection zip and CSV", async () => {
@@ -166,16 +166,16 @@ describe("retailer portal (A-INV-1, A-PORT-1, A-PORT-2)", () => {
   });
 
   test("formula injection is escaped in CSV exports", async () => {
-    await node.api(token, "PUT", "/obx/v1/ingest/products/KO-1001", {
-      json: { brand_external_id: "kestrel", style_number: "KO-1001", name: { en: "=HYPERLINK(\"http://evil\")", nl: "Merino trui met ronde hals" } },
+    await node.api(token, "PUT", "/obx/v1/ingest/products/MN-1001", {
+      json: { brand_external_id: "maison-noor", style_number: "MN-1001", name: { en: "=HYPERLINK(\"http://evil\")", nl: "Fijne merino trui met ronde hals" } },
     });
-    const csv = await retailer.req("GET", "/admin/api/portal/products/data.csv?q=KO-1001");
+    const csv = await retailer.req("GET", "/admin/api/portal/products/data.csv?q=MN-1001");
     expect(csv.text).toContain("'=HYPERLINK");
     expect(csv.text).toContain("2000100101025");
   });
 
   test("background download job with file and e-mail", async () => {
-    const job = await retailer.req("POST", "/admin/api/portal/download-jobs", { json: { source: "filter", filter: { brand_id: [brandIds["kestrel"]] }, variant: "square" } });
+    const job = await retailer.req("POST", "/admin/api/portal/download-jobs", { json: { source: "filter", filter: { brand_id: [brandIds["maison-noor"]] }, variant: "square" } });
     expect(job.status).toBe(202);
     await node.drain();
     const done = await retailer.req("GET", `/admin/api/portal/download-jobs/${job.json.id}`);

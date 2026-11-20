@@ -1,7 +1,7 @@
 // Procedural art for the demo showroom (docs/demo.md): editorial hero and login images, category
 // tiles, a material close-up and product shots, drawn as SVG and rendered with rsvg-convert and
 // ImageMagick (grain, JPEG). No photos, nothing downloaded; the same input always gives the same image.
-// Demo content only: the spec fixtures (test/fixtures/kestrel) stay as they are.
+// Demo content only: the spec fixtures (test/fixtures/maison-noor) stay as they are.
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

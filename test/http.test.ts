@@ -56,7 +56,7 @@ function rawPut(port: number, path: string, headers: Record<string, string>, bod
 
 test("uploading a file the node already has answers at once", async () => {
   // A real PNG followed by 3 MiB of padding: large enough that the body is still streaming.
-  const png = new Uint8Array(await Bun.file(new URL("./fixtures/kestrel/images/KO-1001_NVY_1_front.png", import.meta.url)).arrayBuffer());
+  const png = new Uint8Array(await Bun.file(new URL("./fixtures/maison-noor/images/MN-1001_NVY_1_front.png", import.meta.url)).arrayBuffer());
   const bytes = new Uint8Array(png.length + 3 * 1024 * 1024);
   bytes.set(png);
   const sha = createHash("sha256").update(bytes).digest("hex");

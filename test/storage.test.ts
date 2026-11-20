@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { TestNode, importKestrel, addRenditions } from "./helpers";
+import { TestNode, importMaisonNoor, addRenditions } from "./helpers";
 import { Ctx } from "../src/core/ctx";
 import { ZipWriter, newZipState } from "../src/core/zipwriter";
 import { diskStore } from "../src/adapters/bun/disk";
@@ -81,18 +81,18 @@ describe("rights expiry", () => {
     const node = new TestNode();
     const admin = await node.setup();
     const token = await node.ingestToken(admin);
-    await importKestrel(node, token);
+    await importMaisonNoor(node, token);
     await addRenditions(node, token);
     const cl = await node.retailerClient(admin);
     const at = await node.accessToken(cl.clientId, cl.secret);
     const soon = new Date(Date.now() + 60_000).toISOString().replace(/\.\d{3}Z$/, "Z");
-    const p = await node.api(token, "PATCH", "/obx/v1/ingest/assets/KO-1001_NVY_1", { json: { rights: { expires_at: soon } }, headers: { "content-type": "application/merge-patch+json" } });
+    const p = await node.api(token, "PATCH", "/obx/v1/ingest/assets/MN-1001_NVY_1", { json: { rights: { expires_at: soon } }, headers: { "content-type": "application/merge-patch+json" } });
     expect(p.json.result).toBe("updated");
     const f0 = await node.feed(at);
     node.clock.offset = 5 * 60_000;
     await node.worker.tick(10_000);
     const f1 = await node.feed(at, f0.cursor);
-    expect(f1.entries.map((e) => `${e.type}:${e.op}:${e.external_id}`)).toEqual(["asset:delete:KO-1001_NVY_1"]);
+    expect(f1.entries.map((e) => `${e.type}:${e.op}:${e.external_id}`)).toEqual(["asset:delete:MN-1001_NVY_1"]);
     const id = f1.entries[0].id;
     const at2 = await node.accessToken(cl.clientId, cl.secret);
     expect((await node.api(at2, "GET", `/obx/v1/assets/${id}`)).status).toBe(404);
@@ -102,12 +102,12 @@ describe("rights expiry", () => {
 describe("scheduled pull import from an S3-compatible bucket", () => {
   const endpoint = process.env.OBX_TEST_S3_ENDPOINT;
   test.skipIf(!endpoint)("lists the prefix, imports products.csv + images, skips unchanged runs", async () => {
-    const { fixtureText, kestrelImages } = await import("./helpers");
+    const { fixtureText, maisonNoorImages } = await import("./helpers");
     const prefix = `export-${Date.now()}`;
     const bucket = s3Store({ endpoint: endpoint!, bucket: process.env.OBX_TEST_S3_BUCKET ?? "portal", region: "us-east-1", accessKeyId: "portal", secretAccessKey: "portal-secret-change-me" });
-    await bucket.put(`${prefix}/products.csv`, new TextEncoder().encode(fixtureText("kestrel/products.csv")));
-    await bucket.put(`${prefix}/assets.csv`, new TextEncoder().encode(fixtureText("kestrel/assets.csv")));
-    for (const i of kestrelImages()) await bucket.put(`${prefix}/images/${i.name}`, i.bytes);
+    await bucket.put(`${prefix}/products.csv`, new TextEncoder().encode(fixtureText("maison-noor/products.csv")));
+    await bucket.put(`${prefix}/assets.csv`, new TextEncoder().encode(fixtureText("maison-noor/assets.csv")));
+    for (const i of maisonNoorImages()) await bucket.put(`${prefix}/images/${i.name}`, i.bytes);
     const node = new TestNode();
     const admin = await node.setup();
     const src = await admin.req("POST", "/admin/api/import-sources", {
@@ -180,9 +180,9 @@ describe("unreferenced files", () => {
     const token = await node.ingestToken(admin);
     const used = await upload(node, token, fakeJpeg(1200, 1600, 11));
     const orphan = await upload(node, token, fakeJpeg(1200, 1600, 12));
-    await node.api(token, "PUT", "/obx/v1/ingest/products/KO-9", { json: { style_number: "KO-9", name: { en: "Nine" } } });
-    await node.api(token, "PUT", "/obx/v1/ingest/variants/2000100101018", { json: { product_external_id: "KO-9", gtin: "2000100101018", color: { code: "NVY" }, size: "M" } });
-    const a = await node.api(token, "PUT", "/obx/v1/ingest/assets/KO-9_NVY_1", { json: { product_external_id: "KO-9", color_code: "NVY", position: 1, role: "packshot", files: { original: { sha256: used } } } });
+    await node.api(token, "PUT", "/obx/v1/ingest/products/MN-9", { json: { style_number: "MN-9", name: { en: "Nine" } } });
+    await node.api(token, "PUT", "/obx/v1/ingest/variants/2000100101018", { json: { product_external_id: "MN-9", gtin: "2000100101018", color: { code: "NVY" }, size: "M" } });
+    const a = await node.api(token, "PUT", "/obx/v1/ingest/assets/MN-9_NVY_1", { json: { product_external_id: "MN-9", color_code: "NVY", position: 1, role: "packshot", files: { original: { sha256: used } } } });
     expect(a.status).toBeLessThan(300);
     const has = async (sha: string) => !!(await node.platform.db.first("SELECT 1 AS x FROM blobs WHERE sha256 = ?", [sha])) && !!(await node.platform.blobs.head(`blobs/${sha.slice(0, 2)}/${sha}`));
     const ctx = new Ctx(node.platform);

@@ -27,7 +27,7 @@ describe("audit log of admin actions", () => {
     const bad = await admin.req("PATCH", "/admin/api/settings", { json: { branding: { accent_color: "red" } } });
     expect(bad.status).toBe(422);
     const other = await node.browser();
-    await other.req("POST", "/admin/api/session/login", { json: { email: "admin@kestrel.example", password: "wrong password here" } });
+    await other.req("POST", "/admin/api/session/login", { json: { email: "admin@maison-noor.example", password: "wrong password here" } });
 
     const log = await admin.req("GET", "/admin/api/audit-log?limit=50");
     expect(log.status).toBe(200);
@@ -78,7 +78,7 @@ describe("personal data: export and erasure", () => {
     expect(r.headers.get("content-disposition")).toMatch(/^attachment; filename="personal-data-outdoor-shop-utrecht-\d{4}-\d{2}-\d{2}\.json"$/);
     const d = JSON.parse(r.text);
     expect(d.format).toBe("obx-personal-data-export/1");
-    expect(d.controller.name).toBe("Kestrel Outfitters");
+    expect(d.controller.name).toBe("MAISON NOOR Group");
     expect(d.retailer.name).toBe("Outdoor Shop Utrecht");
     expect(d.users.map((u: any) => u.email)).toEqual(["sam@outdoorshop.example"]);
     expect(d.api_clients.map((k: any) => k.name)).toEqual(["Shop sync"]);

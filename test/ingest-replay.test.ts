@@ -87,7 +87,7 @@ describe("ingest replay (I-REPLAY-1, P-FEED-5)", () => {
       const f = await node.feed(at, f0.cursor);
       // Read after the whole batch: upserts of objects that are no longer visible are omitted
       // (protocol.md §6.2); at the end only the brand is still visible, every delete stays.
-      const visibleAtEnd = new Set([`kestrel-lab${suffix}`]);
+      const visibleAtEnd = new Set([`maison-noor-lab${suffix}`]);
       const expected = expectedChanges
         .map((x: any) => ({ ...strip(x), external_id: x.external_id + suffix }))
         .filter((x: any) => x.op === "delete" || visibleAtEnd.has(x.external_id));
@@ -97,18 +97,18 @@ describe("ingest replay (I-REPLAY-1, P-FEED-5)", () => {
 
   test("repeating an upsert is unchanged and writes nothing; Idempotency-Key returns the same job (I-IDEM-1)", async () => {
     const { node, token, at, cursor } = await prepare();
-    const put = () => node.api(token, "PUT", "/obx/v1/ingest/brands/kestrel-lab", { json: { name: "Kestrel Lab" } });
+    const put = () => node.api(token, "PUT", "/obx/v1/ingest/brands/maison-noor-lab", { json: { name: "MAISON NOOR LAB" } });
     expect((await put()).json.result).toBe("created");
     const f1 = await node.feed(at, cursor);
     expect((await put()).json.result).toBe("unchanged");
     expect((await node.feed(at, f1.cursor)).entries).toEqual([]);
-    const ops = JSON.stringify([{ op: "upsert", kind: "brand", external_id: "kestrel-lab", data: { name: "Kestrel Lab 2" } }]);
+    const ops = JSON.stringify([{ op: "upsert", kind: "brand", external_id: "maison-noor-lab", data: { name: "MAISON NOOR LAB 2" } }]);
     const a = await node.api(token, "POST", "/obx/v1/ingest/batch", { body: ops, headers: { "content-type": "application/json", prefer: "respond-async", "idempotency-key": "k1" } });
     const b = await node.api(token, "POST", "/obx/v1/ingest/batch", { body: ops, headers: { "content-type": "application/json", prefer: "respond-async", "idempotency-key": "k1" } });
     expect(a.status).toBe(202);
     expect(b.json.id).toBe(a.json.id);
     // The same key with another body: 409 idempotency_key_reused, nothing written (ingest.md §3.5).
-    const other = JSON.stringify([{ op: "upsert", kind: "brand", external_id: "kestrel-lab", data: { name: "Other" } }]);
+    const other = JSON.stringify([{ op: "upsert", kind: "brand", external_id: "maison-noor-lab", data: { name: "Other" } }]);
     const c = await node.api(token, "POST", "/obx/v1/ingest/batch", { body: other, headers: { "content-type": "application/json", "idempotency-key": "k1" } });
     expect([c.status, c.json.obx_error]).toEqual([409, "idempotency_key_reused"]);
     // Imports: compared by the sha256 of every part (the multipart boundary differs per request).
@@ -118,12 +118,12 @@ describe("ingest replay (I-REPLAY-1, P-FEED-5)", () => {
       fd.append("options", JSON.stringify({ dry_run: true }));
       return fd;
     };
-    const csv = "brand,style_number,name:en\nkestrel-lab,KL-IDEM,Idem\n";
+    const csv = "brand,style_number,name:en\nmaison-noor-lab,ML-IDEM,Idem\n";
     const imp = (body: string) => node.api(token, "POST", "/obx/v1/ingest/imports", { body: form(body), headers: { "idempotency-key": "imp-1" } });
     const i1 = await imp(csv);
     const i2 = await imp(csv);
     expect([i1.status, i2.status, i2.json.id]).toEqual([202, 202, i1.json.id]);
-    const i3 = await imp(csv + "kestrel-lab,KL-IDEM-2,Idem 2\n");
+    const i3 = await imp(csv + "maison-noor-lab,ML-IDEM-2,Idem 2\n");
     expect([i3.status, i3.json.obx_error]).toEqual([409, "idempotency_key_reused"]);
     await node.drain();
     const job = await node.api(token, "GET", `/obx/v1/ingest/jobs/${a.json.id}`);

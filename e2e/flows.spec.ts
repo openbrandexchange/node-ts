@@ -2,7 +2,7 @@ import { expect, test, type Page, type Response } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 const SETUP_CODE = process.env.OBX_E2E_SETUP_CODE ?? 'SETUP-1234'
-const admin = { name: 'Iris Admin', email: 'admin@kestrel.example', password: 'kestrel-admin-2026!' }
+const admin = { name: 'Iris Admin', email: 'admin@maison-noor.example', password: 'maison-noor-admin-2026!' }
 
 test.describe.configure({ mode: 'serial' })
 
@@ -58,8 +58,8 @@ test('first-run wizard creates the brand and the admin account', async ({ page }
   await axe(page, 'setup wizard')
   await page.getByLabel('Setup code').fill(SETUP_CODE)
   await page.getByRole('button', { name: 'Next' }).click()
-  await page.getByLabel('Company name').fill('Kestrel Outfitters')
-  await page.getByLabel('First brand').fill('Kestrel')
+  await page.getByLabel('Company name').fill('MAISON NOOR Group')
+  await page.getByLabel('First brand').fill('MAISON NOOR')
   await page.getByRole('button', { name: 'Next' }).click()
   await page.getByRole('checkbox', { name: 'Nederlands' }).check()
   await page.getByRole('button', { name: 'Next' }).click()
@@ -75,7 +75,7 @@ test('first-run wizard creates the brand and the admin account', async ({ page }
   expect(problems).toEqual([])
 })
 
-const FIX = process.env.OBX_E2E_FIXTURES ?? '../test/fixtures/kestrel'
+const FIX = process.env.OBX_E2E_FIXTURES ?? '../test/fixtures/maison-noor'
 const IMAGES_ZIP = process.env.OBX_E2E_IMAGES_ZIP ?? 'tmp/images.zip'
 const NODE_LOG = process.env.OBX_E2E_NODE_LOG ?? 'tmp/node.log'
 const retailer = { shop: 'Harbour Street Boutique', name: 'Sam Buyer', email: 'buyer@harbour.example', password: 'harbour-shop-2026!' }
@@ -99,7 +99,7 @@ test('a CSV plus a zip of images imports the whole catalog', async ({ page }) =>
   await page.screenshot({ path: 'screenshots/02-import.png', fullPage: true })
   await axe(page, 'import result')
   await page.getByRole('link', { name: 'Catalog' }).first().click()
-  await expect(page.getByText('KO-1001').first()).toBeVisible()
+  await expect(page.getByText('MN-1001').first()).toBeVisible()
   expect(problems).toEqual([])
 })
 
@@ -258,7 +258,7 @@ test('a scheduled import fetches the nightly export from a web address', async (
   const { readFile } = await import('node:fs/promises')
   const pkg = await readFile(process.env.OBX_E2E_PACKAGE_ZIP ?? 'tmp/package.zip')
   const server = createServer((req, res) => {
-    if (req.url !== '/exports/kestrel.zip') return void res.writeHead(404).end()
+    if (req.url !== '/exports/maison-noor.zip') return void res.writeHead(404).end()
     res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Length': pkg.length }).end(pkg)
   })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
@@ -268,7 +268,7 @@ test('a scheduled import fetches the nightly export from a web address', async (
     await page.getByRole('link', { name: 'Automatic upload' }).first().click()
     await page.getByRole('link', { name: 'Add scheduled import' }).or(page.getByRole('button', { name: 'Add scheduled import' })).first().click()
     await page.getByLabel('Name', { exact: true }).fill('Nightly PIM export')
-    await page.getByLabel('Web address of the CSV or zip').fill(`http://127.0.0.1:${port}/exports/kestrel.zip`)
+    await page.getByLabel('Web address of the CSV or zip').fill(`http://127.0.0.1:${port}/exports/maison-noor.zip`)
     await page.getByLabel('How often').selectOption('daily')
     await page.getByRole('button', { name: 'Save' }).click()
     await expect(page.getByText('Nightly PIM export')).toBeVisible()
@@ -298,7 +298,7 @@ test('the brand opens an article in the admin and sees its images', async ({ pag
   const problems = watch(page)
   await logIn(page, admin)
   await page.getByRole('link', { name: 'Catalog' }).first().click()
-  await page.getByRole('link', { name: /KO-1001/ }).first().click()
+  await page.getByRole('link', { name: /MN-1001/ }).first().click()
   await expect(page.getByRole('heading', { level: 1 })).toContainText(/Merino/)
   await expectImagesLoaded(page)
   await page.screenshot({ path: 'screenshots/14-admin-article.png', fullPage: true })
@@ -322,7 +322,7 @@ test('a retailer sees the article data of spec 0.2 on the article page', async (
   const problems = watch(page)
   await logIn(page, retailer)
   await page.getByTestId('language-switcher').first().selectOption('nl')
-  await page.getByRole('link', { name: /KO-1010/ }).first().click()
+  await page.getByRole('link', { name: /MN-1010/ }).first().click()
   await expect(page.getByRole('heading', { level: 1 })).toContainText(/chelsea/i)
   await expect(page.getByText('Materialen schoeisel').first()).toBeVisible()
   await expect(page.getByText('Bovenwerk').first()).toBeVisible()

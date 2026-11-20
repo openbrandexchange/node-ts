@@ -36,7 +36,7 @@ describe("image file names: the spec's shared vectors", () => {
 
 describe("CSV", () => {
   test("delimiter detection, quoting, BOM, CRLF, empty rows", () => {
-    const p = parseCsv('\ufeffStyle Number;Name:en;note\r\n"KO-1";"Crew ""neck""; knit";x\r\n\r\n;;\nKO-2;Tee;"multi\nline"\n');
+    const p = parseCsv('\ufeffStyle Number;Name:en;note\r\n"MN-1";"Crew ""neck""; knit";x\r\n\r\n;;\nMN-2;Tee;"multi\nline"\n');
     expect(p.delimiter).toBe(";");
     expect(p.header.map(normHeader)).toEqual(["style_number", "name:en", "note"]);
     expect(p.rows.map((r) => r.row)).toEqual([1, 4]);
@@ -45,9 +45,9 @@ describe("CSV", () => {
   });
   test("header names (import-format.md §1.1): runs of white space and - are one _, empty names are no column", () => {
     expect(["Style  -  Number", "\tStyle\nNumber ", "style-number", "Name : en", "colour\u00a0code"].map(normHeader)).toEqual(["style_number", "style_number", "style_number", "name:en", "colour\u00a0code"]);
-    const p = parseProductsCsv("brand,Style  Number,,name:en, ,bogus\r\nKestrel,KX-1,x,Tee,y,z\r\n", "products.csv", "en");
+    const p = parseProductsCsv("brand,Style  Number,,name:en, ,bogus\r\nMAISON NOOR,MX-1,x,Tee,y,z\r\n", "products.csv", "en");
     expect(p.errors.map((e) => [e.column, e.detail])).toEqual([["bogus", 'Unknown column "bogus" was ignored.']]);
-    expect(p.groups.map((g) => g.product.style_number)).toEqual(["KX-1"]);
+    expect(p.groups.map((g) => g.product.style_number)).toEqual(["MX-1"]);
   });
   test("writer escapes formulas but keeps numbers", () => {
     const out = writeCsv([["=cmd", "+1", "-x", "@a", "2000100101025", "-12.5", "plain"]], ",", false);
@@ -67,19 +67,19 @@ describe("GTIN", () => {
 
 describe("import format", () => {
   test("image file names are parsed from the right", () => {
-    expect(parseImageName("KO-1001_NVY_1.jpg")).toEqual({ style: "KO-1001", color: "NVY", position: 1, role: null, view: null });
-    expect(parseImageName("KO-1001_NVY_2_back.jpg")).toMatchObject({ position: 2, role: null, view: "back" });
-    expect(parseImageName("KO-1003_RST_3_model.png")).toMatchObject({ style: "KO-1003", role: "model", view: null });
+    expect(parseImageName("MN-1001_NVY_1.jpg")).toEqual({ style: "MN-1001", color: "NVY", position: 1, role: null, view: null });
+    expect(parseImageName("MN-1001_NVY_2_back.jpg")).toMatchObject({ position: 2, role: null, view: "back" });
+    expect(parseImageName("MN-1003_RST_3_model.png")).toMatchObject({ style: "MN-1003", role: "model", view: null });
     expect(parseImageName("AB_12_34_BLK_2_packshot_back.JPG")).toMatchObject({ style: "AB_12_34", color: "BLK", position: 2, role: "packshot", view: "back" });
-    expect(parseImageName("KO-1004_IND_3_detail.jpg")).toMatchObject({ role: "detail", view: "detail" });
-    expect(parseImageName("KO-1002_BLK_4_model_tilted_left.jpg")).toMatchObject({ style: "KO-1002", color: "BLK", position: 4, role: "model", view: "tilted_left" });
-    expect(parseImageName("KO-1001_NVY_5_back_front.jpg")).toMatchObject({ position: 5, role: null, view: "front" });
-    expect(parseImageName("KO-1005_all_4_size_chart.png")).toEqual({ style: "KO-1005", color: null, position: 4, role: "size_chart", view: null });
-    expect(parseImageName("KO-1001_NVY_6_model_other.jpg")).toMatchObject({ role: "model", view: "other" });
-    expect(parseImageName("KO-1001_NVY_6_other.jpg")).toMatchObject({ role: "other", view: null });
-    expect(parseImageName("KO-1001_ALL_2_tilted_right.webp")).toMatchObject({ color: null, view: "tilted_right" });
-    expect("error" in parseImageName("KO-1001_NVY_front.jpg")).toBe(true);
-    expect("error" in parseImageName("KO-1001_NVY_01.jpg")).toBe(true);
+    expect(parseImageName("MN-1004_IND_3_detail.jpg")).toMatchObject({ role: "detail", view: "detail" });
+    expect(parseImageName("MN-1002_BLK_4_model_tilted_left.jpg")).toMatchObject({ style: "MN-1002", color: "BLK", position: 4, role: "model", view: "tilted_left" });
+    expect(parseImageName("MN-1001_NVY_5_back_front.jpg")).toMatchObject({ position: 5, role: null, view: "front" });
+    expect(parseImageName("MN-1005_all_4_size_chart.png")).toEqual({ style: "MN-1005", color: null, position: 4, role: "size_chart", view: null });
+    expect(parseImageName("MN-1001_NVY_6_model_other.jpg")).toMatchObject({ role: "model", view: "other" });
+    expect(parseImageName("MN-1001_NVY_6_other.jpg")).toMatchObject({ role: "other", view: null });
+    expect(parseImageName("MN-1001_ALL_2_tilted_right.webp")).toMatchObject({ color: null, view: "tilted_right" });
+    expect("error" in parseImageName("MN-1001_NVY_front.jpg")).toBe(true);
+    expect("error" in parseImageName("MN-1001_NVY_01.jpg")).toBe(true);
   });
   test("materials grammar", () => {
     // 0.3: codes only; one qualifier code per bracket, in order, repeats dropped; the 0.1 keys organic_* / recycled_* give the first qualifier.
@@ -125,16 +125,16 @@ describe("import format", () => {
     expect("error" in parseMaterials("95.5.5% cotton")).toBe(true);
   });
   test("products.csv: aliases, language columns, first value wins with a warning", () => {
-    const csv = "Style,name,name:de,EAN,Colour Code,size\nKO-1,Trui,Pullover,2000100101018,NVY,S\nKO-1,Other,,2000100101025,NVY,M\n";
+    const csv = "Style,name,name:de,EAN,Colour Code,size\nMN-1,Trui,Pullover,2000100101018,NVY,S\nMN-1,Other,,2000100101025,NVY,M\n";
     const r = parseProductsCsv(csv, "products.csv", "nl");
     expect(r.groups.length).toBe(1);
     expect(r.groups[0].product.name).toEqual({ nl: "Trui", de: "Pullover" });
     // The default variant id is style-colour-size[-size_length], never the GTIN (import-format.md §1.2.1).
-    expect(r.groups[0].variants.map((v) => v.externalId)).toEqual(["KO-1-NVY-S", "KO-1-NVY-M"]);
-    expect(defaultVariantId("KO-1004", "IND", "32/34", "")).toBe("KO-1004-IND-32_34");
-    expect(defaultVariantId("KO-1004", "IND", "32", "34")).toBe("KO-1004-IND-32-34");
-    expect(defaultVariantId("KO-1005", "COG", "ONE SIZE", "")).toBe("KO-1005-COG-ONE SIZE");
-    expect(defaultVariantId("KO-1", "A\tB", "", "")).toBe("KO-1-A_B");
+    expect(r.groups[0].variants.map((v) => v.externalId)).toEqual(["MN-1-NVY-S", "MN-1-NVY-M"]);
+    expect(defaultVariantId("MN-1004", "IND", "32/34", "")).toBe("MN-1004-IND-32_34");
+    expect(defaultVariantId("MN-1004", "IND", "32", "34")).toBe("MN-1004-IND-32-34");
+    expect(defaultVariantId("MN-1005", "COG", "ONE SIZE", "")).toBe("MN-1005-COG-ONE SIZE");
+    expect(defaultVariantId("MN-1", "A\tB", "", "")).toBe("MN-1-A_B");
     expect(r.errors.some((e) => e.severity === "warning" && e.column === "name")).toBe(true);
   });
 });
@@ -218,13 +218,13 @@ describe("multipart scanning by offsets", () => {
   test("finds fields and files", async () => {
     const f = formData([
       { name: "options", data: '{"mode":"upsert"}' },
-      { name: "images", filename: "KO-1_A_1.jpg", type: "image/jpeg", data: new Uint8Array([1, 2, 3, 13, 10, 45, 45]) },
+      { name: "images", filename: "MN-1_A_1.jpg", type: "image/jpeg", data: new Uint8Array([1, 2, 3, 13, 10, 45, 45]) },
     ]);
     const boundary = f.contentType.split("boundary=")[1];
     const parts = await scanMultipart(bytesReader(f.body), f.body.length, boundary);
     expect(parts.map((p) => [p.name, p.filename, p.length])).toEqual([
       ["options", null, 17],
-      ["images", "KO-1_A_1.jpg", 7],
+      ["images", "MN-1_A_1.jpg", 7],
     ]);
     expect([...f.body.slice(parts[1].offset, parts[1].offset + parts[1].length)]).toEqual([1, 2, 3, 13, 10, 45, 45]);
   });
@@ -259,7 +259,7 @@ describe("e-mail delivery", () => {
     let answers = [503, 429, 200];
     const srv = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("", { status: (seen.push(1), answers.shift() ?? 200) }) });
     try {
-      const m = httpMailer({ provider: "webhook", from: "portal@kestrel.example", webhookUrl: `http://127.0.0.1:${srv.port}/mail`, retryDelaysMs: [5, 5] });
+      const m = httpMailer({ provider: "webhook", from: "portal@maison-noor.example", webhookUrl: `http://127.0.0.1:${srv.port}/mail`, retryDelaysMs: [5, 5] });
       await m.send({ to: "a@b.example", subject: "s", text: "t", html: "h" });
       expect(seen.length).toBe(3);
       answers = [422];

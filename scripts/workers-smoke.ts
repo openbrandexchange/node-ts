@@ -35,7 +35,7 @@ const proc = Bun.spawn(
     "--var",
     "OBX_MAIL_PROVIDER:console",
     "--var",
-    "OBX_MAIL_FROM:portal@kestrel.example",
+    "OBX_MAIL_FROM:portal@maison-noor.example",
   ],
   { cwd: join(import.meta.dir, ".."), stdout: "pipe", stderr: "pipe", env: { ...process.env, WRANGLER_SEND_METRICS: "false" } },
 );
@@ -95,14 +95,14 @@ try {
   check((await call("GET", "/.well-known/obx")).status === 503, "discovery answers 503 before setup");
   await call("GET", "/admin/api/session");
   const setup = await call("POST", "/admin/api/setup", {
-    json: { setup_code: code, company: { name: "Kestrel Outfitters", first_brand_name: "Kestrel", default_language: "nl", languages: ["nl", "en"] }, admin: { name: "Ada", email: "admin@kestrel.example", password: "correct horse battery staple" } },
+    json: { setup_code: code, company: { name: "MAISON NOOR Group", first_brand_name: "MAISON NOOR", default_language: "nl", languages: ["nl", "en"] }, admin: { name: "Ada", email: "admin@maison-noor.example", password: "correct horse battery staple" } },
   });
   check(setup.status === 201, "setup wizard completes on D1");
   const tok = await call("POST", "/admin/api/ingest-tokens", { json: { name: "smoke", scopes: ["ingest:read", "ingest:write", "ingest:delete"] } });
   const it = tok.json.secret as string;
   check(it?.startsWith("obxi_"), "ingest token created");
-  check((await call("PUT", "/obx/v1/ingest/products/KO-1001", { bearer: it, json: { style_number: "KO-1001", name: { en: "Merino Crew Sweater" } } })).status === 201, "product created via ingest");
-  check((await call("PUT", "/obx/v1/ingest/variants/2000100101025", { bearer: it, json: { product_external_id: "KO-1001", gtin: "2000100101025", color: { code: "NVY" }, size: "M" } })).status === 201, "variant created");
+  check((await call("PUT", "/obx/v1/ingest/products/MN-1001", { bearer: it, json: { style_number: "MN-1001", name: { en: "Fine Merino Crew-Neck Sweater" } } })).status === 201, "product created via ingest");
+  check((await call("PUT", "/obx/v1/ingest/variants/2000100101025", { bearer: it, json: { product_external_id: "MN-1001", gtin: "2000100101025", color: { code: "NVY" }, size: "M" } })).status === 201, "variant created");
   const files: Record<string, { sha256: string }> = {};
   for (const [name, w, h] of [
     ["original", 1200, 1500],
@@ -116,7 +116,7 @@ try {
     check(up.status === 201, `blob ${name} stored in R2`);
     files[name] = { sha256: sha };
   }
-  check((await call("PUT", "/obx/v1/ingest/assets/KO-1001_NVY_1", { bearer: it, json: { product_external_id: "KO-1001", color_code: "NVY", role: "packshot", view: "front", position: 1, files } })).json?.visibility === "visible", "asset visible with client renditions");
+  check((await call("PUT", "/obx/v1/ingest/assets/MN-1001_NVY_1", { bearer: it, json: { product_external_id: "MN-1001", color_code: "NVY", role: "packshot", view: "front", position: 1, files } })).json?.visibility === "visible", "asset visible with client renditions");
 
   const ret = await call("POST", "/admin/api/retailers", { json: { name: "Smoke Shop" } });
   const cl = await call("POST", "/admin/api/api-clients", { json: { retailer_id: ret.json.id, name: "sync" } });
@@ -136,8 +136,8 @@ try {
   // Import job through the cron path (Workers: jobs run in waitUntil / the minute tick).
   const zip = await zipBytes(
     [
-      { name: "products.csv", data: new TextEncoder().encode("style_number,name:en,gtin,color_code,size\nKO-2002,Tee,2000999900013,BLK,M\n") },
-      { name: "KO-2002_BLK_1.jpg", data: fakeJpeg(800, 1000, 7) },
+      { name: "products.csv", data: new TextEncoder().encode("style_number,name:en,gtin,color_code,size\nMN-2002,Tee,2000999900013,BLK,M\n") },
+      { name: "MN-2002_BLK_1.jpg", data: fakeJpeg(800, 1000, 7) },
     ],
     crc32,
   );

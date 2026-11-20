@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeAll } from "bun:test";
-import { TestNode, importKestrel, addRenditions, fixtureText, fixtureBytes, match, type Browser } from "./helpers";
+import { TestNode, importMaisonNoor, addRenditions, fixtureText, fixtureBytes, match, type Browser } from "./helpers";
 import { sha256Hex } from "../src/lib/crypto";
 import { readZipDirectory, readZipEntry } from "../src/lib/zip";
 import { bytesReader } from "../src/lib/multipart";
@@ -15,7 +15,7 @@ beforeAll(async () => {
   node = new TestNode();
   admin = await node.setup();
   token = await node.ingestToken(admin);
-  await importKestrel(node, token);
+  await importMaisonNoor(node, token);
   await addRenditions(node, token);
   full = await node.retailerClient(admin, { name: "Full Retailer", scopes: ["catalog:read", "media:read", "media:original", "usage:write"] });
   at = await node.accessToken(full.clientId, full.secret);
@@ -57,7 +57,7 @@ describe("OAuth2 token endpoint and bearer auth (P-AUTH-1, P-AUTH-2)", () => {
     expect(none.json.obx_error).toBe("unauthorized");
     expect((await node.api("obxa_garbage", "GET", "/obx/v1/changes")).json.obx_error).toBe("invalid_token");
     const narrow = await node.accessToken(full.clientId, full.secret, "catalog:read");
-    const id = await assetId("KO-1001_NVY_1");
+    const id = await assetId("MN-1001_NVY_1");
     expect((await node.api(narrow, "GET", `/obx/v1/assets/${id}`)).json.obx_error).toBe("insufficient_scope");
     const tmp = await node.retailerClient(admin, { name: "Soon Revoked" });
     const t = await node.accessToken(tmp.clientId, tmp.secret);
@@ -112,19 +112,19 @@ describe("change feed (P-FEED-1..4, P-FEED-6, P-FEED-7)", () => {
     expect((await keys.unseal<{ e?: number }>("cursor", restart.cursor))!.e).toBe(CURSOR_EPOCH);
   });
 
-  test("a retailer restricted to kestrel never sees kestrel-trail (P-FEED-4, A-PORT-2)", async () => {
-    const r = await node.retailerClient(admin, { name: "Kestrel Only", brand_ids: [brandIds["kestrel"]] });
+  test("a retailer restricted to maison-noor never sees noor-atelier (P-FEED-4, A-PORT-2)", async () => {
+    const r = await node.retailerClient(admin, { name: "MAISON NOOR Only", brand_ids: [brandIds["maison-noor"]] });
     const t = await node.accessToken(r.clientId, r.secret);
     const f = await node.feed(t);
     expect(f.entries.length).toBeGreaterThan(0);
-    expect(f.entries.every((e) => e.type === "grant" || e.brand_id === brandIds["kestrel"])).toBe(true);
-    const trail = await node.platform.db.first<{ id: string }>("SELECT id FROM products WHERE brand_id = ?", [brandIds["kestrel-trail"]]);
+    expect(f.entries.every((e) => e.type === "grant" || e.brand_id === brandIds["maison-noor"])).toBe(true);
+    const trail = await node.platform.db.first<{ id: string }>("SELECT id FROM products WHERE brand_id = ?", [brandIds["noor-atelier"]]);
     const notFound = await node.api(t, "GET", `/obx/v1/products/${trail!.id}`);
     expect(notFound.status).toBe(404);
-    const gtin = await node.platform.db.first<{ gtin14: string }>("SELECT gtin14 FROM variants WHERE brand_id = ?", [brandIds["kestrel-trail"]]);
+    const gtin = await node.platform.db.first<{ gtin14: string }>("SELECT gtin14 FROM variants WHERE brand_id = ?", [brandIds["noor-atelier"]]);
     const look = await node.api(t, "POST", "/obx/v1/products:by-gtin", { json: { gtins: [gtin!.gtin14] } });
     expect(look.json.results[0].status).toBe("unmatched");
-    expect((await node.api(t, "GET", `/obx/v1/brands/${brandIds["kestrel-trail"]}`)).status).toBe(404);
+    expect((await node.api(t, "GET", `/obx/v1/brands/${brandIds["noor-atelier"]}`)).status).toBe(404);
     // grant change → grant entry with resync
     await admin.req("PATCH", `/admin/api/retailers/${r.retailer.id}`, { json: { brand_ids: null } });
     const after = await node.feed(t, f.cursor);
@@ -133,12 +133,12 @@ describe("change feed (P-FEED-1..4, P-FEED-6, P-FEED-7)", () => {
     expect(g.data.brand_ids).toBeNull();
     // unpublishing a brand writes tombstones for it and everything under it
     const trailOnly = await node.feed(t);
-    await node.api(token, "PATCH", "/obx/v1/ingest/brands/kestrel-trail", { json: { status: "unpublished" }, headers: { "content-type": "application/merge-patch+json" } });
+    await node.api(token, "PATCH", "/obx/v1/ingest/brands/noor-atelier", { json: { status: "unpublished" }, headers: { "content-type": "application/merge-patch+json" } });
     const tomb = await node.feed(t, trailOnly.cursor);
-    expect(tomb.entries[0]).toMatchObject({ type: "brand", op: "delete", external_id: "kestrel-trail" });
-    const trailCount = trailOnly.entries.filter((e) => e._phase === "snapshot" && e.brand_id === brandIds["kestrel-trail"]).length;
+    expect(tomb.entries[0]).toMatchObject({ type: "brand", op: "delete", external_id: "noor-atelier" });
+    const trailCount = trailOnly.entries.filter((e) => e._phase === "snapshot" && e.brand_id === brandIds["noor-atelier"]).length;
     expect(tomb.entries.filter((e) => e.op === "delete").length).toBe(trailCount);
-    await node.api(token, "PATCH", "/obx/v1/ingest/brands/kestrel-trail", { json: { status: "published" }, headers: { "content-type": "application/merge-patch+json" } });
+    await node.api(token, "PATCH", "/obx/v1/ingest/brands/noor-atelier", { json: { status: "published" }, headers: { "content-type": "application/merge-patch+json" } });
     const back = await node.feed(t, tomb.cursor);
     expect(back.entries.filter((e) => e.op === "upsert").length).toBe(trailCount);
   });
@@ -179,17 +179,17 @@ describe("catalog reads (P-CAT-2..4)", () => {
   });
 
   test("an unpublished product is 404, never 403", async () => {
-    await node.api(token, "PATCH", "/obx/v1/ingest/products/KO-1006", { json: { status: "unpublished" }, headers: { "content-type": "application/merge-patch+json" } });
-    const r = await node.api(at, "GET", `/obx/v1/products/${await productId("KO-1006")}`);
+    await node.api(token, "PATCH", "/obx/v1/ingest/products/MN-1006", { json: { status: "unpublished" }, headers: { "content-type": "application/merge-patch+json" } });
+    const r = await node.api(at, "GET", `/obx/v1/products/${await productId("MN-1006")}`);
     expect(r.status).toBe(404);
     expect(r.json.obx_error).toBe("not_found");
-    await node.api(token, "PATCH", "/obx/v1/ingest/products/KO-1006", { json: { status: "published" }, headers: { "content-type": "application/merge-patch+json" } });
+    await node.api(token, "PATCH", "/obx/v1/ingest/products/MN-1006", { json: { status: "published" }, headers: { "content-type": "application/merge-patch+json" } });
   });
 });
 
 describe("media (P-MEDIA-2, P-MEDIA-3, P-AUTH-3)", () => {
   test("renditions: hash, ETag, Range, If-None-Match, signed URL without Authorization; originals byte-identical", async () => {
-    const id = await assetId("KO-1002_OLV_1");
+    const id = await assetId("MN-1002_OLV_1");
     const a = (await node.api(at, "GET", `/obx/v1/assets/${id}`)).json;
     for (const name of ["original", "web", "square", "thumb"]) {
       const rend = a.renditions[name];
@@ -199,9 +199,9 @@ describe("media (P-MEDIA-2, P-MEDIA-3, P-AUTH-3)", () => {
       expect(res.headers.get("etag")).toBe(`"${rend.sha256}"`);
       expect(res.headers.get("obx-content-sha256")).toBe(rend.sha256);
       expect(res.headers.get("accept-ranges")).toBe("bytes");
-      expect(res.headers.get("content-disposition")).toContain(name === "original" ? "KO-1002_OLV_1_front.png" : `KO-1002_OLV_1_front_${name}.jpg`);
+      expect(res.headers.get("content-disposition")).toContain(name === "original" ? "MN-1002_OLV_1_front.png" : `MN-1002_OLV_1_front_${name}.jpg`);
     }
-    const orig = fixtureBytes("kestrel/images/KO-1002_OLV_1_front.png");
+    const orig = fixtureBytes("maison-noor/images/MN-1002_OLV_1_front.png");
     const path = `/obx/v1/assets/${id}/renditions/original`;
     const bearer = await node.api(at, "GET", path);
     expect(bearer.bytes).toEqual(orig);
@@ -233,12 +233,12 @@ describe("media (P-MEDIA-2, P-MEDIA-3, P-AUTH-3)", () => {
   test("a retailer without originals never gets the original rendition", async () => {
     const r = await node.retailerClient(admin, { name: "No Originals", allow_original: false });
     const t = await node.accessToken(r.clientId, r.secret);
-    const id = await assetId("KO-1001_NVY_1");
+    const id = await assetId("MN-1001_NVY_1");
     const a = await node.api(t, "GET", `/obx/v1/assets/${id}`);
     expect(match(JSON.parse(fixtureText("expected/asset-without-original-scope.json")), a.json)).toEqual([]);
     const o = await node.api(t, "GET", `/obx/v1/assets/${id}/renditions/original`);
     expect(o.status).toBe(403);
-    const p = await node.api(t, "GET", `/obx/v1/products/${await productId("KO-1001")}`);
+    const p = await node.api(t, "GET", `/obx/v1/products/${await productId("MN-1001")}`);
     expect(p.json.assets.every((x: any) => !x.renditions.original)).toBe(true);
   });
 });
@@ -303,8 +303,8 @@ describe("access request from the web form: the brand shows the key", () => {
 });
 
 describe("exports, usage, rate limits (P-EXP-1, P-USE-1, P-RATE-1, P-ERR-1)", () => {
-  test("export of brand kestrel with web renditions: manifest and zip parts agree", async () => {
-    const body = { filter: { brand_ids: [brandIds["kestrel"]] }, renditions: ["web"] };
+  test("export of brand maison-noor with web renditions: manifest and zip parts agree", async () => {
+    const body = { filter: { brand_ids: [brandIds["maison-noor"]] }, renditions: ["web"] };
     const r = await node.api(at, "POST", "/obx/v1/exports", { json: body, headers: { "idempotency-key": "exp-1" } });
     expect(r.status).toBe(202);
     // The same key and body while it runs: the same export (not 409 conflict); another body: 409 idempotency_key_reused.
@@ -320,7 +320,7 @@ describe("exports, usage, rate limits (P-EXP-1, P-USE-1, P-RATE-1, P-ERR-1)", ()
     expect(lines[0].type).toBe("header");
     const types = lines.map((l) => l.type);
     expect(types.indexOf("file")).toBeGreaterThan(types.lastIndexOf("asset"));
-    expect(lines.filter((l) => l.type === "brand").every((l) => l.data.id === brandIds["kestrel"])).toBe(true);
+    expect(lines.filter((l) => l.type === "brand").every((l) => l.data.id === brandIds["maison-noor"])).toBe(true);
     const part = e.parts[0];
     const zip = await node.request("GET", new URL(part.url).pathname + new URL(part.url).search);
     expect(await sha256Hex(zip.bytes)).toBe(part.sha256);
@@ -338,7 +338,7 @@ describe("exports, usage, rate limits (P-EXP-1, P-USE-1, P-RATE-1, P-ERR-1)", ()
   });
 
   test("usage events are accepted and show up in the brand's statistics", async () => {
-    const id = await assetId("KO-1001_NVY_1");
+    const id = await assetId("MN-1001_NVY_1");
     const r = await node.api(at, "POST", "/obx/v1/usage", { json: { events: [{ asset_id: id, event: "published", channel: "webshop", at: "2026-09-28T10:00:00Z" }, { asset_id: "ast_unknown", event: "synced", at: "2026-09-28T10:00:00Z" }] } });
     expect(r.status).toBe(202);
     expect(r.json.accepted).toBe(1);
@@ -369,7 +369,7 @@ describe("exports, usage, rate limits (P-EXP-1, P-USE-1, P-RATE-1, P-ERR-1)", ()
 
 describe("conditional product reads", () => {
   test("If-None-Match uses the weak comparison (a CDN that compresses sends W/\"…\" back)", async () => {
-    const id = await productId("KO-1001");
+    const id = await productId("MN-1001");
     const first = await node.api(at, "GET", `/obx/v1/products/${id}`);
     const etag = first.headers.get("etag")!;
     expect(etag).toMatch(/^"[0-9a-f]{64}"$/);

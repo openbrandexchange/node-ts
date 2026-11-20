@@ -21,6 +21,10 @@ always forward-only and applied automatically.
   images, 2 MiB per upload).
 
 ### Changed
+- Demo and test data follow spec 0.3.1 (spec 7a4c9ef): the fixtures' fictional brand is now MAISON NOOR instead of
+  Kestrel (brands `maison-noor` and `noor-atelier`, article numbers MN-/NA-, `test/fixtures/maison-noor`). The demo
+  brand is `brd_demo_maison_noor` with external id `maison-noor`, its admin `brand@maison-noor.example`; `bun run dev`
+  logs in as `admin@maison-noor.example` with setup code `NOOR-LOCAL`. CI runs the conformance suite of obx-go 281193b.
 - Fewer database round trips per request (on D1 each one is a network call): the session, its user and retailer in
   one batch; settings, setup flag and demo state shared by the requests of an isolate for 5 seconds; facets,
   product list, viewer and signed renditions read in one or two batches; public reads skip the session. Portal

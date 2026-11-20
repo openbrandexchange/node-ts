@@ -17,7 +17,7 @@ The protocol has precise technical terms. People using a portal should never nee
 | node | say portal (or the edition name in docs) |
 | tombstone / cursor | never shown |
 
-2. **The portal is called "<Brand name> · <portal word>"**, for example *Kestrel · Beeldbank* (Dutch) or *Kestrel · Brand portal* (English). The portal word below is the default per language. A brand MAY set its own word per language in its settings (`branding.portal_name`, a text per language); for a reader's language without its own text the portal uses the brand's `en` text, then its first text, then the word below.
+2. **The portal is called "<Brand name> · <portal word>"**, for example *MAISON NOOR · Beeldbank* (Dutch) or *MAISON NOOR · Brand portal* (English). The portal word below is the default per language. A brand MAY set its own word per language in its settings (`branding.portal_name`, a text per language); for a reader's language without its own text the portal uses the brand's `en` text, then its first text, then the word below.
 3. **EAN, not GTIN**, everywhere a person reads it (APIs and CSV columns keep `gtin`).
 4. **"Works with Open Brand Exchange"** appears only as a small badge in the footer. The project name is not a product name and does not appear in headings, e-mail subjects or page titles.
 5. **Plain verbs.** "Download", "Request access", "Invite", "Block". Confirm success where the action happened; do not celebrate.

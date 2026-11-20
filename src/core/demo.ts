@@ -17,7 +17,7 @@ import type { Stmt } from "../platform";
 
 /** Fixed ids, so sessions survive a reset and the public API key never changes. */
 export const DEMO = {
-  brandId: "brd_demo_kestrel",
+  brandId: "brd_demo_maison_noor",
   brandUser: "usr_demo_brand",
   retailer: "rtl_demo_northwind",
   retailerUser: "usr_demo_retailer",
@@ -210,7 +210,7 @@ export async function resetDemo(ctx: Ctx): Promise<DemoState> {
 
   // 3. Accounts, retailers, the public API key, an open access request.
   const s = defaultSettings();
-  // The showroom brand of the demo (the catalogue underneath is still the spec's Kestrel fixtures).
+  // The showroom brand of the demo (the catalogue underneath is the spec's MAISON NOOR fixtures).
   s.company = { name: "Maison Noor", website: "https://maison-noor.example", contact_email: "trade@maison-noor.example", country: "NL" };
   s.branding.display_name = "MAISON NOOR";
   s.branding.accent_color = "#1B1A19";
@@ -228,7 +228,7 @@ export async function resetDemo(ctx: Ctx): Promise<DemoState> {
     s.branding.login = look.login ?? null;
     s.branding.home = look.home ?? null;
   }
-  const stored = JSON.stringify({ description: null, logo_url: null, name: "Kestrel", website: "https://kestrel.example" });
+  const stored = JSON.stringify({ description: null, logo_url: null, name: "MAISON NOOR", website: "https://maison-noor.example" });
   const brandEtag = `"${(await sha256Hex(canonicalJson({ ...JSON.parse(stored), status: "published" }))).slice(0, 32)}"`;
   const retailers: [string, string, string, string | null, number | null, "active" | "blocked"][] = [
     [DEMO.retailer, "Northwind Stores", "NWS-001", null, null, "active"],
@@ -236,7 +236,7 @@ export async function resetDemo(ctx: Ctx): Promise<DemoState> {
     ["rtl_demo_lumen", "Lumen Concept Store", "LMN-207", null, null, "blocked"],
   ];
   const users: [string, string, string, "admin" | "retailer", string | null][] = [
-    [DEMO.brandUser, "brand@kestrel.example", "Demo brand admin", "admin", null],
+    [DEMO.brandUser, "brand@maison-noor.example", "Demo brand admin", "admin", null],
     [DEMO.retailerUser, "buyer@northwind.example", "Demo retailer", "retailer", DEMO.retailer],
     ["usr_demo_harbour", "orders@harbour.example", "Harbour buyer", "retailer", "rtl_demo_harbour"],
   ];
@@ -248,10 +248,10 @@ export async function resetDemo(ctx: Ctx): Promise<DemoState> {
     })),
     ctx.metaStmt("setup_completed_at", now),
     {
-      sql: "INSERT INTO brands (id, external_id, status, stored, rep_hash, etag, created_at, updated_at, modified_at) VALUES (?, 'kestrel', 'published', ?, '', ?, ?, ?, ?)",
+      sql: "INSERT INTO brands (id, external_id, status, stored, rep_hash, etag, created_at, updated_at, modified_at) VALUES (?, 'maison-noor', 'published', ?, '', ?, ?, ?, ?)",
       params: [DEMO.brandId, stored, brandEtag, now, now, now],
     },
-    { sql: "INSERT INTO changes (type, op, obj_id, external_id, brand_id, product_id, updated_at, created_at) VALUES ('brand', 'upsert', ?, 'kestrel', ?, NULL, ?, ?)", params: [DEMO.brandId, DEMO.brandId, now, now] },
+    { sql: "INSERT INTO changes (type, op, obj_id, external_id, brand_id, product_id, updated_at, created_at) VALUES ('brand', 'upsert', ?, 'maison-noor', ?, NULL, ?, ?)", params: [DEMO.brandId, DEMO.brandId, now, now] },
     ...retailers.map(([id, name, ref, brands, orig, status]) => ({
       sql: "INSERT INTO retailers (id, name, reference, website, vat_number, country, notes, status, brand_ids, allow_original, grant_updated_at, created_at) VALUES (?, ?, ?, NULL, NULL, 'NL', 'Fictional retailer (demo).', ?, ?, ?, ?, ?)",
       params: [id, name, ref, status, brands, orig, now, now],
@@ -270,7 +270,7 @@ export async function resetDemo(ctx: Ctx): Promise<DemoState> {
       params: [
         JSON.stringify({ name: "Fjord Outdoor", reference: null, website: "https://fjord.example", vat_number: null, country: "NO" }),
         JSON.stringify({ name: "Ingrid Berg", email: "ingrid@fjord.example", phone: null, language: "en" }),
-        "We would like to sell the Kestrel collection in our three stores.",
+        "We would like to sell the MAISON NOOR collection in our three stores.",
         await tokenHash(`demo-${now}`),
         ctx.iso(-2 * 3600_000),
       ],

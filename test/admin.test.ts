@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TestNode, importKestrel, addRenditions, fixtureText, kestrelImages, fixtureBytes } from "./helpers";
+import { TestNode, importMaisonNoor, addRenditions, fixtureText, maisonNoorImages, fixtureBytes } from "./helpers";
 import { webhookSignature, hmacHex } from "../src/lib/crypto";
 import { zipBytes } from "../src/lib/zip";
 import { crc32 } from "../src/lib/crypto";
@@ -24,7 +24,7 @@ describe("API keys and automatic-upload tokens (A-KEY-1)", () => {
     expect(t.json.secret).toMatch(/^obxi_/);
     expect(t.json.token.prefix).toBe(t.json.secret.slice(0, 12));
     expect((await node.api(t.json.secret, "GET", "/obx/v1/ingest")).json.renditions.server_generated).toBe(false);
-    const del = await node.api(t.json.secret, "DELETE", "/obx/v1/ingest/brands/kestrel");
+    const del = await node.api(t.json.secret, "DELETE", "/obx/v1/ingest/brands/maison-noor");
     expect(del.json.obx_error).toBe("insufficient_scope");
     const r2 = await admin.req("POST", `/admin/api/ingest-tokens/${t.json.token.id}/rotate`);
     expect((await node.api(t.json.secret, "GET", "/obx/v1/ingest")).json.obx_error).toBe("invalid_token");
@@ -37,8 +37,8 @@ describe("API keys and automatic-upload tokens (A-KEY-1)", () => {
     const admin = await node.setup();
     const all = await node.ingestToken(admin);
     await node.api(all, "PUT", "/obx/v1/ingest/brands/other", { json: { name: "Other" } });
-    const only = await node.ingestToken(admin, ["ingest:read", "ingest:write"], ["kestrel"]);
-    const ok = await node.api(only, "PUT", "/obx/v1/ingest/products/P-1", { json: { brand_external_id: "kestrel", style_number: "P-1", name: { en: "One" } } });
+    const only = await node.ingestToken(admin, ["ingest:read", "ingest:write"], ["maison-noor"]);
+    const ok = await node.api(only, "PUT", "/obx/v1/ingest/products/P-1", { json: { brand_external_id: "maison-noor", style_number: "P-1", name: { en: "One" } } });
     expect(ok.status).toBe(201);
     const no = await node.api(only, "PUT", "/obx/v1/ingest/products/P-2", { json: { brand_external_id: "other", style_number: "P-2", name: { en: "Two" } } });
     expect(no.status).toBe(403);
@@ -51,7 +51,7 @@ describe("files and validation (I-FILE-1, I-FILE-2, I-VAL-1)", () => {
     const node = new TestNode();
     const admin = await node.setup();
     const token = await node.ingestToken(admin);
-    const img = fixtureBytes("kestrel/images/KO-1001_NVY_1_front.png");
+    const img = fixtureBytes("maison-noor/images/MN-1001_NVY_1_front.png");
     const { sha256Hex } = await import("../src/lib/crypto");
     const sha = await sha256Hex(img);
     expect((await node.api(token, "HEAD", `/obx/v1/ingest/blobs/${sha}`)).status).toBe(404);
@@ -60,8 +60,8 @@ describe("files and validation (I-FILE-1, I-FILE-2, I-VAL-1)", () => {
     expect((await node.api(token, "HEAD", `/obx/v1/ingest/blobs/${sha}`)).status).toBe(200);
     const mismatch = await node.api(token, "PUT", `/obx/v1/ingest/blobs/${"a".repeat(64)}`, { body: img, headers: { "content-type": "image/png" } });
     expect(mismatch.json.obx_error).toBe("checksum_mismatch");
-    await node.api(token, "PUT", "/obx/v1/ingest/products/KO-1", { json: { style_number: "KO-1", name: { en: "X" } } });
-    const missing = await node.api(token, "PUT", "/obx/v1/ingest/assets/KO-1_A_1", { json: { product_external_id: "KO-1", color_code: "A", role: "packshot", position: 1, files: { original: { sha256: "b".repeat(64) } } } });
+    await node.api(token, "PUT", "/obx/v1/ingest/products/MN-1", { json: { style_number: "MN-1", name: { en: "X" } } });
+    const missing = await node.api(token, "PUT", "/obx/v1/ingest/assets/MN-1_A_1", { json: { product_external_id: "MN-1", color_code: "A", role: "packshot", position: 1, files: { original: { sha256: "b".repeat(64) } } } });
     expect(missing.status).toBe(422);
     expect(missing.json.obx_error).toBe("blob_missing");
     // 12 MiB file in 8 MiB parts: completing with a part missing is upload_incomplete, then resume.
@@ -123,17 +123,17 @@ describe("admin catalog = ingest semantics (A-CAT-1)", () => {
     const cl = await node.retailerClient(admin);
     const at = await node.accessToken(cl.clientId, cl.secret);
     const f0 = await node.feed(at);
-    const put = await admin.req("PUT", "/admin/api/catalog/products/KO-9", { json: { style_number: "KO-9", name: { en: "Nine" } } });
+    const put = await admin.req("PUT", "/admin/api/catalog/products/MN-9", { json: { style_number: "MN-9", name: { en: "Nine" } } });
     expect(put.status).toBe(201);
     expect(put.json.result).toBe("created");
-    expect((await admin.req("PUT", "/admin/api/catalog/products/KO-9", { json: { style_number: "KO-9", name: { en: "Nine" } } })).json.result).toBe("unchanged");
+    expect((await admin.req("PUT", "/admin/api/catalog/products/MN-9", { json: { style_number: "MN-9", name: { en: "Nine" } } })).json.result).toBe("unchanged");
     const f1 = await node.feed(at, f0.cursor);
-    expect(f1.entries.map((e) => `${e.type}:${e.op}:${e.external_id}`)).toEqual(["product:upsert:KO-9"]);
+    expect(f1.entries.map((e) => `${e.type}:${e.op}:${e.external_id}`)).toEqual(["product:upsert:MN-9"]);
     const list = await admin.req("GET", "/admin/api/catalog/products?q=nine");
     expect(list.json.total).toBe(1);
-    const detail = await admin.req("GET", "/admin/api/catalog/products/KO-9");
-    expect(detail.json.record.data.style_number).toBe("KO-9");
-    await admin.req("PATCH", "/admin/api/catalog/products/KO-9", { json: { status: "unpublished" }, headers: { "content-type": "application/merge-patch+json" } });
+    const detail = await admin.req("GET", "/admin/api/catalog/products/MN-9");
+    expect(detail.json.record.data.style_number).toBe("MN-9");
+    await admin.req("PATCH", "/admin/api/catalog/products/MN-9", { json: { status: "unpublished" }, headers: { "content-type": "application/merge-patch+json" } });
     expect((await node.feed(at, f1.cursor)).entries.map((e) => `${e.type}:${e.op}`)).toEqual(["product:delete"]);
   });
 });
@@ -154,7 +154,7 @@ describe("settings effects", () => {
     const node = new TestNode();
     const admin = await node.setup();
     const token = await node.ingestToken(admin);
-    await importKestrel(node, token);
+    await importMaisonNoor(node, token);
     await addRenditions(node, token);
     const cl = await node.retailerClient(admin);
     const at = await node.accessToken(cl.clientId, cl.secret);
@@ -177,9 +177,9 @@ describe("settings effects", () => {
     const admin = await node.setup();
     const me = (await admin.req("GET", "/admin/api/session")).json.user;
     expect((await admin.req("PATCH", `/admin/api/users/${me.id}`, { json: { status: "blocked" } })).status).toBe(409);
-    const inv = await admin.req("POST", "/admin/api/users/invites", { json: { email: "second@kestrel.example", role: "admin" } });
+    const inv = await admin.req("POST", "/admin/api/users/invites", { json: { email: "second@maison-noor.example", role: "admin" } });
     expect(inv.json.email_sent).toBe(true);
-    expect((await admin.req("POST", "/admin/api/users/invites", { json: { email: "second@kestrel.example", role: "admin" } })).status).toBe(409);
+    expect((await admin.req("POST", "/admin/api/users/invites", { json: { email: "second@maison-noor.example", role: "admin" } })).status).toBe(409);
     const re = await admin.req("POST", `/admin/api/users/${inv.json.user.id}/resend-invite`);
     expect(re.json.invite_url).not.toBe(inv.json.invite_url);
     const oldTok = inv.json.invite_url.split("/invite/")[1];
@@ -191,9 +191,9 @@ describe("settings effects", () => {
     await node.setup();
     const b = await node.browser();
     expect((await b.req("POST", "/admin/api/password/forgot", { json: { email: "nobody@x.example" } })).status).toBe(202);
-    expect((await b.req("POST", "/admin/api/password/forgot", { json: { email: "admin@kestrel.example" } })).status).toBe(202);
+    expect((await b.req("POST", "/admin/api/password/forgot", { json: { email: "admin@maison-noor.example" } })).status).toBe(202);
     await node.drain();
-    const mail = node.mails.find((m) => m.to === "admin@kestrel.example")!;
+    const mail = node.mails.find((m) => m.to === "admin@maison-noor.example")!;
     const tok = mail.text.match(/reset-password\/([A-Za-z0-9_-]+)/)![1];
     const r = await b.req("POST", "/admin/api/password/reset", { json: { token: tok, password: "brand new secret phrase" } });
     expect(r.status).toBe(200);
@@ -208,10 +208,10 @@ describe("e-mail links never follow a forged Host header", () => {
     const b = await node.browser();
     // Without OBX_PUBLIC_URL an attacker could otherwise send the victim a
     // reset link pointing at their own host (password reset poisoning).
-    const r = await b.req("POST", "http://evil.example/admin/api/password/forgot", { json: { email: "admin@kestrel.example" } });
+    const r = await b.req("POST", "http://evil.example/admin/api/password/forgot", { json: { email: "admin@maison-noor.example" } });
     expect(r.status).toBe(202);
     await node.drain();
-    const mail = node.mails.find((m) => m.to === "admin@kestrel.example")!;
+    const mail = node.mails.find((m) => m.to === "admin@maison-noor.example")!;
     expect(mail.text).not.toContain("evil.example");
     expect(mail.text).toContain("http://localhost/reset-password/");
   });
@@ -247,7 +247,7 @@ describe("webhooks (P-HOOK-1) and brand webhooks", () => {
       const hook = await admin.req("POST", "/admin/api/webhooks", { json: { url: `http://127.0.0.1:${server.port}/brand`, events: ["import_run.completed"] } });
       expect(hook.status).toBe(201);
       const token = await node.ingestToken(admin);
-      await importKestrel(node, token);
+      await importMaisonNoor(node, token);
       await node.drain();
       expect(got.some((g) => JSON.parse(g.body).type === "import_run.completed")).toBe(true);
       // changes.available wake-up after writes
@@ -278,9 +278,9 @@ describe("scheduled pull import (https URL)", () => {
   test("imports a package from a URL, skips unchanged files, credentials stay write-only", async () => {
     const zip = await zipBytes(
       [
-        { name: "products.csv", data: new TextEncoder().encode(fixtureText("kestrel/products.csv")) },
-        { name: "assets.csv", data: new TextEncoder().encode(fixtureText("kestrel/assets.csv")) },
-        ...kestrelImages().map((i) => ({ name: `images/${i.name}`, data: i.bytes })),
+        { name: "products.csv", data: new TextEncoder().encode(fixtureText("maison-noor/products.csv")) },
+        { name: "assets.csv", data: new TextEncoder().encode(fixtureText("maison-noor/assets.csv")) },
+        ...maisonNoorImages().map((i) => ({ name: `images/${i.name}`, data: i.bytes })),
       ],
       crc32,
     );
@@ -295,7 +295,7 @@ describe("scheduled pull import (https URL)", () => {
           kind: "https_url",
           schedule: { frequency: "daily", time: "02:30", timezone: "Europe/Amsterdam" },
           mode: "upsert",
-          config: { url: `http://127.0.0.1:${server.port}/kestrel.zip` },
+          config: { url: `http://127.0.0.1:${server.port}/maison-noor.zip` },
           credentials: { headers: { Authorization: "Bearer pim-secret" } },
         },
       });
@@ -330,7 +330,7 @@ describe("sign-in throttling", () => {
   test("successful sign-ins are not limited; ten failures lock the account and the address for a while", async () => {
     const node = new TestNode();
     await node.setup();
-    const login = async (password: string) => (await node.browser()).req("POST", "/admin/api/session/login", { json: { email: "admin@kestrel.example", password } });
+    const login = async (password: string) => (await node.browser()).req("POST", "/admin/api/session/login", { json: { email: "admin@maison-noor.example", password } });
     for (let i = 0; i < 12; i++) expect((await login("correct horse battery staple")).status).toBe(200);
     for (let i = 0; i < 10; i++) expect((await login("wrong password " + i)).status).toBe(401);
     const locked = await login("correct horse battery staple");

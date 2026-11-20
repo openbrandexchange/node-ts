@@ -18,7 +18,7 @@ function chunked(bytes: Uint8Array, size: number): ReadableStream<Uint8Array> {
 function entries(): StreamEntry[] {
   return [1, 2, 3].map((n) => {
     const bytes = new Uint8Array(5000 * n).map((_, i) => (i * n) % 251);
-    return { name: `KO-1001_NVY_${n}.png`, size: bytes.length, crc: crc32(bytes), offset: 0, open: async () => chunked(bytes, 1024) };
+    return { name: `MN-1001_NVY_${n}.png`, size: bytes.length, crc: crc32(bytes), offset: 0, open: async () => chunked(bytes, 1024) };
   });
 }
 

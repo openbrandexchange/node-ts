@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { TestNode, importKestrel } from "./helpers";
+import { TestNode, importMaisonNoor } from "./helpers";
 import { backup, restore, verify, pathsFromEnv } from "../src/adapters/bun/backup";
 import { resetMigrationCache } from "../src/db/migrate";
 
@@ -16,7 +16,7 @@ describe("backup and restore", () => {
     const node = new TestNode({ OBX_SECRET_KEY: "" }, { dataDir, dbPath: join(dataDir, "obx.sqlite") });
     const admin = await node.setup();
     const token = await node.ingestToken(admin);
-    const job = await importKestrel(node, token);
+    const job = await importMaisonNoor(node, token);
     expect(job.import_run.counts.errors).toBe(0);
     const before = await node.platform.db.first<Record<string, number>>("SELECT (SELECT COUNT(*) FROM products) AS p, (SELECT COUNT(*) FROM assets) AS a, (SELECT COUNT(*) FROM blobs) AS b");
 
@@ -34,13 +34,13 @@ describe("backup and restore", () => {
     const back = new TestNode({ OBX_SECRET_KEY: "" }, { dataDir: target, dbPath: join(target, "obx.sqlite") });
     expect(readFileSync(join(target, "secret.key"), "utf8")).toBe(readFileSync(join(dataDir, "secret.key"), "utf8"));
     const b = await back.browser();
-    const login = await b.req("POST", "/admin/api/session/login", { json: { email: "admin@kestrel.example", password: "correct horse battery staple" } });
+    const login = await b.req("POST", "/admin/api/session/login", { json: { email: "admin@maison-noor.example", password: "correct horse battery staple" } });
     expect(login.status).toBe(200);
     const after = await back.platform.db.first<Record<string, number>>("SELECT (SELECT COUNT(*) FROM products) AS p, (SELECT COUNT(*) FROM assets) AS a, (SELECT COUNT(*) FROM blobs) AS b");
     expect(after).toEqual(before);
     // Images are served from the restored files, and the old ingest token (hashed with the same key) still works.
-    const asset = (await back.platform.db.first<{ id: string }>("SELECT id FROM assets WHERE external_id = 'KO-1001_NVY_1'"))!;
-    const detail = await b.req("GET", `/admin/api/catalog/products/KO-1001`);
+    const asset = (await back.platform.db.first<{ id: string }>("SELECT id FROM assets WHERE external_id = 'MN-1001_NVY_1'"))!;
+    const detail = await b.req("GET", `/admin/api/catalog/products/MN-1001`);
     expect(detail.status).toBe(200);
     const cl = await back.retailerClient(b);
     const at = await back.accessToken(cl.clientId, cl.secret);

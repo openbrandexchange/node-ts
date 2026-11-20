@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { TestNode, importKestrel, addRenditions, fixtureText, kestrelImages, formData, uploadBlob, match } from "./helpers";
+import { TestNode, importMaisonNoor, addRenditions, fixtureText, maisonNoorImages, formData, uploadBlob, match } from "./helpers";
 import { zipBytes } from "../src/lib/zip";
 import { crc32 } from "../src/lib/crypto";
 import { sha256Hex } from "../src/lib/crypto";
 
-async function kestrelNode() {
+async function maisonNoorNode() {
   const node = new TestNode();
   const admin = await node.setup();
   const token = await node.ingestToken(admin);
@@ -20,9 +20,9 @@ const counts = (entries: any[]) => {
 };
 
 describe("canonical import (I-IMP-1..4)", () => {
-  test("fixtures/kestrel as csv + assets_csv + images: expected objects; re-import is unchanged", async () => {
-    const { node, token, at } = await kestrelNode();
-    const job = await importKestrel(node, token);
+  test("fixtures/maison-noor as csv + assets_csv + images: expected objects; re-import is unchanged", async () => {
+    const { node, token, at } = await maisonNoorNode();
+    const job = await importMaisonNoor(node, token);
     expect(job.status).toBe("succeeded");
     expect(job.import_run.counts.errors).toBe(0);
     expect(job.import_run.counts.rows).toBe(46);
@@ -35,21 +35,21 @@ describe("canonical import (I-IMP-1..4)", () => {
     expect(order).toEqual([...order].sort((a, b) => ["brand", "product", "variant", "asset"].indexOf(a) - ["brand", "product", "variant", "asset"].indexOf(b)));
     expect(snap.phases.at(-1)).toBe("live");
 
-    const again = await importKestrel(node, token);
+    const again = await importMaisonNoor(node, token);
     expect(again.import_run.counts.created + again.import_run.counts.updated).toBe(0);
     expect(again.import_run.counts.unchanged).toBeGreaterThan(70);
     expect((await node.feed(at, snap.cursor)).entries).toEqual([]);
   });
 
   test("an import without assets.csv keeps what the images have (import rule 8, I-IMP-5)", async () => {
-    const { node, token } = await kestrelNode();
-    await importKestrel(node, token);
+    const { node, token } = await maisonNoorNode();
+    await importMaisonNoor(node, token);
     // A credit set through the Ingest API, as the admin would set it.
-    const p = await node.api(token, "PATCH", "/obx/v1/ingest/assets/KO-1001_NVY_1", { json: { rights: { credit: "Photo: Test Studio" } }, headers: { "content-type": "application/merge-patch+json" } });
+    const p = await node.api(token, "PATCH", "/obx/v1/ingest/assets/MN-1001_NVY_1", { json: { rights: { credit: "Photo: Test Studio" } }, headers: { "content-type": "application/merge-patch+json" } });
     expect(p.status).toBe(200);
     const f = formData([
-      { name: "csv", filename: "products.csv", type: "text/csv", data: fixtureText("kestrel/products.csv") },
-      ...kestrelImages().map((i) => ({ name: "images", filename: i.name, type: "image/png", data: i.bytes })),
+      { name: "csv", filename: "products.csv", type: "text/csv", data: fixtureText("maison-noor/products.csv") },
+      ...maisonNoorImages().map((i) => ({ name: "images", filename: i.name, type: "image/png", data: i.bytes })),
     ]);
     const r = await node.api(token, "POST", "/obx/v1/ingest/imports", { body: f.body, headers: { "content-type": f.contentType } });
     expect(r.status).toBe(202);
@@ -59,18 +59,18 @@ describe("canonical import (I-IMP-1..4)", () => {
     const c = job.import_run.counts;
     expect({ created: c.created, updated: c.updated, errors: c.errors }).toEqual({ created: 0, updated: 0, errors: 0 });
     const data = async (ext: string) => (await node.api(token, "GET", `/obx/v1/ingest/assets/${ext}`)).json.data;
-    const blk = await data("KO-1002_BLK_2");
+    const blk = await data("MN-1002_BLK_2");
     expect(String(blk.rights.embargo_until)).toStartWith("2030-01-01");
-    expect(blk.rights.credit).toBe("Photo: Kestrel Studio");
-    const rst = await data("KO-1003_RST_3");
+    expect(blk.rights.credit).toBe("Photo: MAISON NOOR Studio");
+    const rst = await data("MN-1003_RST_3");
     expect(rst.provenance.ai_generated).toBe(true);
     expect(rst.alt_text?.nl).toBeTruthy();
-    expect((await data("KO-1001_NVY_1")).rights.credit).toBe("Photo: Test Studio");
+    expect((await data("MN-1001_NVY_1")).rights.credit).toBe("Photo: Test Studio");
   });
 
   test("a column the file does not have keeps the field; an empty cell removes it (import rule 9, I-IMP-6)", async () => {
-    const { node, token } = await kestrelNode();
-    await importKestrel(node, token);
+    const { node, token } = await maisonNoorNode();
+    await importMaisonNoor(node, token);
     const run = async (csv: string) => {
       const f = formData([{ name: "csv", filename: "products.csv", type: "text/csv", data: csv }]);
       const r = await node.api(token, "POST", "/obx/v1/ingest/imports", { body: f.body, headers: { "content-type": f.contentType } });
@@ -78,16 +78,16 @@ describe("canonical import (I-IMP-1..4)", () => {
       await node.drain();
       return (await node.api(token, "GET", `/obx/v1/ingest/jobs/${r.json.id}`)).json;
     };
-    const product = async () => (await node.api(token, "GET", "/obx/v1/ingest/products/KO-1001")).json.data;
-    const only = await run("brand,style_number,name:en\nKestrel,KO-1001,Merino Crew Sweater\nKestrel,KO-1002,Waxed Field Jacket\n");
+    const product = async () => (await node.api(token, "GET", "/obx/v1/ingest/products/MN-1001")).json.data;
+    const only = await run("brand,style_number,name:en\nMAISON NOOR,MN-1001,Fine Merino Crew-Neck Sweater\nMAISON NOOR,MN-1002,Cropped Waxed Cotton Jacket\n");
     expect(only.status).toBe("succeeded");
     expect({ created: only.import_run.counts.created, updated: only.import_run.counts.updated }).toEqual({ created: 0, updated: 0 });
     let p = await product();
-    expect(p.name.nl).toBe("Merino trui met ronde hals");
+    expect(p.name.nl).toBe("Fijne merino trui met ronde hals");
     expect(p.description?.en).toBeTruthy();
     expect(p.materials?.length).toBeGreaterThan(0);
     expect(p.care?.length).toBeGreaterThan(0);
-    const season = await run("brand,style_number,name:en,season\nKestrel,KO-1001,Merino Crew Sweater,\n");
+    const season = await run("brand,style_number,name:en,season\nMAISON NOOR,MN-1001,Fine Merino Crew-Neck Sweater,\n");
     expect(season.import_run.counts.updated).toBe(1);
     p = await product();
     expect(p.season ?? null).toBeNull();
@@ -95,20 +95,20 @@ describe("canonical import (I-IMP-1..4)", () => {
   });
 
   test("an image named with colour ALL belongs to every colour: {style}_ALL_{position}, colour null", async () => {
-    const { node, token } = await kestrelNode();
-    const img = kestrelImages().find((i) => i.name === "KO-1005_COG_1_front.png")!;
-    const job = await importKestrel(node, token, [{ name: "images", filename: "KO-1005_all_9_size_chart.png", type: "image/png", data: img.bytes } as never]);
+    const { node, token } = await maisonNoorNode();
+    const img = maisonNoorImages().find((i) => i.name === "MN-1005_COG_1_front.png")!;
+    const job = await importMaisonNoor(node, token, [{ name: "images", filename: "MN-1005_all_9_size_chart.png", type: "image/png", data: img.bytes } as never]);
     expect(job.import_run.counts.errors).toBe(0);
-    const a = await node.platform.db.first<{ external_id: string; color_code: string | null; stored: string }>("SELECT external_id, color_code, stored FROM assets WHERE external_id = 'KO-1005_ALL_9'");
-    expect(a).toMatchObject({ external_id: "KO-1005_ALL_9", color_code: null });
+    const a = await node.platform.db.first<{ external_id: string; color_code: string | null; stored: string }>("SELECT external_id, color_code, stored FROM assets WHERE external_id = 'MN-1005_ALL_9'");
+    expect(a).toMatchObject({ external_id: "MN-1005_ALL_9", color_code: null });
     expect(JSON.parse(a!.stored)).toMatchObject({ role: "size_chart", view: null });
   });
 
   test("products match expected/product-*.json once renditions exist (P-CAT-1, P-MEDIA-1)", async () => {
-    const { node, token, at } = await kestrelNode();
-    await importKestrel(node, token);
+    const { node, token, at } = await maisonNoorNode();
+    await importMaisonNoor(node, token);
     await addRenditions(node, token);
-    for (const style of ["KO-1001", "KO-1005"]) {
+    for (const style of ["MN-1001", "MN-1005"]) {
       const id = (await node.platform.db.first<{ id: string }>("SELECT id FROM products WHERE external_id = ?", [style]))!.id;
       const r = await node.api(at, "GET", `/obx/v1/products/${id}`);
       expect(r.status).toBe(200);
@@ -119,9 +119,9 @@ describe("canonical import (I-IMP-1..4)", () => {
       expect(nm.status).toBe(304);
     }
     for (const [file, ext] of [
-      ["asset-ai-generated", "KO-1003_RST_3"],
-      ["asset-embargoed", "KO-1002_BLK_2"],
-      ["asset-large-original", "KO-1002_OLV_1"],
+      ["asset-ai-generated", "MN-1003_RST_3"],
+      ["asset-embargoed", "MN-1002_BLK_2"],
+      ["asset-large-original", "MN-1002_OLV_1"],
     ]) {
       const id = (await node.platform.db.first<{ id: string }>("SELECT id FROM assets WHERE external_id = ?", [ext]))!.id;
       const r = await node.api(at, "GET", `/obx/v1/assets/${id}`);
@@ -130,17 +130,17 @@ describe("canonical import (I-IMP-1..4)", () => {
   });
 
   test("package zip and images_manifest give the same result (I-IMP-1, I-IMP-2)", async () => {
-    const { node, token, at } = await kestrelNode();
+    const { node, token, at } = await maisonNoorNode();
     const zip = await zipBytes(
       [
-        { name: "export/products.csv", data: new TextEncoder().encode(fixtureText("kestrel/products.csv")) },
-        { name: "export/assets.csv", data: new TextEncoder().encode(fixtureText("kestrel/assets.csv")) },
-        ...kestrelImages().map((i) => ({ name: `export/images/${i.name}`, data: i.bytes })),
-        { name: "__MACOSX/._KO-1001_NVY_1_front.png", data: new Uint8Array([1, 2, 3]) },
+        { name: "export/products.csv", data: new TextEncoder().encode(fixtureText("maison-noor/products.csv")) },
+        { name: "export/assets.csv", data: new TextEncoder().encode(fixtureText("maison-noor/assets.csv")) },
+        ...maisonNoorImages().map((i) => ({ name: `export/images/${i.name}`, data: i.bytes })),
+        { name: "__MACOSX/._MN-1001_NVY_1_front.png", data: new Uint8Array([1, 2, 3]) },
       ],
       crc32,
     );
-    const f = formData([{ name: "package", filename: "kestrel.zip", type: "application/zip", data: zip }]);
+    const f = formData([{ name: "package", filename: "maison-noor.zip", type: "application/zip", data: zip }]);
     const r = await node.api(token, "POST", "/obx/v1/ingest/imports", { body: f.body, headers: { "content-type": f.contentType } });
     expect(r.status).toBe(202);
     await node.drain();
@@ -150,12 +150,12 @@ describe("canonical import (I-IMP-1..4)", () => {
     expect(counts((await node.feed(at)).entries)).toEqual({ brand: 2, product: 11, variant: 46, asset: 35 });
 
     // A second node imports with a manifest of already-uploaded blobs instead of image bytes.
-    const b = await kestrelNode();
+    const b = await maisonNoorNode();
     const manifest = [];
-    for (const i of kestrelImages()) manifest.push({ file: i.name, sha256: await uploadBlob(b.node, b.token, i.bytes) });
+    for (const i of maisonNoorImages()) manifest.push({ file: i.name, sha256: await uploadBlob(b.node, b.token, i.bytes) });
     const f2 = formData([
-      { name: "csv", filename: "products.csv", data: fixtureText("kestrel/products.csv") },
-      { name: "assets_csv", filename: "assets.csv", data: fixtureText("kestrel/assets.csv") },
+      { name: "csv", filename: "products.csv", data: fixtureText("maison-noor/products.csv") },
+      { name: "assets_csv", filename: "assets.csv", data: fixtureText("maison-noor/assets.csv") },
       { name: "images_manifest", type: "application/json", data: JSON.stringify(manifest) },
       { name: "options", type: "application/json", data: JSON.stringify({ mode: "upsert" }) },
     ]);
@@ -164,18 +164,18 @@ describe("canonical import (I-IMP-1..4)", () => {
     const job2 = (await b.node.api(b.token, "GET", `/obx/v1/ingest/jobs/${r2.json.id}`)).json;
     expect(job2.import_run.counts.errors).toBe(0);
     expect(counts((await b.node.feed(b.at)).entries)).toEqual({ brand: 2, product: 11, variant: 46, asset: 35 });
-    const sha = await sha256Hex(kestrelImages()[0].bytes);
-    const row = await b.node.platform.db.first<{ files: string }>("SELECT files FROM assets WHERE external_id = 'KO-1001_NVY_1'");
+    const sha = await sha256Hex(maisonNoorImages()[0].bytes);
+    const row = await b.node.platform.db.first<{ files: string }>("SELECT files FROM assets WHERE external_id = 'MN-1001_NVY_1'");
     expect(JSON.parse(row!.files).original.sha256).toBe(sha);
   });
 
   test("mirror: unpublishes exactly the missing product; refuses a mass unpublish; zip-slip writes nothing (I-IMP-3)", async () => {
-    const { node, token, at } = await kestrelNode();
-    await importKestrel(node, token);
-    const lines = fixtureText("kestrel/products.csv").trim().split("\n");
+    const { node, token, at } = await maisonNoorNode();
+    await importMaisonNoor(node, token);
+    const lines = fixtureText("maison-noor/products.csv").trim().split("\n");
     const header = lines[0];
     const rows = lines.slice(1);
-    const ko1006 = rows.filter((l) => !l.includes(",KO-1006,"));
+    const ko1006 = rows.filter((l) => !l.includes(",MN-1006,"));
     const snap = await node.feed(at);
     const f = formData([
       { name: "csv", filename: "products.csv", data: [header, ...ko1006].join("\n") },
@@ -188,9 +188,9 @@ describe("canonical import (I-IMP-1..4)", () => {
     expect(job.import_run.counts.unpublished).toBe(1);
     const live = await node.feed(at, snap.cursor);
     const productDeletes = live.entries.filter((e) => e.type === "product" && e.op === "delete").map((e) => e.external_id);
-    expect(productDeletes).toEqual(["KO-1006"]);
+    expect(productDeletes).toEqual(["MN-1006"]);
 
-    const one = rows.filter((l) => l.includes(",KO-1001,"));
+    const one = rows.filter((l) => l.includes(",MN-1001,"));
     const f2 = formData([
       { name: "csv", filename: "products.csv", data: [header, ...one].join("\n") },
       { name: "options", type: "application/json", data: JSON.stringify({ mode: "mirror" }) },
@@ -203,7 +203,7 @@ describe("canonical import (I-IMP-1..4)", () => {
 
     const evil = await zipBytes(
       [
-        { name: "products.csv", data: new TextEncoder().encode([header, ...rows].join("\n").replace(/Merino Crew Sweater/g, "Changed Name")) },
+        { name: "products.csv", data: new TextEncoder().encode([header, ...rows].join("\n").replace(/Fine Merino Crew-Neck Sweater/g, "Changed Name")) },
         { name: "../evil.jpg", data: new Uint8Array([0xff, 0xd8, 0xff]) },
       ],
       crc32,
@@ -219,7 +219,7 @@ describe("canonical import (I-IMP-1..4)", () => {
   });
 
   test("row errors carry file, row, column and code; the job still succeeds (I-IMP-4)", async () => {
-    const { node, token } = await kestrelNode();
+    const { node, token } = await maisonNoorNode();
     const csv = [
       "style_number,name:en,gtin,color_code,size,materials",
       "ZZ-1,Good Tee,2000999900013,BLK,M,100% cotton",

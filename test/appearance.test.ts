@@ -149,7 +149,7 @@ describe("portal appearance", () => {
     await bad(block({ type: "tiles", items: [{ link: "ftp://x" }] }), "/branding/home/blocks/0/items/0/link");
     await bad(block({ type: "tiles", items: [{}], columns: 5 }), "/branding/home/blocks/0/columns");
     await bad(block({ type: "text", body: { en: "x".repeat(10001) } }), "/branding/home/blocks/0/body/en");
-    await bad(block({ type: "products", style_numbers: Array(25).fill("KO-1001") }), "/branding/home/blocks/0/style_numbers");
+    await bad(block({ type: "products", style_numbers: Array(25).fill("MN-1001") }), "/branding/home/blocks/0/style_numbers");
     await bad(block({ type: "products", max: 25 }), "/branding/home/blocks/0/max");
     await bad(block({ type: "products", query: "?season=AW26" }), "/branding/home/blocks/0/query");
     await bad(block({ type: "announcement", tone: "danger" }), "/branding/home/blocks/0/tone");
@@ -165,7 +165,7 @@ describe("portal appearance", () => {
     expect((await admin.req("GET", "/admin/api/settings")).json.branding.login.layout).toBe("split");
     // Valid edge cases.
     const ok = await admin.req("PATCH", "/admin/api/settings", {
-      json: { branding: { home: { blocks: [{ id: "p", type: "products", style_numbers: ["KO-1001"], query: "season=AW26", max: 24 }, { id: "h", type: "hero", link: "https://kestrel.example/about" }, { id: "t", type: "hero", link: "/products/KO-1001" }] } } },
+      json: { branding: { home: { blocks: [{ id: "p", type: "products", style_numbers: ["MN-1001"], query: "season=AW26", max: 24 }, { id: "h", type: "hero", link: "https://maison-noor.example/about" }, { id: "t", type: "hero", link: "/products/MN-1001" }] } } },
     });
     expect(ok.status).toBe(200);
     await admin.req("PATCH", "/admin/api/settings", { json: { branding: full } });

@@ -169,7 +169,7 @@ The recipient's language is the user's language, the requester's `contact.langua
 
 - Walked with Playwright against the vendored admin-ui on Bun, Docker Compose and `wrangler dev`: setup wizard, zip import, access request → approve → invitation → retailer login, catalog, article page, single-image download, EAN list, selection zip + CSV, background zip, API key and access key creation, scheduled import from a web address (run now and by the schedule).
 - Found and fixed on the way: zip downloads stalled after the first file on Bun (a stream `pull()` that returned without output); a repeated `PUT /blobs/{sha256}` hung on Bun because the request body was cancelled (now read and hash-checked); link-local and metadata addresses were allowed in development mode; header import problems used row 0 (now null).
-- `obx-conformance all` passed 47/47 on Bun and on `wrangler dev` then; after hardening (see below) 57/57 on both, 58/58 on Bun with `--rate-limit-test`. `obx push` of `fixtures/kestrel` then a second push (nothing uploaded, all unchanged) and `obx pull` (originals byte-identical, deletes mirrored) work.
+- `obx-conformance all` passed 47/47 on Bun and on `wrangler dev` then; after hardening (see below) 57/57 on both, 58/58 on Bun with `--rate-limit-test`. `obx push` of `fixtures/maison-noor` then a second push (nothing uploaded, all unchanged) and `obx pull` (originals byte-identical, deletes mirrored) work.
 
 ## Spec 0.2.0 (2026-11-12)
 
@@ -182,7 +182,7 @@ The recipient's language is the user's language, the requester's `contact.langua
   `/cdn-cgi/handler/scheduled`, which wrangler handles before the asset router; production is unaffected
   (Cloudflare calls the Cron Trigger directly).
 - Browser tests: the admin-ui 0.2 article page shows the label information above the images, which are
-  `loading="lazy"`; the image check scrolls them into view. A new walk opens KO-1010 as a Dutch retailer and
+  `loading="lazy"`; the image check scrolls them into view. A new walk opens MN-1010 as a Dutch retailer and
   checks the footwear materials and heel height (with axe).
 
 ## Excel import (spec import-format.md §5, unreleased)

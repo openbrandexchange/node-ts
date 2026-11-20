@@ -123,8 +123,8 @@ export class TestNode {
     const r = await b.req("POST", "/admin/api/setup", {
       json: {
         setup_code: SETUP_CODE,
-        company: { name: "Kestrel Outfitters", first_brand_name: "Kestrel", default_language: "nl", languages: ["nl", "en"], contact_email: "trade@kestrel.example", website: "https://kestrel.example" },
-        admin: { name: "Ada Admin", email: "admin@kestrel.example", password: "correct horse battery staple" },
+        company: { name: "MAISON NOOR Group", first_brand_name: "MAISON NOOR", default_language: "nl", languages: ["nl", "en"], contact_email: "trade@maison-noor.example", website: "https://maison-noor.example" },
+        admin: { name: "Ada Admin", email: "admin@maison-noor.example", password: "correct horse battery staple" },
       },
     });
     if (r.status !== 201) throw new Error(`setup failed: ${r.status} ${r.text}`);
@@ -192,10 +192,10 @@ export function fixtureBytes(path: string) {
   return new Uint8Array(readFileSync(join(FIX, path)));
 }
 
-export function kestrelImages(): { name: string; bytes: Uint8Array }[] {
-  return readdirSync(join(FIX, "kestrel/images"))
+export function maisonNoorImages(): { name: string; bytes: Uint8Array }[] {
+  return readdirSync(join(FIX, "maison-noor/images"))
     .sort()
-    .map((name) => ({ name, bytes: fixtureBytes(`kestrel/images/${name}`) }));
+    .map((name) => ({ name, bytes: fixtureBytes(`maison-noor/images/${name}`) }));
 }
 
 /** Client-generated renditions following the rules (JPEG, web <= 2000, square, thumb <= 600). */
@@ -242,12 +242,12 @@ export function formData(parts: { name: string; filename?: string; type?: string
   return { body, contentType: `multipart/form-data; boundary=${boundary}` };
 }
 
-/** Imports fixtures/kestrel (products.csv + assets.csv + 27 images) through the Ingest API. */
-export async function importKestrel(node: TestNode, token: string, extra: { name: string; data: string; type?: string }[] = []) {
+/** Imports fixtures/maison-noor (products.csv + assets.csv + 27 images) through the Ingest API. */
+export async function importMaisonNoor(node: TestNode, token: string, extra: { name: string; data: string; type?: string }[] = []) {
   const parts: { name: string; filename?: string; type?: string; data: Uint8Array | string }[] = [
-    { name: "csv", filename: "products.csv", type: "text/csv", data: fixtureText("kestrel/products.csv") },
-    { name: "assets_csv", filename: "assets.csv", type: "text/csv", data: fixtureText("kestrel/assets.csv") },
-    ...kestrelImages().map((i) => ({ name: "images", filename: i.name, type: "image/png", data: i.bytes })),
+    { name: "csv", filename: "products.csv", type: "text/csv", data: fixtureText("maison-noor/products.csv") },
+    { name: "assets_csv", filename: "assets.csv", type: "text/csv", data: fixtureText("maison-noor/assets.csv") },
+    ...maisonNoorImages().map((i) => ({ name: "images", filename: i.name, type: "image/png", data: i.bytes })),
     ...extra,
   ];
   const f = formData(parts);

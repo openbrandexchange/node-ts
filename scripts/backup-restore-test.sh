@@ -35,12 +35,12 @@ JAR="$WORK/jar"
 csrf() { curl -fs -c "$JAR" -b "$JAR" "$1/admin/api/session" | sed -E 's/.*"csrf_token":"([^"]+)".*/\1/'; }
 T="$(csrf "$A")"
 curl -fs -c "$JAR" -b "$JAR" -H "x-csrf-token: $T" -H 'content-type: application/json' "$A/admin/api/setup" \
-  -d '{"setup_code":"BACKUP-TEST-1","company":{"name":"Kestrel Outfitters","first_brand_name":"Kestrel","default_language":"en","languages":["en"]},"admin":{"name":"Ada Admin","email":"admin@kestrel.example","password":"backup test password 1"}}' >/dev/null
+  -d '{"setup_code":"BACKUP-TEST-1","company":{"name":"MAISON NOOR Group","first_brand_name":"MAISON NOOR","default_language":"en","languages":["en"]},"admin":{"name":"Ada Admin","email":"admin@maison-noor.example","password":"backup test password 1"}}' >/dev/null
 T="$(csrf "$A")"
 TOKEN="$(curl -fs -c "$JAR" -b "$JAR" -H "x-csrf-token: $T" -H 'content-type: application/json' "$A/admin/api/ingest-tokens" \
   -d '{"name":"backup test","scopes":["ingest:read","ingest:write"]}' | sed -E 's/.*"secret":"([^"]+)".*/\1/')"
-curl -fs -X PUT -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' "$A/obx/v1/ingest/products/KO-1001" \
-  -d '{"style_number":"KO-1001","name":{"en":"Merino Crew Sweater"}}' >/dev/null
+curl -fs -X PUT -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' "$A/obx/v1/ingest/products/MN-1001" \
+  -d '{"style_number":"MN-1001","name":{"en":"Fine Merino Crew-Neck Sweater"}}' >/dev/null
 
 echo "2. back it up while it runs"
 docker exec "$SRC" bun src/adapters/bun/backup.ts backup /data/backups/b1
@@ -59,8 +59,8 @@ B="http://127.0.0.1:$PORT_B"
 JAR="$WORK/jar2"
 T="$(csrf "$B")"
 curl -fs -c "$JAR" -b "$JAR" -H "x-csrf-token: $T" -H 'content-type: application/json' "$B/admin/api/session/login" \
-  -d '{"email":"admin@kestrel.example","password":"backup test password 1"}' | grep -q '"authenticated":true'
-curl -fs -b "$JAR" "$B/admin/api/catalog/products/KO-1001" | grep -q 'Merino Crew Sweater'
+  -d '{"email":"admin@maison-noor.example","password":"backup test password 1"}' | grep -q '"authenticated":true'
+curl -fs -b "$JAR" "$B/admin/api/catalog/products/MN-1001" | grep -q 'Fine Merino Crew-Neck Sweater'
 curl -fs -H "authorization: Bearer $TOKEN" "$B/obx/v1/ingest" >/dev/null
 curl -fs "$B/admin/api/setup" | grep -q '"required":false'
 echo "backup and restore: ok"

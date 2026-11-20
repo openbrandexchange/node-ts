@@ -1,5 +1,5 @@
 // Demo mode (OBX_DEMO, docs/demo.md): off by default; on, it signs visitors in with one click,
-// refuses risky actions and resets to the Kestrel fixtures.
+// refuses risky actions and resets to the MAISON NOOR fixtures.
 import { describe, expect, test, beforeAll } from "bun:test";
 import { join } from "node:path";
 import { TestNode, FIX, formData, type Browser } from "./helpers";
@@ -53,9 +53,9 @@ describe("demo mode on", () => {
     node = new TestNode({ OBX_DEMO: "true", OBX_SETUP_CODE: "" });
     // The seed archive as scripts/demo-seed.ts makes it, with placeholder JPEGs instead of drawn ones.
     let n = 0;
-    const seed = await buildSeed(join(FIX, "kestrel"), async (_orig, name, sizes) => fakeJpeg(sizes[name].width, sizes[name].height, ++n), {
+    const seed = await buildSeed(join(FIX, "maison-noor"), async (_orig, name, sizes) => fakeJpeg(sizes[name].width, sizes[name].height, ++n), {
       showroom: async () => fakeJpeg(1600, 1000, ++n),
-      product: async (file, p) => (file.startsWith("KO-1001_") ? fakeJpeg(1200, 1500, 5000 + ++n + p.view.length) : null),
+      product: async (file, p) => (file.startsWith("MN-1001_") ? fakeJpeg(1200, 1500, 5000 + ++n + p.view.length) : null),
     });
     await node.platform.blobs.put(DEMO.seedKey, seed, "application/zip");
     await settle(node);
@@ -103,7 +103,7 @@ describe("demo mode on", () => {
     };
     await refused(brand, "PATCH", "/admin/api/me", { current_password: "x", new_password: "a much better password" });
     await refused(brand, "DELETE", "/admin/api/me");
-    await refused(brand, "POST", "/admin/api/password/forgot", { email: "brand@kestrel.example" });
+    await refused(brand, "POST", "/admin/api/password/forgot", { email: "brand@maison-noor.example" });
     await refused(brand, "POST", "/admin/api/users/invites", { email: "x@example.com", role: "admin" });
     await refused(brand, "PATCH", `/admin/api/users/${DEMO.retailerUser}`, { status: "blocked" });
     await refused(brand, "PATCH", `/admin/api/retailers/${DEMO.retailer}`, { status: "blocked" });
@@ -114,7 +114,7 @@ describe("demo mode on", () => {
     await refused(brand, "POST", "/admin/api/webhooks", { url: "https://example.com/hook", events: ["catalog.changed"] });
     await refused(brand, "POST", "/admin/api/import-sources", { name: "pull", kind: "https_url" });
     await refused(brand, "PATCH", "/admin/api/settings", { branding: { display_name: "Something else" } });
-    await refused(brand, "DELETE", "/admin/api/catalog/products/KO-1001");
+    await refused(brand, "DELETE", "/admin/api/catalog/products/MN-1001");
     await refused(brand, "POST", "/admin/api/access-requests/acr_demo_fjord/approve", { create_api_client: true });
     await refused(retailer, "POST", "/admin/api/portal/api-clients", { name: "mine" });
     const big = await retailer.req("POST", "/admin/api/imports", { body: new Uint8Array(3 * 1048576), headers: { "content-type": "multipart/form-data; boundary=x", "content-length": String(3 * 1048576) } });
@@ -132,7 +132,7 @@ describe("demo mode on", () => {
     expect(products.json.items.length).toBe(11);
     const feed = await node.feed(tok);
     expect(feed.entries.length).toBeGreaterThan(90);
-    const one = products.json.items.find((p: any) => p.style_number === "KO-1001");
+    const one = products.json.items.find((p: any) => p.style_number === "MN-1001");
     const asset = (await node.api(tok, "GET", `/obx/v1/products/${one.id}`)).json.assets[0];
     const web = await node.api(tok, "GET", `/obx/v1/assets/${asset.id}/renditions/web`);
     expect(web.status).toBe(200);
@@ -159,7 +159,7 @@ describe("demo mode on", () => {
     expect(v.branding.home.blocks[0].image_url).toBe(`/admin/api/public/images/${SHOWROOM_IMAGES.hero}`);
     expect(v.branding.home.blocks.find((b: any) => b.type === "tiles").items).toHaveLength(4);
     // Drawn product shots replace fixture images in the seed (renamed to .jpg, assets.csv follows).
-    const shots = await node.platform.db.all<{ files: string }>("SELECT a.files FROM assets a JOIN products p ON p.id = a.product_id WHERE p.external_id = 'KO-1001'");
+    const shots = await node.platform.db.all<{ files: string }>("SELECT a.files FROM assets a JOIN products p ON p.id = a.product_id WHERE p.external_id = 'MN-1001'");
     expect(shots.length).toBe(4);
   });
 
@@ -187,7 +187,7 @@ describe("demo mode on", () => {
   test("the reset puts the fixtures back and keeps the demo sessions", async () => {
     const tok = await node.accessToken(DEMO.clientId, DEMO.clientSecret);
     const before = await node.feed(tok);
-    expect((await brand.req("PATCH", "/admin/api/catalog/products/KO-1001", { json: { name: { en: "Broken by a visitor" } } })).status).toBe(200);
+    expect((await brand.req("PATCH", "/admin/api/catalog/products/MN-1001", { json: { name: { en: "Broken by a visitor" } } })).status).toBe(200);
     expect((await brand.req("POST", "/admin/api/retailers", { json: { name: "Visitor's shop" } })).status).toBe(201);
     const harbour = await brand.req("DELETE", "/admin/api/retailers/rtl_demo_harbour");
     expect(harbour.status).toBe(204);
@@ -198,8 +198,8 @@ describe("demo mode on", () => {
     expect(await counts(node)).toEqual({ brands: 2, products: 11, variants: 46, assets: 35 });
     const names = (await node.platform.db.all<{ name: string }>("SELECT name FROM retailers ORDER BY name")).map((x) => x.name);
     expect(names).toEqual(["Harbour & Co", "Lumen Concept Store", "Northwind Stores"]);
-    const p = await node.platform.db.first<{ stored: string }>("SELECT stored FROM products WHERE external_id = 'KO-1001'");
-    expect(JSON.parse(p!.stored).name.en).toBe("Merino Crew Sweater");
+    const p = await node.platform.db.first<{ stored: string }>("SELECT stored FROM products WHERE external_id = 'MN-1001'");
+    expect(JSON.parse(p!.stored).name.en).toBe("Fine Merino Crew-Neck Sweater");
     // The showroom is back, the visitor's images are gone.
     const look = (await brand.req("GET", "/admin/api/settings")).json.branding;
     expect(look.theme.colors.primary).toBe("#1b1a19");
@@ -249,7 +249,7 @@ describe("demo rules", () => {
     expect(demoRefusal("PATCH", "/admin/api/me", { language: "de" })).toBeNull();
     expect(demoRefusal("PATCH", "/admin/api/me", { new_password: "x" })?.code).toBe("forbidden");
     expect(demoRefusal("PATCH", "/admin/api/settings", { portal: { allow_original_download: false } })).toBeNull();
-    expect(demoRefusal("PUT", "/admin/api/catalog/products/KO-1001", null)).toBeNull();
+    expect(demoRefusal("PUT", "/admin/api/catalog/products/MN-1001", null)).toBeNull();
     expect(demoRefusal("DELETE", "/admin/api/webhooks/whk_1", null)).toBeNull();
     expect(demoRefusal("POST", "/admin/api/access-requests/acr_1/approve", { create_api_client: false, invite_portal_user: true })).toBeNull();
     expect(demoRefusal("GET", "/obx/v1/webhooks", null)?.code).toBe("not_implemented");

@@ -275,18 +275,18 @@ describe("xml tokenizer", () => {
 
 // ------------------------------------------------------------------ the import (Ingest API, admin, packages)
 
-import { TestNode, formData, importKestrel, kestrelImages } from "./helpers";
+import { TestNode, formData, importMaisonNoor, maisonNoorImages } from "./helpers";
 import { sha256Hex } from "../src/lib/crypto";
 
-async function kestrelNode(withData = true) {
+async function maisonNoorNode(withData = true) {
   const node = new TestNode();
   const admin = await node.setup();
   const token = await node.ingestToken(admin);
   const cl = await node.retailerClient(admin);
   const at = await node.accessToken(cl.clientId, cl.secret);
   if (withData) {
-    const job = await importKestrel(node, token);
-    if (job.status !== "succeeded" || job.import_run.counts.errors) throw new Error("kestrel import failed");
+    const job = await importMaisonNoor(node, token);
+    if (job.status !== "succeeded" || job.import_run.counts.errors) throw new Error("maison-noor import failed");
   }
   return { node, admin, token, at };
 }
@@ -312,12 +312,12 @@ async function runImport(node: TestNode, token: string, parts: Part[], options?:
 const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const book = (file: string, filename = "products.xlsx", name = "csv"): Part => ({ name, filename, type: XLSX_TYPE, data: fixtureBytes(`imports/xlsx/${file}`) });
 
-/** The parts a case of expected.json is sent with (§5 fixtures: send.images_manifest names Kestrel images). */
+/** The parts a case of expected.json is sent with (§5 fixtures: send.images_manifest names MAISON NOOR images). */
 async function caseParts(c: any): Promise<Part[]> {
   const parts = [c.role === "assets" ? book(c.file, "assets.xlsx", "assets_csv") : book(c.file)];
   if (c.send?.images_manifest) {
     const manifest = [];
-    for (const f of c.send.images_manifest) manifest.push({ file: f, sha256: await sha256Hex(fixtureBytes(`kestrel/images/${f}`)) });
+    for (const f of c.send.images_manifest) manifest.push({ file: f, sha256: await sha256Hex(fixtureBytes(`maison-noor/images/${f}`)) });
     parts.push({ name: "images_manifest", type: "application/json", data: JSON.stringify(manifest) });
   }
   return parts;
@@ -335,10 +335,10 @@ function stable(v: unknown): unknown {
 }
 
 describe("xlsx import end to end", () => {
-  test("products-template.xlsx imports exactly like fixtures/kestrel/products.csv (fresh nodes, same objects)", async () => {
-    const a = await kestrelNode(false);
-    const b = await kestrelNode(false);
-    const ra = await runImport(a.node, a.token, [{ name: "csv", filename: "products.csv", type: "text/csv", data: fixtureText("kestrel/products.csv") }]);
+  test("products-template.xlsx imports exactly like fixtures/maison-noor/products.csv (fresh nodes, same objects)", async () => {
+    const a = await maisonNoorNode(false);
+    const b = await maisonNoorNode(false);
+    const ra = await runImport(a.node, a.token, [{ name: "csv", filename: "products.csv", type: "text/csv", data: fixtureText("maison-noor/products.csv") }]);
     const rb = await runImport(b.node, b.token, [book("products-template.xlsx")]);
     expect(rb.job.status).toBe("succeeded");
     expect(rb.job.import_run.counts).toEqual(ra.job.import_run.counts);
@@ -356,7 +356,7 @@ describe("xlsx import end to end", () => {
   });
 
   test("on a node that holds the fixtures it is all unchanged with no change entries (I-IMP-9); assets-template.xlsx too", async () => {
-    const { node, token, at } = await kestrelNode();
+    const { node, token, at } = await maisonNoorNode();
     const before = await node.feed(at);
     const assets = expected.cases.find((x: any) => x.file === "assets-template.xlsx");
     const r = await runImport(node, token, [book("products-template.xlsx"), ...(await caseParts(assets))]);
@@ -371,7 +371,7 @@ describe("xlsx import end to end", () => {
 
   for (const c of expected.cases.filter((x: any) => !x.error))
   test(`${c.file} (dry run, I-IMP-9): exactly import_errors of expected.json, its warnings, nothing written`, async () => {
-    const { node, token, at } = await kestrelNode();
+    const { node, token, at } = await maisonNoorNode();
     const before = await node.feed(at);
     const parts = await caseParts(c);
     if (c.file === "edge-cases.xlsx") parts[0].filename = "Edge Cases.XLSX";
@@ -392,26 +392,26 @@ describe("xlsx import end to end", () => {
   });
 
   test("an xlsx-imported product appears in /obx/v1/changes", async () => {
-    const { node, token, at } = await kestrelNode();
+    const { node, token, at } = await maisonNoorNode();
     const before = await node.feed(at);
     const r = await runImport(node, token, [book("edge-cases.xlsx")]);
     expect(r.job.status).toBe("succeeded");
     expect(r.job.import_run.counts.created).toBeGreaterThan(0);
     const changes = (await node.feed(at, before.cursor)).entries;
-    const p = changes.find((e) => e.type === "product" && e.external_id === "KX-9001");
+    const p = changes.find((e) => e.type === "product" && e.external_id === "MX-9001");
     expect(p).toBeTruthy();
     const v = changes.filter((e) => e.type === "variant").map((e) => e.data?.gtin_original ?? e.external_id);
     expect(v).toEqual(expect.arrayContaining(["2000901000015", "02000901000022"]));
-    const prod = (await node.api(token, "GET", "/obx/v1/ingest/products/KX-9001")).json.data;
+    const prod = (await node.api(token, "GET", "/obx/v1/ingest/products/MX-9001")).json.data;
     expect(prod.description.en).toBe("=SUM(1,2) is text, not a formula");
   });
 
   for (const c of expected.cases.filter((x: any) => x.error))
     test(`refusal ${c.file}: the run fails with ${c.error.obx_error} and one ImportRowError, nothing written (I-IMP-10)`, async () => {
-      const { node, admin, token, at } = await kestrelNode();
+      const { node, admin, token, at } = await maisonNoorNode();
       const before = await node.feed(at);
       // with images, which must not be written either
-      const img = kestrelImages()[0];
+      const img = maisonNoorImages()[0];
       for (const dry_run of [false, true]) {
         const r = await runImport(node, token, [book(c.file), { name: "images", filename: img.name, type: "image/png", data: img.bytes }], { dry_run });
         expect(r.job.status).toBe("failed");
@@ -429,7 +429,7 @@ describe("xlsx import end to end", () => {
     });
 
   test("a workbook above the CSV limit: the run fails with payload_too_large and one ImportRowError (§5.6 step 1)", async () => {
-    const { node, token } = await kestrelNode(false);
+    const { node, token } = await maisonNoorNode(false);
     const big = new Uint8Array(64 * 1048576 + 1);
     big.set(fixtureBytes("imports/xlsx/products-template.xlsx"));
     const r = await runImport(node, token, [{ name: "csv", filename: "products.xlsx", type: XLSX_TYPE, data: big }], { dry_run: true });
@@ -439,27 +439,27 @@ describe("xlsx import end to end", () => {
   });
 
   test("an assets row whose image is neither sent nor in the manifest is files_missing (§2.2)", async () => {
-    const { node, token } = await kestrelNode();
+    const { node, token } = await maisonNoorNode();
     const r = await runImport(node, token, [book("products-template.xlsx"), book("assets-template.xlsx", "assets.xlsx", "assets_csv")], { dry_run: true });
     expect(r.job.status).toBe("succeeded");
     expect(r.rows.filter((e) => e.severity === "error").map((e) => [e.file, e.row, e.column, e.obx_error, e.value, e.detail.slice(0, 24)])).toEqual([
-      ["assets.xlsx", 2, "file", "files_missing", "KO-1002_BLK_2_back.png", "row 2, column file (A): "],
-      ["assets.xlsx", 3, "file", "files_missing", "KO-1003_RST_3_model.png", "row 3, column file (A): "],
+      ["assets.xlsx", 2, "file", "files_missing", "MN-1002_BLK_2_back.png", "row 2, column file (A): "],
+      ["assets.xlsx", 3, "file", "files_missing", "MN-1003_RST_3_model.png", "row 3, column file (A): "],
     ]);
   });
 
   test("a package with products.xlsx is imported; with products.csv as well it is import_invalid; .xlsm is 415", async () => {
-    const { node, token, at } = await kestrelNode(false);
+    const { node, token, at } = await maisonNoorNode(false);
     const zip = async (files: { name: string; data: Uint8Array }[]) => zipBytes(files, crc32);
     const pkg = await zip([{ name: "export/products.xlsx", data: fixtureBytes("imports/xlsx/products-template.xlsx") }]);
-    const r = await runImport(node, token, [{ name: "package", filename: "kestrel.zip", type: "application/zip", data: pkg }]);
+    const r = await runImport(node, token, [{ name: "package", filename: "maison-noor.zip", type: "application/zip", data: pkg }]);
     expect(r.job.status).toBe("succeeded");
     expect(r.job.import_run.counts.errors).toBe(0);
     expect(r.job.import_run.counts.rows).toBe(46);
-    expect((await node.feed(at)).entries.some((e) => e.type === "product" && e.external_id === "KO-1001")).toBe(true);
+    expect((await node.feed(at)).entries.some((e) => e.type === "product" && e.external_id === "MN-1001")).toBe(true);
     const both = await zip([
       { name: "products.xlsx", data: fixtureBytes("imports/xlsx/products-template.xlsx") },
-      { name: "products.csv", data: enc(fixtureText("kestrel/products.csv")) },
+      { name: "products.csv", data: enc(fixtureText("maison-noor/products.csv")) },
     ]);
     const r2 = await runImport(node, token, [{ name: "package", filename: "both.zip", type: "application/zip", data: both }]);
     expect(r2.job.status).toBe("failed");
@@ -471,13 +471,13 @@ describe("xlsx import end to end", () => {
     const r4 = await runImport(node, token, [{ name: "csv", type: XLSX_TYPE, data: fixtureBytes("imports/xlsx/products-template.xlsx") }], { dry_run: true });
     expect(r4.job.import_run.counts.errors).toBe(0);
     expect(r4.job.import_run.counts.rows).toBe(46);
-    const r5 = await runImport(node, token, [{ name: "csv", filename: "products.xlsx", data: fixtureText("kestrel/products.csv") }], { dry_run: true });
+    const r5 = await runImport(node, token, [{ name: "csv", filename: "products.xlsx", data: fixtureText("maison-noor/products.csv") }], { dry_run: true });
     expect(r5.job.status).toBe("failed");
     expect(r5.rows.map((e) => e.obx_error)).toEqual(["workbook_invalid"]);
   });
 
   test("the admin upload takes a workbook too", async () => {
-    const { node, admin } = await kestrelNode(false);
+    const { node, admin } = await maisonNoorNode(false);
     const f = formData([book("products-template.xlsx", "Producten export.xlsx")]);
     const r = await admin.req("POST", "/admin/api/imports", { body: f.body, headers: { "content-type": f.contentType } });
     expect(r.status).toBe(202);

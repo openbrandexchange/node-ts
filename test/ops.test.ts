@@ -143,7 +143,7 @@ describe("configuration checks", () => {
   test("a clean configuration has no problems; blanks count as not set", () => {
     expect(validateEnv({}, "bun")).toEqual([]);
     expect(validateEnv({ OBX_MAIL_PROVIDER: "", OBX_SECRET_KEY: "", OBX_STORAGE: "disk", OBX_S3_ENDPOINT: "http://s3:9000" }, "bun")).toEqual([]);
-    expect(validateEnv({ OBX_SECRET_KEY: "x".repeat(40), OBX_PUBLIC_URL: "https://brands.kestrel.example" }, "workers")).toEqual([]);
+    expect(validateEnv({ OBX_SECRET_KEY: "x".repeat(40), OBX_PUBLIC_URL: "https://brands.maison-noor.example" }, "workers")).toEqual([]);
   });
 
   test("every problem is named in one sentence", () => {
@@ -151,7 +151,7 @@ describe("configuration checks", () => {
       {
         OBX_SECRET_KEY: "short",
         OBX_SETUP_CODE: "abc",
-        OBX_PUBLIC_URL: "brands.kestrel.example/portal",
+        OBX_PUBLIC_URL: "brands.maison-noor.example/portal",
         PORT: "http",
         OBX_TRUST_PROXY: "maybe",
         OBX_STORAGE: "s3",
@@ -163,7 +163,7 @@ describe("configuration checks", () => {
     expect(p).toEqual([
       "OBX_SECRET_KEY must be at least 32 characters. Generate one with: openssl rand -base64 48",
       "OBX_SETUP_CODE must be at least 6 characters (or leave it empty to get a code in the log).",
-      'OBX_PUBLIC_URL must be a full address like https://brands.yourbrand.com (got "brands.kestrel.example/portal").',
+      'OBX_PUBLIC_URL must be a full address like https://brands.yourbrand.com (got "brands.maison-noor.example/portal").',
       'OBX_TRUST_PROXY must be true or false (got "maybe").',
       'PORT must be a whole number from 1 to 65535 (got "http").',
       'OBX_LOG_LEVEL must be one of debug, info, warn, error (got "loud").',
@@ -175,7 +175,7 @@ describe("configuration checks", () => {
 
   test("Cloudflare requires the secret key; a path in OBX_PUBLIC_URL is refused", () => {
     expect(validateEnv({}, "workers")).toEqual(["OBX_SECRET_KEY is not set. Generate one with: openssl rand -base64 48"]);
-    expect(validateEnv({ OBX_SECRET_KEY: "x".repeat(40), OBX_PUBLIC_URL: "https://kestrel.example/portal" }, "workers")[0]).toContain("no path");
+    expect(validateEnv({ OBX_SECRET_KEY: "x".repeat(40), OBX_PUBLIC_URL: "https://maison-noor.example/portal" }, "workers")[0]).toContain("no path");
   });
 });
 
@@ -269,7 +269,7 @@ describe("the Bun process", () => {
 describe("D1 query cap per invocation (Workers)", () => {
   test("a long import checkpoints before the query budget runs out and finishes over several invocations", async () => {
     const { countingDb } = await import("../src/adapters/workers/index");
-    const { formData, fixtureText, kestrelImages } = await import("./helpers");
+    const { formData, fixtureText, maisonNoorImages } = await import("./helpers");
     const node = new TestNode();
     const admin = await node.setup();
     const token = await node.ingestToken(admin);
@@ -279,9 +279,9 @@ describe("D1 query cap per invocation (Workers)", () => {
     node.platform.queryBudgetLeft = () => 150 - used;
     node.platform.kickJobs = () => {};
     const f = formData([
-      { name: "csv", filename: "products.csv", type: "text/csv", data: fixtureText("kestrel/products.csv") },
-      { name: "assets_csv", filename: "assets.csv", type: "text/csv", data: fixtureText("kestrel/assets.csv") },
-      ...kestrelImages().map((i) => ({ name: "images", filename: i.name, type: "image/png", data: i.bytes })),
+      { name: "csv", filename: "products.csv", type: "text/csv", data: fixtureText("maison-noor/products.csv") },
+      { name: "assets_csv", filename: "assets.csv", type: "text/csv", data: fixtureText("maison-noor/assets.csv") },
+      ...maisonNoorImages().map((i) => ({ name: "images", filename: i.name, type: "image/png", data: i.bytes })),
     ]);
     const r = await node.api(token, "POST", "/obx/v1/ingest/imports", { body: f.body, headers: { "content-type": f.contentType } });
     expect(r.status).toBe(202);

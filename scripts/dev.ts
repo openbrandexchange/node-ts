@@ -1,8 +1,8 @@
-// Runs the portal on your computer with SQLite and the Kestrel example catalog: one command, no Docker.
+// Runs the portal on your computer with SQLite and the MAISON NOOR example catalog: one command, no Docker.
 //
 //   bun run dev          set up (first run only) with a known setup code, admin and retailer account,
-//                        the Kestrel products and images; then the portal keeps running (restarts on code changes)
-//   bun run dev:demo     demo mode (docs/demo.md): one-click sign-in, resets to the Kestrel fixtures
+//                        the MAISON NOOR products and images; then the portal keeps running (restarts on code changes)
+//   bun run dev:demo     demo mode (docs/demo.md): one-click sign-in, resets to the MAISON NOOR fixtures
 //
 // Data lives in ./data-dev (./data-demo for demo mode); delete the folder to start over. PORT (default 8080)
 // and OBX_DATA_DIR override the defaults; every other OBX_* variable is passed to the portal as it is.
@@ -15,14 +15,14 @@ import { parseImageName } from "../src/core/importformat";
 import { imageSize, sniffType } from "../src/lib/image";
 
 const ROOT = resolve(import.meta.dir, "..");
-const FIXTURES = join(ROOT, "test", "fixtures", "kestrel");
+const FIXTURES = join(ROOT, "test", "fixtures", "maison-noor");
 const args = new Set(process.argv.slice(2));
 const demo = args.has("--demo");
 const watch = args.has("--watch");
 
 export const LOCAL = {
-  setupCode: "KESTREL-LOCAL",
-  admin: { name: "Ada Admin", email: "admin@kestrel.example", password: "kestrel-local-admin" },
+  setupCode: "NOOR-LOCAL",
+  admin: { name: "Ada Admin", email: "admin@maison-noor.example", password: "maison-noor-local-admin" },
   retailer: { name: "Rita Retail", email: "retailer@northwind.example", password: "northwind-local-retailer", company: "Northwind Stores" },
 };
 
@@ -52,7 +52,7 @@ if (demo) {
   // The demo resets from <data>/files/demo/seed.zip (docs/demo.md); build it once from the fixtures.
   const seed = join(dataDir, "files", "demo", "seed.zip");
   if (!existsSync(seed)) {
-    console.log("Building the demo seed archive from the Kestrel fixtures …");
+    console.log("Building the demo seed archive from the MAISON NOOR fixtures …");
     mkdirSync(dirname(seed), { recursive: true });
     writeFileSync(seed, await buildSeed(FIXTURES, commandRenderer()));
   }
@@ -124,15 +124,15 @@ class Session {
   }
 }
 
-/** First run only: setup wizard, the Kestrel import with renditions, and a retailer account. */
+/** First run only: setup wizard, the MAISON NOOR import with renditions, and a retailer account. */
 async function seedOnce() {
   const s = new Session();
   await s.must("GET", "/admin/api/session");
   if (!(await s.must("GET", "/admin/api/setup")).required) return;
-  console.log("First run: setting up the portal with the Kestrel example catalog …");
+  console.log("First run: setting up the portal with the MAISON NOOR example catalog …");
   await s.must("POST", "/admin/api/setup", {
     setup_code: env.OBX_SETUP_CODE,
-    company: { name: "Kestrel Outfitters", first_brand_name: "Kestrel", default_language: "en", languages: ["en", "nl", "de", "fr"], contact_email: "trade@kestrel.example", website: "https://kestrel.example" },
+    company: { name: "MAISON NOOR Group", first_brand_name: "MAISON NOOR", default_language: "en", languages: ["en", "nl", "de", "fr"], contact_email: "trade@maison-noor.example", website: "https://maison-noor.example" },
     admin: LOCAL.admin,
   });
   const token = (await s.must("POST", "/admin/api/ingest-tokens", { name: "Local development", scopes: ["ingest:read", "ingest:write", "ingest:delete"], brand_external_ids: null })).secret as string;
@@ -144,12 +144,12 @@ async function seedOnce() {
   const images = readdirSync(join(FIXTURES, "images")).sort();
   for (const name of images) form.append("images", new Blob([readFileSync(join(FIXTURES, "images", name))], { type: "image/png" }), name);
   const started = await api("POST", "/obx/v1/ingest/imports", form);
-  if (started.status !== 202) throw new Error(`The Kestrel import was refused: ${started.status} ${await started.text()}`);
+  if (started.status !== 202) throw new Error(`The MAISON NOOR import was refused: ${started.status} ${await started.text()}`);
   const jobId = ((await started.json()) as { id: string }).id;
   for (let i = 0; ; i++) {
     const job = (await (await api("GET", `/obx/v1/ingest/jobs/${jobId}`)).json()) as { status: string; import_run?: { counts?: Record<string, number> } };
     if (job.status === "succeeded") break;
-    if (job.status === "failed" || i > 600) throw new Error(`The Kestrel import did not finish: ${JSON.stringify(job)}`);
+    if (job.status === "failed" || i > 600) throw new Error(`The MAISON NOOR import did not finish: ${JSON.stringify(job)}`);
     await Bun.sleep(200);
   }
 

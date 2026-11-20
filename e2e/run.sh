@@ -9,14 +9,14 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 PORT="${PORT:-18090}"
 TMP="$HERE/tmp"
-FIX="$ROOT/test/fixtures/kestrel"
+FIX="$ROOT/test/fixtures/maison-noor"
 rm -rf "$TMP" "$HERE/screenshots"
 mkdir -p "$TMP/data" "$HERE/screenshots"
 (cd "$FIX" && zip -qr "$TMP/images.zip" images)
 # A "nightly export" for the scheduled import: the same catalog with one renamed article.
 mkdir -p "$TMP/export"
 cp -R "$FIX/." "$TMP/export/"
-sed 's/Merino Crew Sweater/Merino Crew Jumper/' "$FIX/products.csv" >"$TMP/export/products.csv"
+sed 's/Fine Merino Crew-Neck Sweater/Merino Crew Jumper/' "$FIX/products.csv" >"$TMP/export/products.csv"
 (cd "$TMP/export" && zip -qr "$TMP/package.zip" products.csv assets.csv images)
 [ -d "$HERE/node_modules" ] || (cd "$HERE" && bun install --frozen-lockfile)
 (cd "$HERE" && bunx playwright install chromium >/dev/null)

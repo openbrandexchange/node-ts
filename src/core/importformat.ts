@@ -79,9 +79,9 @@ export function parseImageName(file: string): ParsedImageName | { error: string 
     } else if (ROLES.includes(q)) role ??= q;
     else view ??= q;
   }
-  if (parts.length < 3) return { error: "The name needs {style}_{colour}_{position}, e.g. KO-1001_NVY_1.jpg." };
+  if (parts.length < 3) return { error: "The name needs {style}_{colour}_{position}, e.g. MN-1001_NVY_1.jpg." };
   const pos = parts[parts.length - 1];
-  if (!/^[1-9][0-9]{0,2}$/.test(pos)) return { error: "The part before the extension (or qualifiers) must be the position 1-999, e.g. KO-1001_NVY_1.jpg." };
+  if (!/^[1-9][0-9]{0,2}$/.test(pos)) return { error: "The part before the extension (or qualifiers) must be the position 1-999, e.g. MN-1001_NVY_1.jpg." };
   const color = parts[parts.length - 2];
   const style = parts.slice(0, -2).join("_");
   if (!color || !style) return { error: "The name needs {style}_{colour}_{position}." };
@@ -791,9 +791,9 @@ export function importTemplate(languages: string[]): string[][] {
     "size_system",
   ];
   const ex = (size: string, gtin: string) => [
-    "Kestrel",
-    "KO-1001",
-    ...langs.map((l) => (l === "nl" ? "Merino trui met ronde hals" : l === "de" ? "Merino-Pullover mit Rundhalsausschnitt" : l === "fr" ? "Pull col rond en mérinos" : "Merino Crew Sweater")),
+    "MAISON NOOR",
+    "MN-1001",
+    ...langs.map((l) => (l === "nl" ? "Fijne merino trui met ronde hals" : l === "de" ? "Merino-Pullover mit Rundhalsausschnitt" : l === "fr" ? "Pull col rond en mérinos" : "Fine Merino Crew-Neck Sweater")),
     ...langs.map(() => ""),
     "sweater",
     "unisex",
@@ -803,7 +803,7 @@ export function importTemplate(languages: string[]): string[][] {
     "wash_30_very_mild|do_not_tumble_dry|dry_flat",
     "PT",
     gtin,
-    `KO-1001-NVY-${size}`,
+    `MN-1001-NVY-${size}`,
     "NVY",
     ...langs.map((l) => (l === "nl" ? "Marineblauw" : l === "de" ? "Marineblau" : l === "fr" ? "Bleu marine" : "Navy")),
     size,

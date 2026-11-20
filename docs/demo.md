@@ -1,8 +1,8 @@
 # Demo mode
 
 A public demo portal that people can look around in without an account: the fictional fashion house
-MAISON NOOR as a showroom (its own theme, login page and start page) over the spec's Kestrel catalogue
-(`fixtures/kestrel`, with drawn product shots instead of the fixtures' colour squares), a one-click sign-in as a retailer or as the brand's admin,
+MAISON NOOR as a showroom (its own theme, login page and start page) over the spec's catalogue of the same house
+(`fixtures/maison-noor`, with drawn product shots instead of the fixtures' colour squares), a one-click sign-in as a retailer or as the brand's admin,
 a public read-only API key, and an automatic reset to the fixtures. Open Brand Exchange runs one at
 <https://obx-portal-demo.richardlindhout96.workers.dev> (planned: `https://demo.openbrandexchange.com`).
 
@@ -19,7 +19,7 @@ on its first run and prints the address).
 | Sign-in | The login page shows "View as retailer" and "View as brand" instead of the login form (`POST /admin/api/demo/login` with `{"as": "retailer" \| "brand"}`). The two accounts have no password. With a Turnstile site key the buttons wait for Cloudflare Turnstile. |
 | Banner | "Demo, fictional data" on every page (admin-ui 0.2.2+, in the 25 languages); the public branding carries `x-obx-demo` (docs of admin-ui, `docs/node-integration.md` §4). |
 | Showroom | Theme (ink and ivory, Cormorant Garamond headings, Jost body text, editorial grid), split login page with a drawn drape image, start page with hero, announcement, four category tiles, "New this season", a materials story, a text block and a fictional account manager (`scripts/demo-showroom.ts`). |
-| Data | Brand Kestrel (+ Kestrel Trail from the CSV): 11 articles, 46 variants, 35 images with real JPEG renditions; retailers Northwind Stores (the demo retailer, all brands, originals), Harbour & Co (Kestrel only, no originals) and Lumen Concept Store (blocked); one open access request; 30 days of example download statistics. |
+| Data | Brand MAISON NOOR (+ NOOR ATELIER from the CSV): 11 articles, 46 variants, 35 images with real JPEG renditions; retailers Northwind Stores (the demo retailer, all brands, originals), Harbour & Co (MAISON NOOR only, no originals) and Lumen Concept Store (blocked); one open access request; 30 days of example download statistics. |
 | API | Public read-only key `obxc_demo-portal-read-only` / `obxs_demo-portal-read-only-public` (scopes `catalog:read media:read media:original`, Northwind Stores). The discovery document drops `webhooks`, `ingest` and `usage` (the key cannot write); those addresses answer `501`. |
 | Reset | Every `OBX_DEMO_RESET_MINUTES` (default 60) from the minute cron **when something changed**: a visitor's successful write (anything but signing in and out) sets `demo_dirty`; a demo nobody touched is not reset (no database writes), except once a day (so the example statistics stay recent), after a failed reset, and when the seed archive in storage changed size. Also on the first visit after a deploy, and on demand with `POST /admin/api/demo/reset` (signed-in visitors, at most once per 10 minutes). Sessions of the two demo accounts survive a reset; old change-feed cursors answer `410 cursor_expired`. |
 

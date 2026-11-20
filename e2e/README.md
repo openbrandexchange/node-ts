@@ -3,7 +3,7 @@
 `e2e/run.sh` starts a fresh node-ts (Bun) on a temporary data directory and walks the real admin
 screens and retailer portal (the vendored admin-ui in `public/`) in headless Chromium:
 
-- first-run setup, import of the Kestrel fixtures (CSV + zip), access request → approval → invitation,
+- first-run setup, import of the MAISON NOOR fixtures (CSV + zip), access request → approval → invitation,
   retailer sign-in, catalog, article page, EAN list, selection zip, background zip, article data CSV,
   API keys (brand-made and self-service), access keys, a scheduled import from a web address,
   the Dutch portal ("Beeldbank");

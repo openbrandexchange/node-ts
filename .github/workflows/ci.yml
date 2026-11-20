@@ -72,8 +72,8 @@ jobs:
         if: env.OBX_ACCESS == 'yes'
         with:
           repository: openbrandexchange/obx-go
-          # The suite of the spec version this node implements (0.3.0).
-          ref: v0.3.0
+          # The suite of the spec this node implements (0.3.1, spec 7a4c9ef: the MAISON NOOR fixtures).
+          ref: 281193b3a987e1c1962e6642c3e909ce49e4038a
           token: ${{ secrets.OBX_READ_TOKEN || github.token }}
           path: obx-go
       - uses: actions/setup-go@v5
@@ -101,7 +101,7 @@ jobs:
           else
             nohup bunx wrangler dev --local --port 8080 --ip 127.0.0.1 --test-scheduled --persist-to "$RUNNER_TEMP/wrangler" \
               --var OBX_SECRET_KEY:ci-conformance-secret-key-0123456789abcdef --var OBX_SETUP_CODE:CONFORMANCE-1 \
-              --var OBX_ALLOW_PRIVATE_URLS:true --var OBX_MAIL_PROVIDER:console --var OBX_MAIL_FROM:portal@kestrel.example \
+              --var OBX_ALLOW_PRIVATE_URLS:true --var OBX_MAIL_PROVIDER:console --var OBX_MAIL_FROM:portal@maison-noor.example \
               >"$RUNNER_TEMP/node.log" 2>&1 &
             # The Workers runtime runs background jobs from the minute cron; trigger it every few seconds
             # (wrangler's /cdn-cgi/handler/scheduled: /__scheduled now reaches the assets' SPA fallback).

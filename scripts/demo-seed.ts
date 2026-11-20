@@ -1,8 +1,8 @@
-// Builds the demo seed archive (docs/demo.md): the spec's Kestrel fixtures plus client renditions
+// Builds the demo seed archive (docs/demo.md): the spec's MAISON NOOR fixtures plus client renditions
 // (web, square, thumb as JPEG, the way the admin UI makes them), which demo mode imports on every reset,
 // and the showroom (theme, login page, start page and their images, scripts/demo-showroom.ts).
 //
-//   bun scripts/demo-seed.ts [out.zip] [fixtures dir]        default: demo-seed.zip, test/fixtures/kestrel
+//   bun scripts/demo-seed.ts [out.zip] [fixtures dir]        default: demo-seed.zip, test/fixtures/maison-noor
 //
 // With rsvg-convert and ImageMagick installed, the fixtures' flat colour squares are replaced by drawn
 // product shots and the showroom images are drawn (scripts/demo-art.ts); the fixture files themselves
@@ -182,7 +182,7 @@ export async function drawnArt(): Promise<SeedArt> {
 
 if (import.meta.main) {
   const out = process.argv[2] ?? "demo-seed.zip";
-  const dir = process.argv[3] ?? join(import.meta.dir, "..", "test", "fixtures", "kestrel");
+  const dir = process.argv[3] ?? join(import.meta.dir, "..", "test", "fixtures", "maison-noor");
   const { hasArtTools } = await import("./demo-art");
   if (!hasArtTools()) console.warn("rsvg-convert and ImageMagick not found: the seed keeps the fixture images and has no showroom.");
   const zip = await buildSeed(dir, commandRenderer(), hasArtTools() ? await drawnArt() : {});
