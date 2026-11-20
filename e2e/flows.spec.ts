@@ -2,7 +2,7 @@ import { expect, test, type Page, type Response } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 const SETUP_CODE = process.env.OBX_E2E_SETUP_CODE ?? 'SETUP-1234'
-const admin = { name: 'Iris Admin', email: 'admin@maison-noor.example', password: 'maison-noor-admin-2026!' }
+const admin = { name: 'Iris Admin', email: 'admin@maison-noor.example', password: 'noor-admin-2026!' }
 
 test.describe.configure({ mode: 'serial' })
 

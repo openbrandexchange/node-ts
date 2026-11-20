@@ -22,7 +22,7 @@ const watch = args.has("--watch");
 
 export const LOCAL = {
   setupCode: "NOOR-LOCAL",
-  admin: { name: "Ada Admin", email: "admin@maison-noor.example", password: "maison-noor-local-admin" },
+  admin: { name: "Ada Admin", email: "admin@maison-noor.example", password: "noor-local-admin" },
   retailer: { name: "Rita Retail", email: "retailer@northwind.example", password: "northwind-local-retailer", company: "Northwind Stores" },
 };
 

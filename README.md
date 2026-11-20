@@ -24,7 +24,7 @@ and the fictional brand MAISON NOOR (11 articles with images), and prints the ad
 | | |
 |---|---|
 | Address | http://localhost:8080 (`PORT=…` for another port) |
-| Brand admin | `admin@maison-noor.example` / `maison-noor-local-admin` |
+| Brand admin | `admin@maison-noor.example` / `noor-local-admin` |
 | Retailer | `retailer@northwind.example` / `northwind-local-retailer` |
 
 The portal restarts when you change the code. Delete `./data-dev` to start over. Image previews are drawn with
