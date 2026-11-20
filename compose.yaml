@@ -1,4 +1,6 @@
-# Self-hosting with Docker Compose: `docker compose up -d`, then open http://localhost:8080
+# FOR LOCAL DEVELOPMENT ONLY, not a production route. To run a real portal, use the installer on your
+# own server (docs/hosting-standalone.md) or Cloudflare Workers (docs/hosting-cloudflare.md).
+# Local run with Docker Compose: `docker compose up -d`, then open http://localhost:8080
 # The setup code is printed in the log (`docker compose logs portal`). Optional settings go in a .env
 # file next to this file (see .env.example); without OBX_SECRET_KEY one is generated into the volume.
 services:

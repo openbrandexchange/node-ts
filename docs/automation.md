@@ -14,7 +14,7 @@ work only on the upload API (`/obx/v1/ingest`), never on the admin screens or th
 
 ## Scheduled imports on this edition
 
-| Source | Cloudflare | Bun (Docker, standalone, Cloud Run) |
+| Source | Cloudflare | Own server (Bun, standalone) |
 |---|---|---|
 | Web address (HTTPS, optional login header) | yes | yes |
 | S3-compatible bucket (S3, R2, MinIO, B2 …) | yes | yes |

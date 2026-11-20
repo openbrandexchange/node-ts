@@ -39,7 +39,7 @@ jobs:
       - name: Whole flow in the local Workers runtime (D1 + R2)
         run: bun run smoke:workers
       - name: Shell scripts
-        run: shellcheck deploy/*.sh deploy/cloudrun/*.sh scripts/*.sh e2e/run.sh
+        run: shellcheck deploy/*.sh scripts/*.sh e2e/run.sh
       - name: Workflow files
         uses: raven-actions/actionlint@v2
 

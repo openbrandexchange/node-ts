@@ -31,26 +31,20 @@ Rolling back the code: `bunx wrangler rollback` (Workers keeps earlier versions)
 ran a migration, roll the database back as well (`wrangler d1 time-travel restore` to the time before
 the upgrade), because an older version refuses a database migrated by a newer one.
 
-## Docker
+## Your own server
+
+Take a backup ([hosting-standalone.md](hosting-standalone.md#backups)), then run the install command again:
 
 ```sh
-docker compose pull && docker compose up -d                 # published image
-git pull && git checkout v0.2.1 && docker compose up -d --build   # built from source
-docker compose logs -f portal                               # migrations and "listening"
-curl -fs http://localhost:8080/readyz
+curl -fsSL https://openbrandexchange.com/install.sh | sudo sh -s -- --edition ts --domain portal.yourbrand.com
+sudo journalctl -u obx-portal -f                       # migrations and "listening"
+curl -fs https://portal.yourbrand.com/readyz
 ```
 
-Pin a version in production (`ghcr.io/openbrandexchange/node-ts:0.2.1` or `:0.2` for patches only)
-rather than `latest`.
-
-## Standalone binary and systemd
-
-```sh
-sudo systemctl stop brand-portal
-sudo -u portal ./obx-portal-backup backup /var/backups/portal/before-0.2.1   # with OBX_DATA_DIR set
-sudo tar -xzf obx-portal-0.2.1-linux-x64.tar.gz -C /opt && sudo ln -sfn /opt/obx-portal-0.2.1-linux-x64 /opt/brand-portal
-sudo systemctl start brand-portal
-```
+It keeps the settings and data and restarts the service. Add `--version 0.3.0` to install a specific
+release instead of the latest (also to go back to an earlier version after restoring its backup).
+Installed by hand (manual install)? Stop the service, replace the contents of `/opt/obx-portal` with
+the new release and start it again.
 
 ## If an upgrade fails
 

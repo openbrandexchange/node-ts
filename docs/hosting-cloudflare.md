@@ -84,13 +84,36 @@ pricing). Check the current pages before you choose: <https://developers.cloudfl
 `wrangler.jsonc` sets no `limits` block on purpose: a CPU limit entry is refused on the free plan,
 which would break the Deploy button there, and the Paid default of 30 s is enough.
 
-## Your own domain
+## Your own domain (DNS)
 
-**Workers & Pages → brand-portal → Settings → Domains & Routes → Add → Custom domain**, for example
-`brands.yourbrand.com` (the domain must be on Cloudflare). Then set the variable
-`OBX_PUBLIC_URL=https://brands.yourbrand.com` (**Settings → Variables and secrets**) and deploy again,
-so e-mails and API links use it. The `workers.dev` address keeps working unless you turn it off
-(`"workers_dev": false`).
+Add the address as a custom domain on the Worker: **Workers & Pages → brand-portal → Settings →
+Domains & Routes → Add → Custom domain**, for example `portal.yourbrand.com`.
+
+- **Your domain is already on Cloudflare** (Cloudflare manages its DNS): that is all. Cloudflare
+  creates the DNS record and the certificate automatically, usually within a few minutes.
+- **Your domain's DNS is elsewhere** (TransIP, Hostnet, Strato, one.com, GoDaddy …): a Worker custom
+  domain needs the domain on Cloudflare. The simplest way is to move the domain's DNS to Cloudflare
+  (free): **Add a domain** in the dashboard, check that Cloudflare copied your existing records (mail!),
+  then change the nameservers at the company where you registered the domain to the two Cloudflare
+  shows. After that, add the custom domain as above.
+
+  Keeping your DNS where it is works only with Cloudflare's partial ("CNAME") setup, which needs the
+  Business plan or higher: add the domain that way and the custom domain as above, then add at your
+  DNS company
+
+  | Type | Name | Value |
+  |---|---|---|
+  | CNAME | portal | `portal.yourbrand.com.cdn.cloudflare.net` |
+
+  A CNAME straight to the `workers.dev` address does not work: Cloudflare only answers for hostnames
+  that are set up on your account.
+
+Then set the variable `OBX_PUBLIC_URL=https://portal.yourbrand.com` (**Settings → Variables and
+secrets**) and deploy again, so e-mails and API links use it. The `workers.dev` address keeps working
+unless you turn it off (`"workers_dev": false`).
+
+Check: `dig +short portal.yourbrand.com` (or an online DNS checker such as dnschecker.org) shows
+Cloudflare addresses, and `https://portal.yourbrand.com/healthz` answers.
 
 ## E-mail
 

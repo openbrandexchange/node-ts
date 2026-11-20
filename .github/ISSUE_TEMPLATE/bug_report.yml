@@ -25,10 +25,10 @@ body:
       label: Where does the portal run?
       options:
         - Cloudflare (Deploy button or wrangler)
-        - Docker / Docker Compose
-        - Google Cloud Run
-        - Standalone binary
+        - Own server (installer)
+        - Own server (manual install of the standalone binary)
         - Bun from source
+        - Docker (local development)
         - Other
     validations:
       required: true

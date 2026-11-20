@@ -74,7 +74,7 @@ CLOUDFLARE_ACCOUNT_ID=… bunx wrangler r2 object put obx-portal-demo-files/demo
   --file demo-seed.zip --jurisdiction eu --remote -c deploy/demo/wrangler.jsonc
 ```
 
-On Bun/Docker put it at `<data dir>/files/demo/seed.zip`. Without the archive the demo still starts,
+On your own server or Bun put it at `<data dir>/files/demo/seed.zip`. Without the archive the demo still starts,
 with accounts and retailers but an empty catalog (logged as a warning).
 
 ## Deploying the Open Brand Exchange demo (Cloudflare)

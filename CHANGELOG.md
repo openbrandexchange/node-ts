@@ -29,6 +29,17 @@ always forward-only and applied automatically.
   after a visitor's change, once a day, or when the seed archive changes.
 - Cloudflare docs use `bun run deploy` and `bunx wrangler`.
 
+### Documentation
+- Self-hosting on your own server is now one command: `curl -fsSL https://openbrandexchange.com/install.sh | sudo sh -s -- --edition ts --domain portal.yourbrand.com`
+  (the node-go installer with `--edition ts`: the standalone binary as the `obx-portal` service, HTTPS through
+  Caddy). [docs/hosting-standalone.md](docs/hosting-standalone.md) explains DNS, updating, backups, uninstalling
+  and running behind your own proxy, and keeps the manual install as an appendix.
+- The Cloudflare guide explains the DNS for your own domain.
+- Docker and Google Cloud Run are no longer production routes: `docs/hosting-docker.md`, `docs/hosting-cloud-run.md`
+  and `deploy/cloudrun/deploy.sh` are removed; the `Dockerfile` and `compose.yaml` are for local development and
+  CI ([docs/development/docker.md](docs/development/docker.md)). The other editions are now called "Portal for
+  your own server" (node-go) and "Portal for web hosting" (node-php).
+
 ## [0.3.0] - 2026-11-17
 
 Implements Open Brand Exchange spec 0.3.0: materials and care as terms with names (spec proposal 0004,

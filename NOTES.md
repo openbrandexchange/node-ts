@@ -259,8 +259,7 @@ The recipient's language is the user's language, the requester's `contact.langua
    Reason: the owner decides when repositories go public.
 3. **Not run against real cloud accounts:** a real Cloudflare deploy (verified: `wrangler deploy
    --dry-run`, the prebuilt bundle in `wrangler dev`, the whole flow in `bun run smoke:workers`,
-   conformance on `wrangler dev`) and `deploy/cloudrun/deploy.sh` (shellcheck only; gcloud is not
-   installed here). Reason: no cloud accounts may be used from this environment.
+   conformance on `wrangler dev`). (The Cloud Run script was removed in favour of the installer.) Reason: no cloud accounts may be used from this environment.
 4. **D1 row estimates** in docs/hosting-cloudflare.md are estimates from query plans and table sizes,
    not measured on D1 (the local simulator does not bill). Reason: needs a real account; the D1
    dashboard shows the real numbers.

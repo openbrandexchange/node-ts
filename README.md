@@ -32,7 +32,7 @@ macOS `sips` or ImageMagick, whichever you have. `bun run dev:demo` runs the pub
 sign-in, hourly reset, [docs/demo.md](docs/demo.md)) with its data in `./data-demo`.
 
 > This repository is the TypeScript edition. The same portal also exists as
-> **Portal for Google Cloud & Docker** (`node-go`) and **Portal for web hosting** (`node-php`).
+> **Portal for your own server** (`node-go`) and **Portal for web hosting** (`node-php`).
 > All three speak the same protocol and run the same admin screens.
 
 ---
@@ -118,11 +118,11 @@ Retailers use the same address. They see only what you published, for the brands
 
 ### Your own domain
 
-Cloudflare dashboard → **Workers & Pages → brand-portal → Settings → Domains & Routes → Add → Custom domain** (e.g. `brands.yourbrand.com`). Then set the variable `OBX_PUBLIC_URL=https://brands.yourbrand.com` and deploy again, so e-mails link to the right address.
+Cloudflare dashboard → **Workers & Pages → brand-portal → Settings → Domains & Routes → Add → Custom domain** (e.g. `portal.yourbrand.com`). If the domain is on Cloudflare, the DNS record and certificate are made for you; if its DNS is elsewhere, see [Your own domain (DNS)](docs/hosting-cloudflare.md#your-own-domain-dns). Then set the variable `OBX_PUBLIC_URL=https://portal.yourbrand.com` and deploy again, so e-mails link to the right address. On your own server the installer sets the domain for you ([docs/hosting-standalone.md](docs/hosting-standalone.md)).
 
 ### E-mail
 
-Invitations, password resets, "your download is ready" and "a retailer asked for access" are sent in the recipient's language through an e-mail service with an HTTPS API. Set three variables (Cloudflare: **Settings → Variables and secrets**; Docker: `.env`):
+Invitations, password resets, "your download is ready" and "a retailer asked for access" are sent in the recipient's language through an e-mail service with an HTTPS API. Set three variables (Cloudflare: **Settings → Variables and secrets**; own server: `/etc/obx-portal/obx-portal.env`):
 
 | Variable | Value |
 |---|---|
@@ -189,33 +189,22 @@ When an image arrives without those versions (for example from a scheduled impor
 
 ---
 
-## Other ways to host this edition
+## Your own server
 
-The same code runs on [Bun](https://bun.sh), with SQLite and files on disk or in any S3-compatible storage.
-
-### Docker / your own server
-
-```sh
-git clone https://github.com/openbrandexchange/node-ts && cd node-ts
-docker compose up -d              # http://localhost:8080 — data in the "portal-data" volume
-docker compose logs portal        # shows the setup code for the wizard
-```
-
-Optional settings (e-mail, your own setup code, public address) go in a `.env` file: `cp .env.example .env`. Port 8080 already taken on your computer? Set `OBX_PORT=8090` in `.env` and open http://localhost:8090. Without `OBX_SECRET_KEY` a key is generated into the volume on first start. For images in a bundled S3 server: set `OBX_STORAGE=s3` in `.env` and run `docker compose --profile s3 up -d`.
-
-Put HTTPS in front (Caddy, Traefik, nginx) and set `OBX_PUBLIC_URL` and `OBX_TRUST_PROXY=true`. Back up while it runs with `docker compose exec portal bun src/adapters/bun/backup.ts backup /data/backups/$(date +%F)` (database, files and generated secret key). More: [docs/hosting-docker.md](docs/hosting-docker.md).
-
-### Standalone binary (no Docker, no Bun)
-
-Each release has one archive per platform (`obx-portal-<version>-linux-x64.tar.gz`, `…-linux-arm64`, `…-darwin-arm64`, `…-windows-x64.zip`) with a single executable and the web interface: unpack and run `./obx-portal`. As a systemd service: [docs/hosting-standalone.md](docs/hosting-standalone.md).
-
-### Google Cloud Run
+The same code runs on [Bun](https://bun.sh), with SQLite and files on disk or in any S3-compatible storage. On a
+Linux server (VPS) one command installs it as a service with HTTPS:
 
 ```sh
-PROJECT=my-project REGION=europe-west4 ./deploy/cloudrun/deploy.sh
+curl -fsSL https://openbrandexchange.com/install.sh | sudo sh -s -- --edition ts --domain portal.yourbrand.com
 ```
 
-The script creates a Cloud Storage bucket, secrets and a service account, builds the image and deploys one always-on instance. Images go to the bucket; the SQLite database is continuously copied to the same bucket with Litestream and restored on start. (Needs `gcloud` and billing on the project.)
+Point the domain at the server first (an A record, see the guide). The installer checks DNS, ports and the
+firewall, installs the standalone `obx-portal` program (no Bun or Node needed) with Caddy for the certificate, and
+prints the address and the setup code. Run the same command again to update. DNS, options, backups, uninstalling
+and a manual install: [docs/hosting-standalone.md](docs/hosting-standalone.md).
+
+The `Dockerfile` and `compose.yaml` are for local development and tests only, not for production
+([docs/development/docker.md](docs/development/docker.md)).
 
 ---
 
@@ -268,7 +257,7 @@ bunx wrangler dev             # Workers runtime locally
 
 ## Documentation
 
-[Hosting](docs/hosting.md) (Cloudflare, Docker, Cloud Run, standalone) · [Operations](docs/operations.md) · [Upgrading](docs/upgrading.md) · [Automatic upload](docs/automation.md) · [Security](docs/security.md) · [Performance](docs/performance.md) · [Privacy notice template](docs/privacy-notice-template.md) · [Demo mode](docs/demo.md) · [Changelog](CHANGELOG.md) · [Implementation notes](NOTES.md)
+[Hosting](docs/hosting.md) (your own server, Cloudflare) · [Operations](docs/operations.md) · [Upgrading](docs/upgrading.md) · [Automatic upload](docs/automation.md) · [Security](docs/security.md) · [Performance](docs/performance.md) · [Privacy notice template](docs/privacy-notice-template.md) · [Demo mode](docs/demo.md) · [Changelog](CHANGELOG.md) · [Implementation notes](NOTES.md)
 
 Questions: hello@openbrandexchange.com. Security problems: security@openbrandexchange.com ([SECURITY.md](SECURITY.md)). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) (Developer Certificate of Origin), [Code of Conduct](CODE_OF_CONDUCT.md).
 

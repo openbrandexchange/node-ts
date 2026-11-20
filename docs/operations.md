@@ -6,8 +6,8 @@ are in [hosting.md](hosting.md); updates in [upgrading.md](upgrading.md).
 
 ## Configuration
 
-All settings are environment variables (Cloudflare: **Settings → Variables and secrets**; Docker:
-`.env`; systemd: `EnvironmentFile`). They are checked when the portal starts: a wrong value stops the
+All settings are environment variables (Cloudflare: **Settings → Variables and secrets**; own server:
+`/etc/obx-portal/obx-portal.env`, then `sudo systemctl restart obx-portal`). They are checked when the portal starts: a wrong value stops the
 Bun process with exit code 78 and one sentence per problem, and makes the Worker answer `503` with the
 same sentences. Empty values count as "not set".
 
@@ -32,12 +32,12 @@ same sentences. Empty values count as "not set".
 | `OBX_SHUTDOWN_TIMEOUT_MS` | `20000` | Bun: how long a graceful stop waits for running work. |
 | `PORT`, `HOST` | `8080`, `0.0.0.0` | Bun: where to listen. |
 | `OBX_DATA_DIR`, `OBX_DB_PATH`, `OBX_FILES_DIR`, `OBX_UI_DIR` | `./data`, `<data>/obx.sqlite`, `<data>/files`, `./public` | Bun: where things live. |
-| `LITESTREAM_REPLICA_URL` | off | Docker image: restore the database from and replicate it to object storage (used on Cloud Run). |
+| `LITESTREAM_REPLICA_URL` | off | Docker image only (local development): restore the database from and replicate it to object storage with Litestream. |
 
 ## Health, readiness and graceful shutdown
 
 - `GET /healthz` → `200 {"ok":true}` when the process (or Worker) answers. It touches no database, so a
-  slow database never gets a healthy instance restarted. Use it for liveness probes and Docker's `HEALTHCHECK`.
+  slow database never gets a healthy instance restarted. Use it for liveness checks.
 - `GET /readyz` → `200` with `checks.database` (reachable, all migrations applied, not newer than the
   software), `checks.storage` (reachable) and, while stopping, `checks.process`; `503` when any check
   fails. Use it for load balancers and uptime monitors.
@@ -98,35 +98,36 @@ Useful alerts: `/readyz` not 200 for 5 minutes; `obx_jobs{status="failed"}` incr
 
 What to keep: the **database**, the **files** (images, when stored on disk) and the **secret key**.
 
-### Bun, Docker, standalone binary
+### Own server and Bun
 
 ```sh
 # while the portal runs (consistent snapshot; files are content-addressed and never rewritten)
-bun src/adapters/bun/backup.ts backup ./backups/2026-09-28                     # from source
-docker compose exec portal bun src/adapters/bun/backup.ts backup /data/backups/2026-09-28   # Docker
-./obx-portal-backup backup ./backups/2026-09-28                                  # standalone
+sudo -u obx env OBX_DATA_DIR=/var/lib/obx-portal \
+  /opt/obx-portal/obx-portal-backup backup /var/lib/obx-portal/backups/2026-09-28   # own server (installer)
+bun src/adapters/bun/backup.ts backup ./backups/2026-09-28                          # from source
 ```
 
 A backup folder has `obx.sqlite` (a `VACUUM INTO` snapshot), `files/`, `secret.key` (when the key was
 generated into the data folder; otherwise keep `OBX_SECRET_KEY` with the backup yourself) and
-`manifest.json` (checksum, schema, counts). `backup.ts verify <dir>` checks a copy without touching
+`manifest.json` (checksum, schema, counts). `obx-portal-backup verify <dir>` (`backup.ts verify <dir>` from source) checks a copy without touching
 the portal. Copy backups off the machine (another disk, a bucket, a backup service); keep a daily one
 for two weeks and a monthly one for a year, or as your policy says.
 
 Restore:
 
 ```sh
-docker compose stop portal
-docker compose run --rm portal bun src/adapters/bun/backup.ts restore /data/backups/2026-09-28
-docker compose start portal
-# when everything works:
-docker compose exec portal bun src/adapters/bun/backup.ts cleanup      # removes the *.before-restore-* copies
+sudo systemctl stop obx-portal
+sudo -u obx env OBX_DATA_DIR=/var/lib/obx-portal \
+  /opt/obx-portal/obx-portal-backup restore /var/lib/obx-portal/backups/2026-09-28
+sudo systemctl start obx-portal
+# when everything works (removes the *.before-restore-* copies):
+sudo -u obx env OBX_DATA_DIR=/var/lib/obx-portal /opt/obx-portal/obx-portal-backup cleanup
 ```
 
 The restore checks the checksum, the database integrity and that the schema is not newer than the
 software, and keeps the current data next to it as `*.before-restore-<time>`.
 
-This procedure is tested on every CI run (`scripts/backup-restore-test.sh`: a running portal in Docker
+This procedure is tested on every CI run (`scripts/backup-restore-test.sh`: a running portal in a test container
 is backed up, restored into a new volume and must still sign in, show the article and accept the old
 access key) and by `test/backup.test.ts` (catalog, images and keys identical after restore).
 

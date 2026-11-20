@@ -1,5 +1,6 @@
-# Docker build of the Portal for Cloudflare (node-ts) on the Bun runtime, for your own server or any
-# container host.
+# FOR LOCAL DEVELOPMENT AND CI ONLY, not a production route. To run a real portal, use the installer on
+# your own server (docs/hosting-standalone.md) or Cloudflare Workers (docs/hosting-cloudflare.md).
+# Docker build of the Portal for Cloudflare (node-ts) on the Bun runtime.
 # docker build -t brand-portal . && docker run -p 8080:8080 -v portal-data:/data brand-portal
 FROM oven/bun:1.3-slim AS deps
 WORKDIR /app
