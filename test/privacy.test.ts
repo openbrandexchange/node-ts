@@ -1,7 +1,7 @@
 // Audit log, personal-data export and erasure, and retention of logs and statistics.
 import { describe, expect, test } from "bun:test";
 import { TestNode } from "./helpers";
-import { Ctx } from "../src/core/ctx";
+import { Ctx, invalidateSharedMeta } from "../src/core/ctx";
 import { housekeeping } from "../src/core/cron";
 
 async function withRetailerUser() {
@@ -148,6 +148,7 @@ describe("retention", () => {
     const stored = JSON.parse(row!.value);
     stored.retention = { download_stats_days: 120 };
     await node.platform.db.run("UPDATE meta SET value = ? WHERE key = 'settings'", [JSON.stringify(stored)]);
+    invalidateSharedMeta(node.platform.db);
     const s = await admin.req("GET", "/admin/api/settings");
     expect(s.json.retention.download_events_days).toBe(120);
     expect(s.json.retention).not.toHaveProperty("download_stats_days");

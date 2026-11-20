@@ -303,3 +303,35 @@ The recipient's language is the user's language, the requester's `contact.langua
 - V6. **The same GTIN on two rows of one file** is `gtin_conflict` on `gtin` for the later row ("also used on row
   N"), as obx-go reads §1.2.1 (its NOTES 8); two rows without GTIN that give the same variant stay
   `validation_failed` on `variant_id`.
+
+## Portal appearance (spec node-admin.yaml, 2026-11-20)
+
+- P1. **Storage.** `theme`, `login` and `home` live in the settings JSON as sent (merge patch, unknown members kept);
+  responses add every known member as `null` when not set (a merge patch drops stored nulls) and, in settings,
+  public branding and viewer responses, `image_url` / `background_image_url` next to each `image` /
+  `background_image` (also in unknown blocks: any member called `image` or `background_image` that is a string).
+  Resolved URLs a client sends back are dropped before storing. Image URLs are relative
+  (`/admin/api/public/images/{id}`), as in the spec; `logo_url` and `favicon_url` stay absolute like before.
+- P2. **Images** are content-addressed blobs plus a `branding_images` row (migration 0009; id `img_` + time + random,
+  never reused). `used` and the `409` on delete look at every `image` / `background_image` string in `login`/`home`
+  (also unknown blocks). The daily blob clean-up keeps branding images, the logo and the favicon. No resized variant
+  is served. The 200-image limit is `409 limit_exceeded` (the error vocabulary maps `limit_exceeded` to 400
+  elsewhere; here the status is 409 as the spec says).
+- P3. **Validation** follows the OpenAPI patterns (links, image ids, unknown block `type` `^[a-z][a-z0-9_]{0,39}$`,
+  products `query` without `?`/`#`/spaces); a products block may carry both `style_numbers` and `query` (the UI lets
+  `style_numbers` win). The 64 KiB limit counts the stored branding (without the file hashes).
+- P4. **Demo.** The demo brand may change the look (not the company details or the brand's name), at most 20 images;
+  every upload is capped by `OBX_DEMO_MAX_UPLOAD_BYTES` (2 MiB). Uploaded images are served `private, max-age=300`
+  (the demo guard rewrites every `public` cache header). The seed carries the showroom; the reset writes it with
+  fixed image ids.
+
+## Performance on Workers (2026-11-20)
+
+- W1. `Db.reads(stmts)` sends independent SELECTs in one D1 batch (one round trip); Bun runs them in order.
+- W2. The hot meta rows (settings, setup flag, demo state and dirty flag, origin, node id) are loaded in one query
+  and shared per isolate/process for 5 seconds (`META_TTL_MS`); writes through Ctx update the shared copy, so on
+  Bun and within one isolate a change is seen at once, another Workers isolate sees it within 5 seconds.
+- W3. Demo resets only when needed (`demo_dirty`, set at most once per interval by a visitor's successful write;
+  daily otherwise, or when the seed archive's size changed). Per-request query counts (warm isolate, demo data):
+  session 4 → 1 round trip, viewer 7 → 2, facets 14 → 2, products 9 → 3, signed thumbnail 5 → 2, public branding
+  7 → 1. Idle demo writes: ~19,000 rows/24 h (bun:sqlite count, without index writes) → ~24 rows/24 h plus one reset.

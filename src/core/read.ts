@@ -180,9 +180,14 @@ export async function productDetails(ctx: Ctx, viewer: Viewer, ids: string[], o:
 }
 
 export async function visibleBrands(ctx: Ctx, viewer: Viewer | null): Promise<Record<string, unknown>[]> {
+  const q = visibleBrandsStmt(viewer);
+  return (await ctx.db.all<BrandRow>(q.sql, q.params)).map(brandRep);
+}
+
+/** The query behind visibleBrands, to send in one round trip with others (Db.reads); map rows with brandRep. */
+export function visibleBrandsStmt(viewer: Viewer | null) {
   const bv = brandVisibleSql(viewer);
-  const rows = await ctx.db.all<BrandRow>(`SELECT * FROM brands b WHERE ${bv.sql} ORDER BY b.id`, bv.params);
-  return rows.map(brandRep);
+  return { sql: `SELECT * FROM brands b WHERE ${bv.sql} ORDER BY b.id`, params: bv.params };
 }
 
 /** One asset if visible to the viewer (admins in preview see every asset with files). */

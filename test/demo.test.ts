@@ -2,7 +2,8 @@
 // refuses risky actions and resets to the Kestrel fixtures.
 import { describe, expect, test, beforeAll } from "bun:test";
 import { join } from "node:path";
-import { TestNode, FIX, type Browser } from "./helpers";
+import { TestNode, FIX, formData, type Browser } from "./helpers";
+import { SHOWROOM_IMAGES } from "../scripts/demo-showroom";
 import { buildSeed } from "../scripts/demo-seed";
 import { fakeJpeg } from "../src/lib/image";
 import { DEMO, demoRefusal } from "../src/core/demo";
@@ -52,7 +53,10 @@ describe("demo mode on", () => {
     node = new TestNode({ OBX_DEMO: "true", OBX_SETUP_CODE: "" });
     // The seed archive as scripts/demo-seed.ts makes it, with placeholder JPEGs instead of drawn ones.
     let n = 0;
-    const seed = await buildSeed(join(FIX, "kestrel"), async (_orig, name, sizes) => fakeJpeg(sizes[name].width, sizes[name].height, ++n));
+    const seed = await buildSeed(join(FIX, "kestrel"), async (_orig, name, sizes) => fakeJpeg(sizes[name].width, sizes[name].height, ++n), {
+      showroom: async () => fakeJpeg(1600, 1000, ++n),
+      product: async (file, p) => (file.startsWith("KO-1001_") ? fakeJpeg(1200, 1500, 5000 + ++n + p.view.length) : null),
+    });
     await node.platform.blobs.put(DEMO.seedKey, seed, "application/zip");
     await settle(node);
     brand = await node.browser();
@@ -143,6 +147,43 @@ describe("demo mode on", () => {
     expect(bad.status).toBe(400);
   });
 
+  test("the showroom: theme, login page and start page from the seed", async () => {
+    const pub = (await node.request("GET", "/admin/api/public/branding")).json;
+    expect(pub.name).toBe("MAISON NOOR");
+    expect(pub.theme.heading_font).toBe("cormorant-garamond");
+    expect(pub.login.background_image_url).toBe(`/admin/api/public/images/${SHOWROOM_IMAGES.login}`);
+    const img = await node.request("GET", pub.login.background_image_url);
+    expect(img.status).toBe(200);
+    expect(img.headers.get("cache-control")).toBe("private, max-age=300");
+    const v = (await retailer.req("GET", "/admin/api/portal/viewer")).json;
+    expect(v.branding.home.blocks[0].image_url).toBe(`/admin/api/public/images/${SHOWROOM_IMAGES.hero}`);
+    expect(v.branding.home.blocks.find((b: any) => b.type === "tiles").items).toHaveLength(4);
+    // Drawn product shots replace fixture images in the seed (renamed to .jpg, assets.csv follows).
+    const shots = await node.platform.db.all<{ files: string }>("SELECT a.files FROM assets a JOIN products p ON p.id = a.product_id WHERE p.external_id = 'KO-1001'");
+    expect(shots.length).toBe(4);
+  });
+
+  test("the brand can try out the appearance, within the demo's limits", async () => {
+    const r = await brand.req("PATCH", "/admin/api/settings", { json: { branding: { theme: { colors: { primary: "#7a1f3d" } }, login: { layout: "centered" } } } });
+    expect(r.status).toBe(200);
+    expect(r.json.branding.theme.colors.primary).toBe("#7a1f3d");
+    const f = formData([{ name: "file", filename: "x.jpg", data: fakeJpeg(800, 600, 4242) }]);
+    const up = await brand.req("POST", "/admin/api/settings/images", { body: f.body, headers: { "content-type": f.contentType } });
+    expect(up.status).toBe(201);
+    const pub = await node.request("GET", up.json.url);
+    expect(pub.headers.get("cache-control")).toBe("private, max-age=300");
+    expect((await brand.req("PUT", "/admin/api/settings/favicon", { body: new Uint8Array(0), headers: { "content-type": "image/png" } })).status).not.toBe(403);
+    // At most 20 images in the demo.
+    const have = (await node.platform.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM branding_images"))!.n;
+    await node.platform.db.batch(
+      Array.from({ length: 20 - have }, (_, i) => ({ sql: "INSERT INTO branding_images (id, sha256, content_type, width, height, bytes, created_at) VALUES (?, ?, 'image/jpeg', 1, 1, 1, '2026-01-01T00:00:00Z')", params: [`img_fill_${i}`, "0".repeat(64)] })),
+    );
+    const g = formData([{ name: "file", filename: "y.jpg", data: fakeJpeg(80, 60, 4243) }]);
+    const over = await brand.req("POST", "/admin/api/settings/images", { body: g.body, headers: { "content-type": g.contentType } });
+    expect(over.status).toBe(409);
+    expect(over.json.obx_error).toBe("limit_exceeded");
+  });
+
   test("the reset puts the fixtures back and keeps the demo sessions", async () => {
     const tok = await node.accessToken(DEMO.clientId, DEMO.clientSecret);
     const before = await node.feed(tok);
@@ -159,6 +200,12 @@ describe("demo mode on", () => {
     expect(names).toEqual(["Harbour & Co", "Lumen Concept Store", "Northwind Stores"]);
     const p = await node.platform.db.first<{ stored: string }>("SELECT stored FROM products WHERE external_id = 'KO-1001'");
     expect(JSON.parse(p!.stored).name.en).toBe("Merino Crew Sweater");
+    // The showroom is back, the visitor's images are gone.
+    const look = (await brand.req("GET", "/admin/api/settings")).json.branding;
+    expect(look.theme.colors.primary).toBe("#1b1a19");
+    expect(look.login.layout).toBe("split");
+    const imgs = (await brand.req("GET", "/admin/api/settings/images")).json.items.map((i: any) => i.id).sort();
+    expect(imgs).toEqual(Object.values(SHOWROOM_IMAGES).sort());
     // Still signed in after the reset.
     expect((await brand.req("GET", "/admin/api/settings")).status).toBe(200);
     expect((await retailer.req("GET", "/admin/api/portal/viewer")).status).toBe(200);
@@ -167,11 +214,31 @@ describe("demo mode on", () => {
     expect(cont.status).toBe(410);
   });
 
-  test("the reset runs on schedule", async () => {
-    const st1 = JSON.parse((await node.platform.db.first<{ value: string }>("SELECT value FROM meta WHERE key = 'demo_state'"))!.value);
+  test("the reset runs on schedule, but only when a visitor changed something", async () => {
+    const state = async () => JSON.parse((await node.platform.db.first<{ value: string }>("SELECT value FROM meta WHERE key = 'demo_state'"))!.value);
+    const st1 = await state();
+    // Untouched: the interval passes without a reset, and the idle tick writes nothing.
     node.clock.offset += 61 * 60_000;
+    let writes = 0;
+    const db = node.platform.db;
+    const run = db.run.bind(db);
+    const batch = db.batch.bind(db);
+    db.run = async (sql, p) => (/^\s*select/i.test(sql) ? null : writes++, run(sql, p));
+    db.batch = async (stmts) => ((writes += stmts.length), batch(stmts));
+    await node.worker.tick(60_000);
+    await node.drain();
+    db.run = run;
+    db.batch = batch;
+    expect(writes).toBe(0);
+    expect((await state()).reset_at).toBe(st1.reset_at);
+    const info = (await brand.req("GET", "/admin/api/demo")).json;
+    expect(Date.parse(info.next_reset_at)).toBeGreaterThan(Date.now() + node.clock.offset);
+    // A change by a visitor: the next tick resets.
+    expect((await brand.req("PATCH", "/admin/api/retailers/rtl_demo_harbour", { json: { allow_original: false } })).status).toBe(200);
+    await node.drain();
     const st2 = await settle(node);
     expect(Date.parse(st2.reset_at)).toBeGreaterThan(Date.parse(st1.reset_at));
+    expect(await node.platform.db.first("SELECT value FROM meta WHERE key = 'demo_dirty'")).toBeNull();
   });
 });
 

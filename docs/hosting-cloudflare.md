@@ -26,7 +26,7 @@ a minute for the setup wizard. With both accounts already in place it is closer 
    - `OBX_SECRET_KEY`: a random text of at least 32 characters (`openssl rand -base64 48`). Keep a copy:
      it encrypts stored credentials and signs download links.
    - `OBX_SETUP_CODE`: a code you choose (6+ characters) for the setup wizard.
-4. Cloudflare builds and deploys with `npm run deploy`, which runs `wrangler deploy` (Worker, D1, R2,
+4. Cloudflare builds and deploys with `bun run deploy` (Workers Builds picks Bun from `bun.lock`), which runs `wrangler deploy` (Worker, D1, R2,
    cron) and then `wrangler d1 migrations apply DB --remote` (the database tables). The Worker also
    applies any missing migration itself at its first request, so the portal is always on the schema
    of the code it runs.
@@ -51,9 +51,10 @@ bunx wrangler secret put OBX_SETUP_CODE      # a code you choose
 bun run deploy                               # Worker + D1 + R2 + cron, then the migrations
 ```
 
-Without Bun: download `obx-node-ts-cloudflare-<version>.tar.gz` from the release, unpack it and run
-`npx wrangler login`, the two `secret put` commands and `npm run deploy` there. That bundle contains
-the prebuilt Worker, so nothing is compiled on your computer.
+Or download `obx-node-ts-cloudflare-<version>.tar.gz` from the release, unpack it and run
+`bunx wrangler login`, the two `secret put` commands and `bun run deploy` there (with only Node.js
+installed, `npx wrangler …` and `npm run deploy` do the same). That bundle contains the prebuilt Worker,
+so nothing is compiled on your computer.
 
 ## Which plan: what the free plan allows, and what happens when a limit is reached
 

@@ -23,9 +23,9 @@ else keeps working across portal updates.
 ## Cloudflare
 
 - **Deploy button copy:** merge the release into your repository (`git pull https://github.com/openbrandexchange/node-ts v0.2.1`)
-  and push; Workers Builds runs `npm run deploy` (deploy, then migrations).
+  and push; Workers Builds runs `bun run deploy` (deploy, then migrations).
 - **From your computer:** `git fetch --tags && git checkout v0.2.1 && bun install && bun run deploy`.
-- **Prebuilt bundle:** unpack the new `obx-node-ts-cloudflare-<version>.tar.gz` over the old folder and run `npm run deploy`.
+- **Prebuilt bundle:** unpack the new `obx-node-ts-cloudflare-<version>.tar.gz` over the old folder and run `bun run deploy` (or `npm run deploy` with only Node.js).
 
 Rolling back the code: `bunx wrangler rollback` (Workers keeps earlier versions). If the new version
 ran a migration, roll the database back as well (`wrangler d1 time-travel restore` to the time before

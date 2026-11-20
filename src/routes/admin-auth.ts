@@ -13,7 +13,8 @@ import { defaultSettings } from "../core/ctx";
 import { findInvite, userJson } from "../core/accounts";
 import { sendEmail, pickLanguage } from "../core/mail";
 import { visibleBrands } from "../core/read";
-import { logoUrl } from "./protocol";
+import { faviconUrl, logoUrl } from "./protocol";
+import { appearanceJson, withImageUrls, type BrandingImageRow } from "../core/branding";
 import { serveStored } from "./files";
 import { blobKey } from "../core/blobs";
 import type { Ctx } from "../core/ctx";
@@ -68,7 +69,9 @@ async function checkSetupCode(ctx: Ctx, code: string): Promise<boolean> {
 export const adminMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
   const ctx = ctxOf(c);
   const path = c.req.path;
-  const session = await loadSession(ctx, c.req.header("cookie"));
+  // Public reads (branding, logo, favicon, images) never need the session: one database round trip less.
+  const publicRead = c.req.method === "GET" && path.startsWith("/admin/api/public/");
+  const session = publicRead ? null : await loadSession(ctx, c.req.header("cookie"));
   c.set("session", session);
   const open = ["/admin/api/public/branding", "/admin/api/public/logo", "/admin/api/setup", "/admin/api/session"];
   if (!(await ctx.isSetUp()) && !open.includes(path)) throw new ObxError("setup_required", "Complete the first-run setup first.");
@@ -122,9 +125,13 @@ adminAuth.get("/admin/api/public/branding", async (c) => {
   return json(c, {
     name: s.branding.display_name || s.company.name || "Open Brand Exchange",
     logo_url: setUp ? await logoUrl(c) : null,
+    favicon_url: setUp ? await faviconUrl(c) : null,
     accent_color: s.branding.accent_color,
     welcome_text: s.branding.welcome_text,
     portal_name: s.branding.portal_name,
+    // Portal appearance; the start page (home) is not public. Image ids come with their URLs.
+    theme: appearanceJson(s.branding).theme,
+    login: withImageUrls(appearanceJson(s.branding).login),
     languages: s.portal.languages,
     default_language: s.portal.default_language,
     access_requests_enabled: setUp && s.portal.access_requests_enabled,
@@ -147,6 +154,38 @@ adminAuth.get("/admin/api/public/logo", async (c) => {
     disposition: "inline",
     sha256: s.branding.logo_sha,
     cacheControl: "public, max-age=86400",
+  });
+});
+
+adminAuth.get("/admin/api/public/favicon", async (c) => {
+  const ctx = ctxOf(c);
+  const s = await ctx.settings();
+  if (!s.branding.favicon_sha) throw new ObxError("not_found", "No icon.");
+  return serveStored(ctx, c.req.raw, {
+    key: blobKey(s.branding.favicon_sha),
+    size: (await ctx.db.first<{ bytes: number }>("SELECT bytes FROM blobs WHERE sha256 = ?", [s.branding.favicon_sha]))?.bytes ?? 0,
+    contentType: s.branding.favicon_type ?? "image/png",
+    filename: `favicon.${(s.branding.favicon_type ?? "image/png").split("/")[1]}`,
+    disposition: "inline",
+    sha256: s.branding.favicon_sha,
+    cacheControl: "public, max-age=86400",
+  });
+});
+
+/** Branding images: public (the login page shows them), immutable (an id is never reused). */
+adminAuth.get("/admin/api/public/images/:id", async (c) => {
+  const ctx = ctxOf(c);
+  const row = await ctx.db.first<BrandingImageRow>("SELECT * FROM branding_images WHERE id = ?", [c.req.param("id")]);
+  if (!row) throw new ObxError("not_found", "Unknown image.");
+  // Demo mode turns this into "private, max-age=300" (routes/demo.ts): demo uploads are gone after a reset.
+  return serveStored(ctx, c.req.raw, {
+    key: blobKey(row.sha256),
+    size: row.bytes,
+    contentType: row.content_type,
+    filename: `${row.id}.${row.content_type.split("/")[1]}`,
+    disposition: "inline",
+    sha256: row.sha256,
+    cacheControl: "public, max-age=31536000, immutable",
   });
 });
 

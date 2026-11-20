@@ -5,7 +5,7 @@ import { clientIp, ctxOf, json, readOptionalObject } from "./common";
 import { loginAs, requireUser } from "./admin-auth";
 import { ObxError } from "../lib/problem";
 import { dbLimit, enforce, limitHeaders, memLimit } from "../core/ratelimit";
-import { DEMO, demoError, demoInfo, demoNeedsBody, demoRefusal, ensureDemo, resetDemo, verifyTurnstile } from "../core/demo";
+import { DEMO, markDemoDirty, demoError, demoInfo, demoNeedsBody, demoRefusal, ensureDemo, resetDemo, verifyTurnstile } from "../core/demo";
 import type { UserRow } from "../core/auth";
 import { isPlainObject } from "../lib/util";
 
@@ -42,11 +42,16 @@ export const demoGuard: MiddlewareHandler<AppEnv> = async (c, next) => {
   const refusal = demoRefusal(method, path, body);
   if (refusal) throw demoError(refusal);
   await next();
+  // A visitor changed something: the next interval resets the demo (an untouched demo is not reset).
+  if (write && c.res.status < 400 && !DEMO_NOT_DIRTY.includes(path)) ctx.p.defer(markDemoDirty(ctx));
   c.res.headers.set("x-robots-tag", "noindex, nofollow");
   // Files (also images visitors uploaded) never go into shared caches: they are gone after the next reset.
   const cc = c.res.headers.get("cache-control");
   if (cc && /public/i.test(cc)) c.res.headers.set("cache-control", "private, max-age=300");
 };
+
+/** Writes that do not change what other visitors see. */
+const DEMO_NOT_DIRTY = ["/admin/api/demo/login", "/admin/api/demo/reset", "/admin/api/session/login", "/admin/api/session/logout"];
 
 const limits = { read: 300, write: 40, login: 10 };
 

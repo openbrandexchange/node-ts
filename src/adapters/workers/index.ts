@@ -58,6 +58,11 @@ function makeD1Db(d1: D1Database): Db {
       }
       return out;
     },
+    async reads(stmts: Stmt[]) {
+      if (!stmts.length) return [];
+      if (stmts.length === 1) return [(await prep(stmts[0].sql, stmts[0].params).all()).results];
+      return (await d1.batch(stmts.map((s) => prep(s.sql, s.params)))).map((r) => r.results);
+    },
   };
 }
 
@@ -69,6 +74,7 @@ export function countingDb(db: Db, add: (n: number) => void): Db {
     first: (sql, params) => (add(1), db.first(sql, params)),
     run: (sql, params) => (add(1), db.run(sql, params)),
     batch: (stmts) => (add(stmts.length), db.batch(stmts)),
+    reads: (stmts) => (add(stmts.length), db.reads(stmts)),
   };
   return counted;
 }

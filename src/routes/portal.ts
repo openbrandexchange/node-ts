@@ -7,11 +7,11 @@ import { requireUser } from "./admin-auth";
 import { ObxError } from "../lib/problem";
 import { grantOf, retailerOriginalAllowed, type RetailerRow, type ClientRow, type Viewer, type SessionInfo } from "../core/auth";
 import { PROTOCOL_SCOPES } from "../core/validate";
-import { assetVisibleSql, loadAssetForViewer, placeholders, productDetails, productVisibleSql, renditionUrl, signedExpiry, visibleBrands, type AssetRow, type ProductRow } from "../core/read";
+import { assetVisibleSql, loadAssetForViewer, placeholders, productDetails, productVisibleSql, renditionUrl, signedExpiry, visibleBrandsStmt, type AssetRow, type BrandRow, type ProductRow } from "../core/read";
 import { QUALIFIER_ROWS, filterSql, pickFile, zipEntryName, downloadJobJson, type PortalFilter, type DownloadInput } from "../core/bulk";
 import { gtinLookup } from "../core/gtinlookup";
 import { safeJsonParse, contentDisposition, sanitizeFilename, normDateTime } from "../lib/util";
-import { assetFilename, type Files } from "../core/reps";
+import { assetFilename, brandRep, type Files } from "../core/reps";
 import { blobKey } from "../core/blobs";
 import { serveStored } from "./files";
 import { logDownload } from "../core/stats";
@@ -21,10 +21,10 @@ import { crc32 } from "../lib/crypto";
 import { enqueueJob, getJob, type JobRow } from "../core/jobs";
 import { clientJson, clientWithSecret, createClient, rotateClient } from "../core/accounts";
 import { V } from "../core/validate";
-import { logoUrl } from "./protocol";
+import { faviconUrl, logoUrl } from "./protocol";
+import { appearanceJson, withImageUrls } from "../core/branding";
 import { memLimit, enforce } from "../core/ratelimit";
 import { QUALIFIER_NAMES } from "../core/article";
-import type { Ctx } from "../core/ctx";
 
 export const portal = new Hono<AppEnv>();
 
@@ -114,11 +114,20 @@ portal.get("/admin/api/portal/viewer", async (c) => {
   const { viewer, session } = await viewerOf(c);
   const ctx = ctxOf(c);
   const s = await ctx.settings();
-  const sel = await visibleIds(c, viewer, await selectionIds(c, session.user.id));
+  const pv = productVisibleSql(viewer);
+  // One round trip: the brands and how many products of the selection are still visible.
+  const [brandRows, selRows] = await ctx.db.reads([
+    visibleBrandsStmt(viewer),
+    {
+      sql: `SELECT COUNT(DISTINCT p.id) AS n FROM selections s, json_each(s.product_ids) j JOIN products p ON p.id = j.value JOIN brands b ON b.id = p.brand_id WHERE s.user_id = ? AND ${pv.sql}`,
+      params: [session.user.id, ...pv.params],
+    },
+  ]);
+  const look = appearanceJson(s.branding);
   return json(c, {
     preview: viewer.kind === "preview",
     retailer: session.retailer ? { id: session.retailer.id, name: session.retailer.name } : null,
-    brands: await visibleBrands(ctx, viewer),
+    brands: (brandRows as BrandRow[]).map(brandRep),
     permissions: {
       original_download: viewer.original,
       article_data_export: s.portal.allow_article_data_export,
@@ -127,6 +136,7 @@ portal.get("/admin/api/portal/viewer", async (c) => {
     branding: {
       name: s.branding.display_name || s.company.name,
       logo_url: await logoUrl(c),
+      favicon_url: await faviconUrl(c),
       accent_color: s.branding.accent_color,
       welcome_text: s.branding.welcome_text,
       portal_name: s.branding.portal_name,
@@ -134,9 +144,13 @@ portal.get("/admin/api/portal/viewer", async (c) => {
       default_language: s.portal.default_language,
       access_requests_enabled: s.portal.access_requests_enabled,
       setup_required: false,
+      // Portal appearance with every image id resolved to its URL (blocks keep `image` and get `image_url`).
+      theme: look.theme,
+      login: withImageUrls(look.login),
+      home: withImageUrls(look.home),
     },
     languages: s.portal.languages,
-    selection_count: sel.length,
+    selection_count: (selRows[0] as { n: number } | undefined)?.n ?? 0,
     limits: { selection_max_products: SELECTION_MAX, sync_zip_max_images: SYNC_ZIP_MAX, gtin_lookup_max: 2000 },
   });
 });
@@ -148,25 +162,32 @@ portal.get("/admin/api/portal/products", async (c) => {
   const f = filterFrom(c);
   const w = filterSql(f, viewer, ctx.iso());
   const off = (await decodeListCursor<number>(ctx, "portal-products", c.req.query("cursor") || undefined)) ?? 0;
-  const total = (await ctx.db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM products p JOIN brands b ON b.id = p.brand_id WHERE ${w.sql}`, w.params))?.n ?? 0;
-  // Page first on the narrow columns, then read the stored documents of that page only.
-  const rows = await ctx.db.all<ProductRow & { brand_stored: string }>(
-    `SELECT p.*, b.stored AS brand_stored FROM (
+  // Page first on the narrow columns, then read the stored documents of that page only; the count
+  // goes in the same round trip.
+  const [countRows, pageRows] = await ctx.db.reads([
+    { sql: `SELECT COUNT(*) AS n FROM products p JOIN brands b ON b.id = p.brand_id WHERE ${w.sql}`, params: w.params },
+    {
+      sql: `SELECT p.*, b.stored AS brand_stored FROM (
        SELECT p.id AS pid, p.style_number AS sn FROM products p JOIN brands b ON b.id = p.brand_id WHERE ${w.sql} ORDER BY p.style_number COLLATE NOCASE, p.id LIMIT ? OFFSET ?
      ) pg JOIN products p ON p.id = pg.pid JOIN brands b ON b.id = p.brand_id ORDER BY pg.sn COLLATE NOCASE, pg.pid`,
-    [...w.params, limit + 1, off],
-  );
+      params: [...w.params, limit + 1, off],
+    },
+  ]);
+  const total = (countRows[0] as { n: number } | undefined)?.n ?? 0;
+  const rows = pageRows as (ProductRow & { brand_stored: string })[];
   const page = rows.slice(0, limit);
   const ids = page.map((p) => p.id);
-  const variants = ids.length
-    ? await ctx.db.all<{ product_id: string; color_code: string; stored: string }>(`SELECT product_id, color_code, stored FROM variants WHERE product_id IN (${placeholders(ids.length)}) AND status = 'published' ORDER BY external_id`, ids)
-    : [];
-  const assets = ids.length
-    ? await ctx.db.all<AssetRow>(
-        `SELECT * FROM assets a WHERE a.product_id IN (${placeholders(ids.length)}) AND ${assetVisibleSql()} ORDER BY CASE WHEN a.color_code IS NULL THEN 0 ELSE 1 END, a.color_code, a.position`,
-        [...ids, ctx.iso()],
-      )
-    : [];
+  const [variantRows, assetRows] = ids.length
+    ? await ctx.db.reads([
+        { sql: `SELECT product_id, color_code, stored FROM variants WHERE product_id IN (${placeholders(ids.length)}) AND status = 'published' ORDER BY external_id`, params: ids },
+        {
+          sql: `SELECT * FROM assets a WHERE a.product_id IN (${placeholders(ids.length)}) AND ${assetVisibleSql()} ORDER BY CASE WHEN a.color_code IS NULL THEN 0 ELSE 1 END, a.color_code, a.position`,
+          params: [...ids, ctx.iso()],
+        },
+      ])
+    : [[], []];
+  const variants = variantRows as { product_id: string; color_code: string; stored: string }[];
+  const assets = assetRows as AssetRow[];
   const base = await ctx.baseUrl();
   const exp = signedExpiry(ctx.now());
   const items = [];
@@ -204,11 +225,17 @@ portal.get("/admin/api/portal/products", async (c) => {
  * products, with the vocabulary's name as label (else the name written with it, else the code) and the
  * number of products.
  */
-async function qualifierFacet(ctx: Ctx, w: { sql: string; params: (string | number)[] }) {
-  const rows = await ctx.db.all<{ code: string; n: number; name: string | null }>(
-    `SELECT json_extract(q.value, '$.code') AS code, COUNT(DISTINCT p.id) AS n, MAX(json_extract(q.value, '$.name')) AS name FROM products p JOIN brands b ON b.id = p.brand_id, ${QUALIFIER_ROWS} WHERE ${w.sql} AND json_type(q.value, '$.code') = 'text' GROUP BY code ORDER BY n DESC, code LIMIT 200`,
-    w.params,
-  );
+type Facet = { value: string; count: number };
+type QualifierRow = { code: string; n: number; name: string | null };
+
+function qualifierFacetStmt(w: { sql: string; params: (string | number)[] }) {
+  return {
+    sql: `SELECT json_extract(q.value, '$.code') AS code, COUNT(DISTINCT p.id) AS n, MAX(json_extract(q.value, '$.name')) AS name FROM products p JOIN brands b ON b.id = p.brand_id, ${QUALIFIER_ROWS} WHERE ${w.sql} AND json_type(q.value, '$.code') = 'text' GROUP BY code ORDER BY n DESC, code LIMIT 200`,
+    params: w.params,
+  };
+}
+
+function qualifierFacet(rows: QualifierRow[]) {
   return rows.map((r) => {
     const known = QUALIFIER_NAMES.get(r.code);
     const written = r.name ? safeJsonParse<unknown>(r.name, null) : null;
@@ -222,35 +249,40 @@ portal.get("/admin/api/portal/facets", async (c) => {
   const ctx = ctxOf(c);
   const f = filterFrom(c);
   const now = ctx.iso();
-  const simple = async (col: string, key: keyof PortalFilter) => {
+  // Every facet in one round trip.
+  const simple = (col: string, key: keyof PortalFilter) => {
     const w = filterSql(f, viewer, now, key);
-    return ctx.db.all<{ value: string; count: number }>(
-      `SELECT ${col} AS value, COUNT(*) AS count FROM products p JOIN brands b ON b.id = p.brand_id WHERE ${w.sql} AND ${col} IS NOT NULL GROUP BY ${col} ORDER BY count DESC, value LIMIT 200`,
-      w.params,
-    );
+    return {
+      sql: `SELECT ${col} AS value, COUNT(*) AS count FROM products p JOIN brands b ON b.id = p.brand_id WHERE ${w.sql} AND ${col} IS NOT NULL GROUP BY ${col} ORDER BY count DESC, value LIMIT 200`,
+      params: w.params,
+    };
   };
-  const brandRows = await simple("p.brand_id", "brand_id");
-  const brands = await visibleBrands(ctx, viewer);
   const cw = filterSql(f, viewer, now, "color");
-  const counted = await ctx.db.all<{ value: string; count: number; r: number }>(
-    `SELECT v.color_code AS value, COUNT(DISTINCT p.id) AS count, MIN(v.rowid) AS r FROM products p JOIN brands b ON b.id = p.brand_id JOIN variants v ON v.product_id = p.id AND v.status = 'published' WHERE ${cw.sql} AND v.color_code IS NOT NULL GROUP BY v.color_code ORDER BY count DESC, value LIMIT 300`,
-    cw.params,
-  );
-  // Colour names from one variant per colour (not a JSON parse of every variant).
-  const names = new Map<number, string | null>();
-  for (let i = 0; i < counted.length; i += 100) {
-    const chunk = counted.slice(i, i + 100).map((r) => r.r);
-    for (const n of await ctx.db.all<{ r: number; name: string | null }>(`SELECT rowid AS r, json_extract(stored, '$.color.name') AS name FROM variants WHERE rowid IN (${placeholders(chunk.length)})`, chunk)) names.set(n.r, n.name);
-  }
-  const colorRows = counted.map((r) => ({ value: r.value, count: r.count, name: names.get(r.r) ?? null }));
+  const [brandRows, brandList, colorRows, itemTypes, seasons, collections, targetGroups, qualifierRows] = (await ctx.db.reads([
+    simple("p.brand_id", "brand_id"),
+    visibleBrandsStmt(viewer),
+    // Colour names from one variant per colour (not a JSON parse of every variant).
+    {
+      sql: `SELECT c.value, c.count, (SELECT json_extract(x.stored, '$.color.name') FROM variants x WHERE x.rowid = c.r) AS name FROM (
+              SELECT v.color_code AS value, COUNT(DISTINCT p.id) AS count, MIN(v.rowid) AS r FROM products p JOIN brands b ON b.id = p.brand_id JOIN variants v ON v.product_id = p.id AND v.status = 'published' WHERE ${cw.sql} AND v.color_code IS NOT NULL GROUP BY v.color_code ORDER BY count DESC, value LIMIT 300
+            ) c ORDER BY c.count DESC, c.value`,
+      params: cw.params,
+    },
+    simple("p.item_type", "item_type"),
+    simple("p.season", "season"),
+    simple("p.collection", "collection"),
+    simple("p.target_group", "target_group"),
+    qualifierFacetStmt(filterSql(f, viewer, now, "qualifier")),
+  ])) as [Facet[], BrandRow[], (Facet & { name: string | null })[], Facet[], Facet[], Facet[], Facet[], QualifierRow[]];
+  const brands = brandList.map(brandRep);
   return json(c, {
     brands: brandRows.map((r) => ({ value: r.value, label: String(brands.find((b) => b.id === r.value)?.name ?? r.value), count: r.count })),
-    item_types: await simple("p.item_type", "item_type"),
+    item_types: itemTypes,
     colors: colorRows.map((r) => ({ value: r.value, label: r.name ? safeJsonParse(r.name, r.value) : r.value, count: r.count })),
-    seasons: await simple("p.season", "season"),
-    collections: await simple("p.collection", "collection"),
-    target_groups: await simple("p.target_group", "target_group"),
-    qualifiers: await qualifierFacet(ctx, filterSql(f, viewer, now, "qualifier")),
+    seasons,
+    collections,
+    target_groups: targetGroups,
+    qualifiers: qualifierFacet(qualifierRows),
   });
 });
 

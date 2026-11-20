@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { fakeJpeg } from "../src/lib/image";
 import { sha256Hex, crc32 } from "../src/lib/crypto";
 import { zipBytes } from "../src/lib/zip";
+import { canonicalJson } from "../src/lib/util";
 
 const port = 8788 + Math.floor(Math.random() * 500);
 const base = `http://127.0.0.1:${port}`;
@@ -181,6 +182,55 @@ try {
   if (xstatus !== "succeeded" || xjob.json.import_run.counts.errors !== 0)
     console.error(JSON.stringify({ status: xstatus, counts: xjob.json.import_run?.counts, errors: (await call("GET", `/obx/v1/ingest/jobs/${ximp.json.id}/results?errors_only=true`, { bearer: it })).json?.items?.slice(0, 5) }));
   check(xstatus === "succeeded" && xjob.json.import_run.counts.rows === 46 && xjob.json.import_run.counts.errors === 0, "products.xlsx (the template) converts and imports in the Workers runtime");
+  // Portal appearance (spec node-admin.yaml): the full fixture, images in R2, caching, unknown blocks.
+  const fixture = JSON.parse(readFileSync(join(import.meta.dir, "..", "test", "fixtures", "examples", "BrandingSettings.full.json"), "utf8"));
+  const imageIds = new Map<string, string>();
+  const walkIds = (x: unknown): void => {
+    if (Array.isArray(x)) x.forEach(walkIds);
+    else if (x && typeof x === "object")
+      for (const [k, v] of Object.entries(x)) {
+        if ((k === "image" || k === "background_image") && typeof v === "string") imageIds.set(v, "");
+        else walkIds(v);
+      }
+  };
+  walkIds(fixture);
+  let seedN = 100;
+  for (const id of imageIds.keys()) {
+    const img = fakeJpeg(1600, 1000, seedN++);
+    const mp = new Uint8Array([
+      ...enc.encode(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="i.jpg"\r\nContent-Type: image/jpeg\r\n\r\n`),
+      ...img,
+      ...enc.encode(`\r\n--${boundary}--\r\n`),
+    ]);
+    const up = await call("POST", "/admin/api/settings/images", { body: mp as BodyInit, headers: { "content-type": `multipart/form-data; boundary=${boundary}` } });
+    if (up.status !== 201) throw new Error(`image upload ${up.status} ${up.text}`);
+    imageIds.set(id, up.json.id);
+  }
+  check(imageIds.size === 7, "branding images uploaded to R2 (201)");
+  const swap = (x: unknown): unknown =>
+    Array.isArray(x) ? x.map(swap) : x && typeof x === "object" ? Object.fromEntries(Object.entries(x).map(([k, v]) => [k, (k === "image" || k === "background_image") && typeof v === "string" ? imageIds.get(v) : swap(v)])) : x;
+  const branding = swap(fixture) as any;
+  branding.home.blocks.push({ id: "future", type: "lookbook_v2", pages: [1, 2, 3] });
+  const patched = await call("PATCH", "/admin/api/settings", { json: { branding } });
+  check(patched.status === 200, "full BrandingSettings fixture accepted on D1");
+  const got = (await call("GET", "/admin/api/settings")).json.branding;
+  check(canonicalJson(got.theme) === canonicalJson(branding.theme) && got.login.background_image === branding.login.background_image && got.home.blocks.length === branding.home.blocks.length, "theme, login and home round-trip");
+  check(canonicalJson(got.home.blocks.at(-1)) === canonicalJson({ id: "future", type: "lookbook_v2", pages: [1, 2, 3] }), "unknown block type stored unchanged");
+  check((await call("PATCH", "/admin/api/settings", { json: { branding: { theme: { colors: { primary: "teal" } } } } })).status === 422, "invalid colour is 422");
+  check((await call("PATCH", "/admin/api/settings", { json: { branding: { home: { blocks: [{ id: "x", type: "hero", link: "javascript:alert(1)" }] } } } })).status === 422, "javascript: link is 422");
+  const pubImg = await fetch(`${base}/admin/api/public/images/${branding.login.background_image}`);
+  check(pubImg.status === 200 && pubImg.headers.get("cache-control") === "public, max-age=31536000, immutable" && pubImg.headers.get("x-content-type-options") === "nosniff", "public image from R2, immutable caching, nosniff");
+  const pubBranding = (await call("GET", "/admin/api/public/branding")).json;
+  check(pubBranding.login.background_image_url === `/admin/api/public/images/${branding.login.background_image}` && pubBranding.home === undefined, "public branding resolves the login image, no start page");
+  const list = (await call("GET", "/admin/api/settings/images")).json.items;
+  check(list.length === 7 && list.every((i: any) => i.used), "image list marks used images");
+  check((await call("DELETE", `/admin/api/settings/images/${branding.login.background_image}`)).status === 409, "deleting a used image is 409");
+  const viewer = (await call("GET", "/admin/api/portal/viewer")).json;
+  check(viewer.branding.home.blocks[0].image_url === `/admin/api/public/images/${branding.home.blocks[0].image}`, "portal viewer resolves start page images");
+  check((await call("PATCH", "/admin/api/settings", { json: { branding: { home: null, login: null } } })).status === 200, "start page and login page cleared");
+  check((await call("DELETE", `/admin/api/settings/images/${branding.login.background_image}`)).status === 204, "unused image deleted (204)");
+  check((await fetch(`${base}/admin/api/public/images/${branding.login.background_image}`)).status === 404, "deleted image is 404");
+
   const ui = await fetch(`${base}/some/portal/route`, { headers: { accept: "text/html" } });
   check(ui.status === 200 && (await ui.text()).includes("<html"), "static UI with SPA fallback");
   check((ui.headers.get("content-security-policy") ?? "").includes("frame-ancestors 'none'"), "static UI carries the Content-Security-Policy from public/_headers");

@@ -226,19 +226,26 @@ export async function loadSession(ctx: Ctx, cookieHeader: string | null | undefi
   const sid = parseCookies(cookieHeader).obx_session;
   if (!sid) return null;
   const h = await sha256Hex(sid);
-  const s = await ctx.db.first<{ id_hash: string; user_id: string; csrf_token: string; expires_at: string; seen_at: string }>("SELECT * FROM sessions WHERE id_hash = ?", [h]);
+  // One round trip: the session, its user and (for retailer users) the retailer.
+  const [ss, us, rs] = await ctx.db.reads([
+    { sql: "SELECT * FROM sessions WHERE id_hash = ?", params: [h] },
+    { sql: "SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ?", params: [h] },
+    { sql: "SELECT r.* FROM sessions s JOIN users u ON u.id = s.user_id JOIN retailers r ON r.id = u.retailer_id WHERE s.id_hash = ? AND u.role = 'retailer'", params: [h] },
+  ]);
+  const s = ss[0] as { id_hash: string; user_id: string; csrf_token: string; expires_at: string; seen_at: string } | undefined;
   if (!s || Date.parse(s.expires_at) <= ctx.now()) return null;
-  const user = await ctx.db.first<UserRow>("SELECT * FROM users WHERE id = ?", [s.user_id]);
+  const user = (us[0] as UserRow | undefined) ?? null;
   if (!user || user.status !== "active") return null;
   let retailer: RetailerRow | null = null;
   if (user.role === "retailer") {
-    retailer = await ctx.db.first<RetailerRow>("SELECT * FROM retailers WHERE id = ?", [user.retailer_id]);
+    retailer = (rs[0] as RetailerRow | undefined) ?? null;
     if (!retailer || retailer.status !== "active") return null;
   }
   // Sliding expiry, written at most every 10 minutes.
   if (Date.parse(s.seen_at) < ctx.now() - 10 * 60_000) {
-    ctx.p.defer(ctx.db.run("UPDATE sessions SET seen_at = ?, expires_at = ? WHERE id_hash = ?", [ctx.iso(), ctx.iso(SESSION_TTL_MS), h]).catch(() => {}));
-    if (retailer) ctx.p.defer(ctx.db.run("UPDATE retailers SET last_activity_at = ? WHERE id = ?", [ctx.iso(), retailer.id]).catch(() => {}));
+    const stmts = [{ sql: "UPDATE sessions SET seen_at = ?, expires_at = ? WHERE id_hash = ?", params: [ctx.iso(), ctx.iso(SESSION_TTL_MS), h] }];
+    if (retailer) stmts.push({ sql: "UPDATE retailers SET last_activity_at = ? WHERE id = ?", params: [ctx.iso(), retailer.id] });
+    ctx.p.defer(ctx.db.batch(stmts).catch(() => {}));
   }
   return { user, retailer, sessionHash: h, csrf: s.csrf_token };
 }

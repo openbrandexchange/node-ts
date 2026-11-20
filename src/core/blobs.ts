@@ -261,13 +261,14 @@ export async function abortUpload(ctx: Ctx, u: UploadRow) {
  */
 export async function gcBlobs(ctx: Ctx, limit = 500) {
   const cutoff = ctx.iso(-24 * 3600 * 1000);
-  const logo = (await ctx.settings()).branding.logo_sha ?? "";
+  const b = (await ctx.settings()).branding;
   const rows = await ctx.db.all<{ sha256: string }>(
-    `SELECT b.sha256 FROM blobs b WHERE b.created_at < ? AND b.sha256 != ? AND b.sha256 NOT IN (
+    `SELECT b.sha256 FROM blobs b WHERE b.created_at < ? AND b.sha256 NOT IN (?, ?) AND b.sha256 NOT IN (
        SELECT json_extract(j.value, '$.sha256') FROM assets a, json_each(a.files) j
        UNION SELECT json_extract(j.value, '$.sha256') FROM assets a, json_each(a.staged) j WHERE a.staged IS NOT NULL
+       UNION SELECT sha256 FROM branding_images
      ) LIMIT ?`,
-    [cutoff, logo, limit],
+    [cutoff, b.logo_sha ?? "", b.favicon_sha ?? "", limit],
   );
   for (const r of rows) {
     await ctx.db.run("DELETE FROM blobs WHERE sha256 = ?", [r.sha256]);

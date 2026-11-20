@@ -2,7 +2,7 @@
 # Builds the release files of this edition into dist/release/ (used by .github/workflows/release.yml,
 # and runnable locally to check a release before tagging):
 #   obx-portal-<version>-<os>-<arch>.tar.gz|.zip   standalone portal (no Bun, Node or npm needed) + web interface
-#   obx-node-ts-cloudflare-<version>.tar.gz         prebuilt Worker for `npx wrangler deploy` (no build step)
+#   obx-node-ts-cloudflare-<version>.tar.gz         prebuilt Worker for `bunx wrangler deploy` (no build step)
 #   obx-node-ts-source-<version>.tar.gz             source of the tagged version
 #   SHA256SUMS
 # Usage: scripts/build-release.sh [version]   (default: version in package.json; a leading "v" is dropped)
@@ -86,11 +86,14 @@ cat >"$dir/README.md" <<EOF
 # Open Brand Exchange · Portal for Cloudflare $VERSION (prebuilt)
 
 \`\`\`sh
-npx wrangler login
-npx wrangler secret put OBX_SECRET_KEY    # openssl rand -base64 48
-npx wrangler secret put OBX_SETUP_CODE    # a code you choose
-npm run deploy                            # creates D1 + R2, deploys, applies migrations
+bun install
+bunx wrangler login
+bunx wrangler secret put OBX_SECRET_KEY   # openssl rand -base64 48
+bunx wrangler secret put OBX_SETUP_CODE   # a code you choose
+bun run deploy                            # creates D1 + R2, deploys, applies migrations
 \`\`\`
+
+With only Node.js installed: \`npm install\`, \`npx wrangler …\` and \`npm run deploy\` do the same.
 
 Plans and limits: https://github.com/openbrandexchange/node-ts/blob/v$VERSION/docs/hosting-cloudflare.md
 EOF

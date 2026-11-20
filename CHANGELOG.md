@@ -5,6 +5,30 @@ All notable changes to the Portal for Cloudflare (`node-ts`) are listed here. Th
 than replacing the software (see [docs/upgrading.md](docs/upgrading.md)); database migrations are
 always forward-only and applied automatically.
 
+## [Unreleased]
+
+### Added
+- **Portal appearance** (spec node-admin.yaml, docs/node-admin.md "Portal appearance"): `branding.theme`
+  (colour scheme, five colours, fonts, radius, grid density, card style, image fit and background),
+  `branding.login` (centered or split layout with an image, title, text) and `branding.home` (start page of up to
+  30 blocks: hero, tiles, text, image_text, products, announcement, contact). Unknown members and block types are
+  stored and returned unchanged. Branding images (`POST/GET /admin/api/settings/images`, `DELETE …/{id}` with `409`
+  while used, public `GET /admin/api/public/images/{id}` cached for a year), favicon (`PUT/DELETE
+  /admin/api/settings/favicon`). Public branding adds `favicon_url`, `theme` and `login`; the portal viewer adds
+  `home` with image URLs. Migration `0009_branding_images.sql`.
+- Demo: the MAISON NOOR showroom (theme, login page, start page) and drawn product shots in the seed
+  (`scripts/demo-art.ts`, `scripts/demo-showroom.ts`); the demo brand can try out the appearance (at most 20
+  images, 2 MiB per upload).
+
+### Changed
+- Fewer database round trips per request (on D1 each one is a network call): the session, its user and retailer in
+  one batch; settings, setup flag and demo state shared by the requests of an isolate for 5 seconds; facets,
+  product list, viewer and signed renditions read in one or two batches; public reads skip the session. Portal
+  facets went from 14 queries to 2 round trips, the product list from 9 to 3, the viewer from 7 to 2.
+- Demo: a demo nobody changed is no longer reset every hour (an idle demo wrote ~10,000 D1 rows a day); it resets
+  after a visitor's change, once a day, or when the seed archive changes.
+- Cloudflare docs use `bun run deploy` and `bunx wrangler`.
+
 ## [0.3.0] - 2026-11-17
 
 Implements Open Brand Exchange spec 0.3.0: materials and care as terms with names (spec proposal 0004,

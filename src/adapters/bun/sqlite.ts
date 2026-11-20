@@ -33,5 +33,8 @@ export function sqliteDb(path: string): Db & { raw: Database } {
     async batch(stmts: Stmt[]) {
       return tx(stmts);
     },
+    async reads(stmts: Stmt[]) {
+      return stmts.map((s) => q(s.sql).all(...args(s.params)) as unknown[]);
+    },
   };
 }

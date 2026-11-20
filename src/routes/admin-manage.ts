@@ -43,7 +43,8 @@ import { newIngestToken, grantOf, type ClientRow, type IngestTokenRow, type Reta
 import { createWebhook, deliveryJson, emitClientEvent, testWebhook, webhookJson, BRAND_EVENTS, type DeliveryRow, type WebhookRow } from "../core/notify";
 import { stats } from "../core/stats";
 import { eraseUserStmts } from "../core/privacy";
-import { sniffType } from "../lib/image";
+import { sniffType, imageSize } from "../lib/image";
+import { BRANDING_LIMITS, appearanceJson, withImageUrls, withoutImageUrls, existingImages, imageJson, referencedImages, validateAppearance, type BrandingImageRow } from "../core/branding";
 
 export const adminManage = new Hono<AppEnv>();
 
@@ -52,15 +53,17 @@ export const adminManage = new Hono<AppEnv>();
 async function settingsJson(c: C, s: SettingsData) {
   const ctx = ctxOf(c);
   const base = await ctx.baseUrl();
-  const { logoUrl } = await import("./protocol");
+  const { logoUrl, faviconUrl } = await import("./protocol");
   return {
     company: s.company,
     branding: {
       display_name: s.branding.display_name,
       logo_url: await logoUrl(c),
+      favicon_url: await faviconUrl(c),
       accent_color: s.branding.accent_color,
       welcome_text: s.branding.welcome_text,
       portal_name: s.branding.portal_name,
+      ...withImageUrls(appearanceJson(s.branding)),
     },
     portal: s.portal,
     defaults: s.defaults,
@@ -92,7 +95,8 @@ adminManage.patch("/admin/api/settings", async (c) => {
   const cur = await ctx.settings();
   const patch: Record<string, unknown> = {};
   for (const k of ["company", "branding", "portal", "defaults", "retention"]) if (k in body) patch[k] = body[k];
-  if (isPlainObject(patch.branding)) delete (patch.branding as Record<string, unknown>).logo_url;
+  // Read-only members (files have their own endpoints) are ignored, as are the stored file hashes.
+  if (isPlainObject(patch.branding)) for (const k of ["logo_url", "logo_sha", "logo_type", "favicon_url", "favicon_sha", "favicon_type"]) delete (patch.branding as Record<string, unknown>)[k];
   const next = mergePatch(cur, patch) as SettingsData;
   const v = new V();
   next.company.name = v.str(next.company.name, "/company/name", { required: true, min: 1, max: 200 }) ?? cur.company.name;
@@ -103,6 +107,12 @@ adminManage.patch("/admin/api/settings", async (c) => {
   next.branding.accent_color = v.str(next.branding.accent_color, "/branding/accent_color", { pattern: /^#[0-9a-fA-F]{6}$/, msg: "Use a colour like #1F4E5F." });
   next.branding.welcome_text = v.localized(next.branding.welcome_text, "/branding/welcome_text");
   next.branding.portal_name = v.localized(next.branding.portal_name, "/branding/portal_name");
+  for (const k of ["theme", "login", "home"] as const) next.branding[k] = withoutImageUrls(next.branding[k]);
+  const refs = referencedImages(next.branding);
+  const known = refs.size ? await existingImages(ctx, refs) : new Set<string>();
+  validateAppearance(v, next.branding, (id) => known.has(id));
+  for (const k of ["theme", "login", "home"] as const) if (!isPlainObject(next.branding[k])) next.branding[k] = null;
+  if (new TextEncoder().encode(JSON.stringify(next.branding)).length > BRANDING_LIMITS.json_bytes) v.err("/branding", `The branding settings are larger than ${BRANDING_LIMITS.json_bytes / 1024} KiB.`);
   for (const k of ["access_requests_enabled", "allow_original_download", "allow_article_data_export", "retailer_api_self_service"] as const)
     if (typeof next.portal[k] !== "boolean") v.err(`/portal/${k}`, "Must be true or false.");
   if (!Array.isArray(next.portal.languages) || !next.portal.languages.length || next.portal.languages.some((l) => typeof l !== "string" || !LANG_RE.test(l))) v.err("/portal/languages", "List at least one language tag.");
@@ -169,6 +179,91 @@ adminManage.delete("/admin/api/settings/logo", async (c) => {
   s.branding.logo_type = null;
   await ctx.saveSettings(s);
   return json(c, await settingsJson(c, s));
+});
+
+adminManage.put("/admin/api/settings/favicon", async (c) => {
+  requireAdmin(c);
+  const ctx = ctxOf(c);
+  const bytes = await readBody(c.req.raw, BRANDING_LIMITS.favicon_bytes);
+  const type = sniffType(bytes);
+  if (type !== "image/png" && type !== "image/webp") throw new ObxError("unsupported_media_type", "Upload a square PNG or WebP icon (at most 1 MB).");
+  const dims = imageSize(bytes, type);
+  if (!dims || dims.width !== dims.height) throw new ObxError("validation_failed", "The icon must be square (for example 512 x 512 pixels).", [fieldError(null, "The icon must be square.")]);
+  const { row } = await storeBlob(ctx, bytes);
+  const s = await ctx.settings();
+  s.branding.favicon_sha = row.sha256;
+  s.branding.favicon_type = row.content_type;
+  await ctx.saveSettings(s);
+  return json(c, await settingsJson(c, s));
+});
+
+adminManage.delete("/admin/api/settings/favicon", async (c) => {
+  requireAdmin(c);
+  const ctx = ctxOf(c);
+  const s = await ctx.settings();
+  s.branding.favicon_sha = null;
+  s.branding.favicon_type = null;
+  await ctx.saveSettings(s);
+  return json(c, await settingsJson(c, s));
+});
+
+// Branding images (login page, start page blocks). Ids are never reused, so their public address is cached for a year.
+adminManage.post("/admin/api/settings/images", async (c) => {
+  requireAdmin(c);
+  const ctx = ctxOf(c);
+  const ct = c.req.header("content-type") ?? "";
+  if (!/^multipart\/form-data/i.test(ct)) throw new ObxError("unsupported_media_type", "Send the image as multipart/form-data with the field file.");
+  const raw = await readBody(c.req.raw, BRANDING_LIMITS.image_bytes + 65536);
+  let file: unknown;
+  try {
+    file = (await new Response(raw as unknown as BodyInit, { headers: { "content-type": ct } }).formData()).get("file");
+  } catch {
+    throw new ObxError("invalid_request", "The multipart body could not be read.");
+  }
+  if (!file || typeof file === "string") throw new ObxError("validation_failed", "Send the image in the field file.", [fieldError("/file", "This field is required.")]);
+  const bytes = new Uint8Array(await (file as Blob).arrayBuffer());
+  if (bytes.length > BRANDING_LIMITS.image_bytes) throw new ObxError("payload_too_large", "Images can be at most 10 MB.");
+  const type = sniffType(bytes);
+  if (!type) throw new ObxError("unsupported_media_type", "Upload a PNG, JPEG or WebP image (no SVG).");
+  const dims = imageSize(bytes, type);
+  if (!dims) throw new ObxError("unsupported_media_type", "The image header could not be read.");
+  if (dims.width > BRANDING_LIMITS.image_side || dims.height > BRANDING_LIMITS.image_side)
+    throw new ObxError("validation_failed", `Images can be at most ${BRANDING_LIMITS.image_side} pixels wide and high.`, [fieldError("/file", `At most ${BRANDING_LIMITS.image_side} x ${BRANDING_LIMITS.image_side} pixels.`)]);
+  const max = ctx.config.demo ? BRANDING_LIMITS.demo_images : BRANDING_LIMITS.images;
+  const count = (await ctx.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM branding_images"))?.n ?? 0;
+  if (count >= max) throw new ObxError("limit_exceeded", `There are already ${max} images${ctx.config.demo ? " (the demo's limit)" : ""}. Delete images you no longer use first.`, [], { status: 409 });
+  const { row } = await storeBlob(ctx, bytes);
+  const img: BrandingImageRow = { id: newId("img"), sha256: row.sha256, content_type: type, width: dims.width, height: dims.height, bytes: bytes.length, created_at: ctx.iso() };
+  await ctx.db.run("INSERT INTO branding_images (id, sha256, content_type, width, height, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", [
+    img.id,
+    img.sha256,
+    img.content_type,
+    img.width,
+    img.height,
+    img.bytes,
+    img.created_at,
+  ]);
+  return json(c, imageJson(img), 201, { location: `/admin/api/settings/images/${img.id}` });
+});
+
+adminManage.get("/admin/api/settings/images", async (c) => {
+  requireAdmin(c);
+  const ctx = ctxOf(c);
+  const used = referencedImages((await ctx.settings()).branding);
+  const rows = await ctx.db.all<BrandingImageRow>("SELECT * FROM branding_images ORDER BY created_at DESC, id DESC");
+  return json(c, { items: rows.map((r) => ({ ...imageJson(r), used: used.has(r.id) })) });
+});
+
+adminManage.delete("/admin/api/settings/images/:id", async (c) => {
+  requireAdmin(c);
+  const ctx = ctxOf(c);
+  const id = c.req.param("id");
+  const row = await ctx.db.first<BrandingImageRow>("SELECT * FROM branding_images WHERE id = ?", [id]);
+  if (!row) throw new ObxError("not_found", "Unknown image.");
+  if (referencedImages((await ctx.settings()).branding).has(id)) throw new ObxError("conflict", "This image is still used on the login page or the start page. Remove it there first.");
+  // The file itself goes with the daily clean-up once nothing refers to it.
+  await ctx.db.run("DELETE FROM branding_images WHERE id = ?", [id]);
+  return noContent(c);
 });
 
 // ------------------------------------------------------------------ catalog (ingest semantics)

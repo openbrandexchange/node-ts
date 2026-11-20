@@ -11,7 +11,7 @@ import { startImport, type ImportInputs } from "./importjob";
 import { storeReader } from "./storeio";
 import { readZipDirectory, readZipEntry, type ZipReadEntry } from "../lib/zip";
 import { sha256Hex, tokenHash } from "../lib/crypto";
-import { canonicalJson, newId, safeJsonParse } from "../lib/util";
+import { canonicalJson, isPlainObject, newId, safeJsonParse } from "../lib/util";
 import { ObxError } from "../lib/problem";
 import type { Stmt } from "../platform";
 
@@ -57,12 +57,20 @@ const WIPE = [
   "idempotency",
   "idempotency_keys",
   "audit_log",
+  "branding_images",
 ];
 
 export interface DemoSeedManifest {
   products_csv: string;
   assets_csv: string | null;
   images: { file: string; sha256: string; path: string; renditions?: Record<string, { sha256: string; path: string }> }[];
+  /** The showroom (theme, login page, start page) and its images, with fixed image ids. */
+  branding?: {
+    theme?: Record<string, unknown> | null;
+    login?: Record<string, unknown> | null;
+    home?: Record<string, unknown> | null;
+    images: { id: string; path: string; sha256: string; content_type: string; width: number; height: number; bytes: number }[];
+  };
 }
 
 export interface DemoState {
@@ -70,7 +78,12 @@ export interface DemoState {
   job_id: string | null;
   reset_at: string;
   error?: string;
+  /** Size of the seed archive the reset used: a new upload is noticed at the next interval. */
+  seed_size?: number | null;
 }
+
+/** A clean demo (nobody changed anything) is still reset this often, so the example statistics stay recent. */
+const CLEAN_RESET_MS = 24 * 3600 * 1000;
 
 export async function demoState(ctx: Ctx): Promise<DemoState | null> {
   return safeJsonParse<DemoState | null>(await ctx.meta("demo_state"), null);
@@ -80,10 +93,25 @@ async function setState(ctx: Ctx, s: DemoState) {
   await ctx.setMeta("demo_state", JSON.stringify(s));
 }
 
-/** When the next automatic reset is due (ISO), or null before the first one. */
+/**
+ * When the next automatic reset can happen (ISO), or null before the first one: the next whole
+ * interval after the last reset. A demo nobody changed is not reset then (see demoTick).
+ */
 export function nextResetAt(ctx: Ctx, s: DemoState | null): string | null {
   if (!s) return null;
-  return new Date(Date.parse(s.reset_at) + ctx.config.demoResetMinutes * 60_000).toISOString().replace(/\.\d{3}Z$/, "Z");
+  const every = ctx.config.demoResetMinutes * 60_000;
+  const last = Date.parse(s.reset_at);
+  const k = Math.max(1, Math.floor((ctx.now() - last) / every) + 1);
+  return new Date(last + k * every).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+/**
+ * Remembers that a visitor changed something, so the next interval resets the demo. One write per
+ * reset interval at most: the flag is read from the shared meta cache.
+ */
+export async function markDemoDirty(ctx: Ctx): Promise<void> {
+  if (await ctx.meta("demo_dirty")) return;
+  await ctx.setMeta("demo_dirty", ctx.iso());
 }
 
 /** What the UI and the public branding show about the demo. */
@@ -109,7 +137,7 @@ export async function demoInfo(ctx: Ctx) {
 
 // ------------------------------------------------------------------ the seed archive
 
-async function openSeed(ctx: Ctx): Promise<{ manifest: DemoSeedManifest; entries: Map<string, ZipReadEntry> } | null> {
+async function openSeed(ctx: Ctx): Promise<{ manifest: DemoSeedManifest; entries: Map<string, ZipReadEntry>; size: number } | null> {
   const head = await ctx.blobs.head(DEMO.seedKey);
   if (!head) return null;
   const read = storeReader(ctx, DEMO.seedKey);
@@ -118,7 +146,7 @@ async function openSeed(ctx: Ctx): Promise<{ manifest: DemoSeedManifest; entries
   const m = entries.get("manifest.json");
   if (!m) throw new Error("demo seed has no manifest.json");
   const manifest = JSON.parse(new TextDecoder().decode(await readZipEntry(read, m, 1048576))) as DemoSeedManifest;
-  return { manifest, entries };
+  return { manifest, entries, size: head.size };
 }
 
 async function seedEntry(ctx: Ctx, entries: Map<string, ZipReadEntry>, path: string, max = 32 * 1048576): Promise<Uint8Array> {
@@ -144,9 +172,12 @@ export async function resetDemo(ctx: Ctx): Promise<DemoState> {
   await setState(ctx, { phase: "resetting", job_id: null, reset_at: now });
   const seed = await openSeed(ctx);
   const keepShas = new Set<string>();
-  if (seed) for (const img of seed.manifest.images) {
-    keepShas.add(img.sha256);
-    for (const r of Object.values(img.renditions ?? {})) keepShas.add(r.sha256);
+  if (seed) {
+    for (const img of seed.manifest.images) {
+      keepShas.add(img.sha256);
+      for (const r of Object.values(img.renditions ?? {})) keepShas.add(r.sha256);
+    }
+    for (const img of seed.manifest.branding?.images ?? []) keepShas.add(img.sha256);
   }
 
   // 1. Empty the database. Old change-feed cursors must not continue into the new catalog.
@@ -155,11 +186,11 @@ export async function resetDemo(ctx: Ctx): Promise<DemoState> {
   await ctx.db.batch([
     ...WIPE.map((t) => ({ sql: `DELETE FROM ${t}`, params: [] })),
     { sql: `DELETE FROM sessions WHERE user_id NOT IN (${ph})`, params: [...DEMO_USERS] },
-    { sql: "DELETE FROM meta WHERE key IN ('settings', 'setup_completed_at', 'setup_code_hash', 'counts_snapshot')", params: [] },
+    { sql: "DELETE FROM meta WHERE key IN ('settings', 'setup_completed_at', 'setup_code_hash', 'counts_snapshot', 'demo_dirty')", params: [] },
     ctx.metaStmt("changes_floor_seq", String(floor)),
     ctx.metaStmt("demo_state", JSON.stringify({ phase: "resetting", job_id: null, reset_at: now } satisfies DemoState)),
   ]);
-  ctx.invalidateSettings();
+  ctx.forgetMeta();
 
   // 2. Files: everything except the seed archive and the seed's images goes.
   const blobRows = await ctx.db.all<{ sha256: string }>("SELECT sha256 FROM blobs");
@@ -179,16 +210,24 @@ export async function resetDemo(ctx: Ctx): Promise<DemoState> {
 
   // 3. Accounts, retailers, the public API key, an open access request.
   const s = defaultSettings();
-  s.company = { name: "Kestrel Outfitters", website: "https://kestrel.example", contact_email: "trade@kestrel.example", country: "NL" };
-  s.branding.display_name = "Kestrel";
-  s.branding.accent_color = "#1F4E5F";
+  // The showroom brand of the demo (the catalogue underneath is still the spec's Kestrel fixtures).
+  s.company = { name: "Maison Noor", website: "https://maison-noor.example", contact_email: "trade@maison-noor.example", country: "NL" };
+  s.branding.display_name = "MAISON NOOR";
+  s.branding.accent_color = "#1B1A19";
   s.branding.welcome_text = {
-    en: "Kestrel is a fictional brand. Everything in this demo is test data and is reset every hour.",
-    nl: "Kestrel is een fictief merk. Alles in deze demo is testdata en wordt elk uur teruggezet.",
+    en: "MAISON NOOR is a fictional fashion house. Everything in this demo is test data and is put back regularly.",
+    nl: "MAISON NOOR is een fictief modehuis. Alles in deze demo is testdata en wordt regelmatig teruggezet.",
   };
   s.portal.languages = ["en", "nl"];
   s.portal.default_language = "en";
   s.portal.retailer_api_self_service = false;
+  // The showroom (contract §6): theme, login page and start page from the seed.
+  const look = seed?.manifest.branding;
+  if (look) {
+    s.branding.theme = look.theme ?? null;
+    s.branding.login = look.login ?? null;
+    s.branding.home = look.home ?? null;
+  }
   const stored = JSON.stringify({ description: null, logo_url: null, name: "Kestrel", website: "https://kestrel.example" });
   const brandEtag = `"${(await sha256Hex(canonicalJson({ ...JSON.parse(stored), status: "published" }))).slice(0, 32)}"`;
   const retailers: [string, string, string, string | null, number | null, "active" | "blocked"][] = [
@@ -203,6 +242,10 @@ export async function resetDemo(ctx: Ctx): Promise<DemoState> {
   ];
   const stmts: Stmt[] = [
     ctx.metaStmt("settings", JSON.stringify(s)),
+    ...(look?.images ?? []).map((img) => ({
+      sql: "INSERT INTO branding_images (id, sha256, content_type, width, height, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      params: [img.id, img.sha256, img.content_type, img.width, img.height, img.bytes, now],
+    })),
     ctx.metaStmt("setup_completed_at", now),
     {
       sql: "INSERT INTO brands (id, external_id, status, stored, rep_hash, etag, created_at, updated_at, modified_at) VALUES (?, 'kestrel', 'published', ?, '', ?, ?, ?, ?)",
@@ -238,7 +281,7 @@ export async function resetDemo(ctx: Ctx): Promise<DemoState> {
 
   if (!seed) {
     ctx.log("warn", `demo: no seed archive at ${DEMO.seedKey}; the catalog stays empty (see docs/demo.md)`);
-    const st: DemoState = { phase: "ready", job_id: null, reset_at: now };
+    const st: DemoState = { phase: "ready", job_id: null, reset_at: now, seed_size: null };
     await setState(ctx, st);
     return st;
   }
@@ -250,8 +293,8 @@ export async function resetDemo(ctx: Ctx): Promise<DemoState> {
     const chunk = shas.slice(i, i + 90);
     for (const r of await ctx.db.all<{ sha256: string }>(`SELECT sha256 FROM blobs WHERE sha256 IN (${chunk.map(() => "?").join(", ")})`, chunk)) known.add(r.sha256);
   }
-  for (const img of seed.manifest.images)
-    for (const f of [{ sha256: img.sha256, path: img.path }, ...Object.values(img.renditions ?? {})])
+  for (const img of [...seed.manifest.images, ...(seed.manifest.branding?.images ?? [])])
+    for (const f of [{ sha256: img.sha256, path: img.path }, ...Object.values((img as { renditions?: Record<string, { sha256: string; path: string }> }).renditions ?? {})])
       if (!known.has(f.sha256)) {
         await storeBlob(ctx, await seedEntry(ctx, seed.entries, f.path), f.sha256);
         known.add(f.sha256);
@@ -273,7 +316,7 @@ export async function resetDemo(ctx: Ctx): Promise<DemoState> {
     manifest: await put("images_manifest.json", new TextEncoder().encode(JSON.stringify(list))),
   };
   await startImport(ctx, { trigger: "api", mode: "upsert", dry_run: false, allow_mass_unpublish: false, default_language: "en", allowed_brands: null, inputs, started_by: "admin" }, { owner: "admin", id: jobId });
-  const st: DemoState = { phase: "importing", job_id: jobId, reset_at: now };
+  const st: DemoState = { phase: "importing", job_id: jobId, reset_at: now, seed_size: seed.size };
   await setState(ctx, st);
   ctx.log("info", "demo: reset, catalog import started", { job_id: jobId });
   return st;
@@ -336,11 +379,21 @@ function resetting(ctx: Ctx, s: DemoState | null): boolean {
 export async function demoTick(ctx: Ctx): Promise<void> {
   const s = await demoState(ctx);
   if (resetting(ctx, s)) return;
-  if (!s || !(await ctx.isSetUp()) || ctx.now() >= Date.parse(nextResetAt(ctx, s)!)) {
+  if (!s || !(await ctx.isSetUp())) {
     await resetDemo(ctx);
     return;
   }
-  if (s.phase === "importing" && s.job_id) await finishIfImported(ctx, s);
+  if (s.phase === "importing" && s.job_id) return finishIfImported(ctx, s);
+  // Reset when the interval passed and a visitor changed something, the seed archive changed, the
+  // last reset failed or a day went by. A demo nobody touched is left alone: no database writes.
+  const since = ctx.now() - Date.parse(s.reset_at);
+  if (since < ctx.config.demoResetMinutes * 60_000) return;
+  const due =
+    s.phase !== "ready" ||
+    since >= CLEAN_RESET_MS ||
+    !!(await ctx.meta("demo_dirty")) ||
+    ((await ctx.blobs.head(DEMO.seedKey))?.size ?? null) !== (s.seed_size ?? null);
+  if (due) await resetDemo(ctx);
 }
 
 async function finishIfImported(ctx: Ctx, s: DemoState) {
@@ -383,7 +436,6 @@ export function demoRefusal(method: string, path: string, body: Record<string, u
     [/^\/admin\/api\/password\//, "Passwords cannot be reset."],
     [/^\/admin\/api\/invites\//, "Invitations are switched off."],
     [/^\/admin\/api\/me$/, "The demo accounts cannot be removed."],
-    [/^\/admin\/api\/settings\/logo$/, "The logo cannot be changed."],
     [/^\/admin\/api\/import-sources(\/[^/]+(\/(run|test))?)?$/, "Scheduled imports from other servers are switched off."],
     [/^\/admin\/api\/users\/invites$/, "No e-mail is sent, so nobody can be invited."],
     [/^\/admin\/api\/users\/[^/]+\/resend-invite$/, "No e-mail is sent, so nobody can be invited."],
@@ -404,8 +456,10 @@ export function demoRefusal(method: string, path: string, body: Record<string, u
   }
   if (p === "/admin/api/me" && method === "PATCH" && body && ("new_password" in body || "current_password" in body || "email" in body))
     return refuse("The password and e-mail address of the demo accounts cannot be changed.");
-  if (p === "/admin/api/settings" && method === "PATCH" && body && ("company" in body || "branding" in body))
-    return refuse("The brand's name, colours and texts are the same for every visitor.");
+  // The portal's look (theme, login page, start page, logo, icon, images) can be tried out; it is
+  // put back at the next reset. The company details and the brand's name stay.
+  if (p === "/admin/api/settings" && method === "PATCH" && body && ("company" in body || (isPlainObject(body.branding) && "display_name" in body.branding)))
+    return refuse("The company details and the brand's name are the same for every visitor.");
   if (/^\/admin\/api\/access-requests\/[^/]+\/approve$/.test(p) && (!body || body.create_api_client !== false))
     return refuse("Approving with an API key would create a new key. Untick API access, or decline the request.");
   return null;

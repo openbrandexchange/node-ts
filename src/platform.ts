@@ -15,6 +15,12 @@ export interface Db {
   run(sql: string, params?: SqlValue[]): Promise<{ changes: number }>;
   /** Runs all statements atomically, in order (D1 batch / SQLite transaction). */
   batch(stmts: Stmt[]): Promise<{ changes: number }[]>;
+  /**
+   * Runs independent SELECTs in one round trip (D1 batch) and returns the rows of each, in order.
+   * On a remote database every query is a network round trip, so a request that needs several
+   * reads should send them together.
+   */
+  reads(stmts: Stmt[]): Promise<unknown[][]>;
 }
 
 export interface BlobHead {

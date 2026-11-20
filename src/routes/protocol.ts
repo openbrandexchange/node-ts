@@ -55,6 +55,13 @@ export async function logoUrl(c: C): Promise<string | null> {
   return `${await ctx.baseUrl()}/admin/api/public/logo?v=${s.branding.logo_sha.slice(0, 12)}`;
 }
 
+export async function faviconUrl(c: C): Promise<string | null> {
+  const ctx = ctxOf(c);
+  const s = await ctx.settings();
+  if (!s.branding.favicon_sha) return null;
+  return `${await ctx.baseUrl()}/admin/api/public/favicon?v=${s.branding.favicon_sha.slice(0, 12)}`;
+}
+
 protocol.get("/.well-known/obx", async (c) => {
   const ctx = ctxOf(c);
   await requireSetup(c);
@@ -395,17 +402,25 @@ export async function viewerForActor(c: C, actor: string): Promise<Viewer> {
   const [kind, id] = [actor.slice(0, 1), actor.slice(2)];
   const settings = await ctx.settings();
   if (kind === "c") {
-    const cl = await ctx.db.first<ClientRow>("SELECT * FROM api_clients WHERE id = ?", [id]);
-    const r = cl ? await ctx.db.first<RetailerRow>("SELECT * FROM retailers WHERE id = ?", [cl.retailer_id]) : null;
+    const [cls, rs] = await ctx.db.reads([
+      { sql: "SELECT * FROM api_clients WHERE id = ?", params: [id] },
+      { sql: "SELECT r.* FROM api_clients c JOIN retailers r ON r.id = c.retailer_id WHERE c.id = ?", params: [id] },
+    ]);
+    const cl = (cls[0] as ClientRow | undefined) ?? null;
+    const r = (rs[0] as RetailerRow | undefined) ?? null;
     if (!cl || !r || cl.status !== "active" || r.status !== "active") throw new ObxError("access_revoked", "Access was revoked by the brand.");
     const g = await grantOf(ctx, r, cl);
     return { actor, kind: "client", retailerId: r.id, retailerName: r.name, actorName: cl.name, brandIds: g.brand_ids, original: g.original_allowed && g.scopes.includes("media:original"), scopes: g.scopes };
   }
-  const u = await ctx.db.first<UserRow>("SELECT * FROM users WHERE id = ?", [id]);
+  const [us, urs] = await ctx.db.reads([
+    { sql: "SELECT * FROM users WHERE id = ?", params: [id] },
+    { sql: "SELECT r.* FROM users u JOIN retailers r ON r.id = u.retailer_id WHERE u.id = ?", params: [id] },
+  ]);
+  const u = (us[0] as UserRow | undefined) ?? null;
   if (!u || u.status !== "active") throw new ObxError("forbidden", "This link is no longer valid.");
   if (kind === "p" && u.role === "admin") return { actor, kind: "preview", retailerId: null, retailerName: null, actorName: u.name, brandIds: null, original: true, scopes: PROTOCOL_SCOPES };
   if (kind === "u" && u.role === "retailer") {
-    const r = await ctx.db.first<RetailerRow>("SELECT * FROM retailers WHERE id = ?", [u.retailer_id]);
+    const r = (urs[0] as RetailerRow | undefined) ?? null;
     if (!r || r.status !== "active") throw new ObxError("forbidden", "This link is no longer valid.");
     const original = settings.portal.allow_original_download && r.allow_original !== 0;
     return { actor, kind: "user", retailerId: r.id, retailerName: r.name, actorName: u.name, brandIds: safeJsonParse<string[] | null>(r.brand_ids, null), original, scopes: ["catalog:read", "media:read"] };

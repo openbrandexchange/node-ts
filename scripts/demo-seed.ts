@@ -1,9 +1,12 @@
 // Builds the demo seed archive (docs/demo.md): the spec's Kestrel fixtures plus client renditions
-// (web, square, thumb as JPEG, the way the admin UI makes them), which demo mode imports on every reset.
+// (web, square, thumb as JPEG, the way the admin UI makes them), which demo mode imports on every reset,
+// and the showroom (theme, login page, start page and their images, scripts/demo-showroom.ts).
 //
 //   bun scripts/demo-seed.ts [out.zip] [fixtures dir]        default: demo-seed.zip, test/fixtures/kestrel
 //
-// Renditions are drawn with macOS `sips` or ImageMagick (`magick`), whichever is installed. Then
+// With rsvg-convert and ImageMagick installed, the fixtures' flat colour squares are replaced by drawn
+// product shots and the showroom images are drawn (scripts/demo-art.ts); the fixture files themselves
+// are never changed. Renditions are drawn with macOS `sips` or ImageMagick (`magick`). Then
 // upload the archive once to the portal's storage under demo/seed.zip, e.g. on Cloudflare:
 //   bunx wrangler r2 object put <bucket>/demo/seed.zip --file demo-seed.zip --remote -c deploy/demo/wrangler.jsonc
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -13,6 +16,7 @@ import { crc32, sha256Hex } from "../src/lib/crypto";
 import { zipBytes } from "../src/lib/zip";
 import { imageSize, sniffType } from "../src/lib/image";
 import type { DemoSeedManifest } from "../src/core/demo";
+import { SHOWROOM_IMAGES, showroomBranding } from "./demo-showroom";
 
 export type Rendition = "web" | "square" | "thumb";
 /** Makes one JPEG rendition of a PNG/JPEG original (spec protocol.md §5.5 rules). */
@@ -35,18 +39,61 @@ export function renditionSizes(w: number, h: number): Record<Rendition, { width:
   return { web, square: { width: side, height: side }, thumb: fit(w, h, THUMB_MAX) };
 }
 
-export async function buildSeed(dir: string, render: Renderer): Promise<Uint8Array> {
+export interface SeedArt {
+  /** A product shot replacing a fixture image (JPEG), or null to keep the fixture file. */
+  product?: (file: string, info: ProductInfo) => Promise<Uint8Array | null>;
+  /** The showroom images by key of SHOWROOM_IMAGES (PNG, JPEG or WebP). */
+  showroom?: (key: keyof typeof SHOWROOM_IMAGES) => Promise<Uint8Array>;
+}
+
+export interface ProductInfo {
+  style: string;
+  color: string;
+  view: string;
+  item_type: string;
+  name: string;
+}
+
+/** Style number → item type and English name, from products.csv (first row of each style). */
+function productInfo(csv: string): Map<string, { item_type: string; name: string }> {
+  const lines = csv.split(/\r?\n/).filter(Boolean);
+  const head = lines[0].split(",");
+  const col = (n: string) => head.indexOf(n);
+  const out = new Map<string, { item_type: string; name: string }>();
+  for (const line of lines.slice(1)) {
+    const cells = line.split(","); // the columns used here never contain commas
+    const style = cells[col("style_number")];
+    if (style && !out.has(style)) out.set(style, { item_type: cells[col("item_type")] ?? "", name: cells[col("name:en")] ?? "" });
+  }
+  return out;
+}
+
+export async function buildSeed(dir: string, render: Renderer, art: SeedArt = {}): Promise<Uint8Array> {
   const files: { name: string; data: Uint8Array }[] = [];
   const manifest: DemoSeedManifest = { products_csv: "products.csv", assets_csv: null, images: [] };
-  files.push({ name: "products.csv", data: new Uint8Array(readFileSync(join(dir, "products.csv"))) });
+  const productsCsv = readFileSync(join(dir, "products.csv"), "utf8");
+  files.push({ name: "products.csv", data: new TextEncoder().encode(productsCsv) });
+  let assetsCsv: string | null = null;
   try {
-    files.push({ name: "assets.csv", data: new Uint8Array(readFileSync(join(dir, "assets.csv"))) });
-    manifest.assets_csv = "assets.csv";
+    assetsCsv = readFileSync(join(dir, "assets.csv"), "utf8");
   } catch {
     /* optional */
   }
-  for (const name of readdirSync(join(dir, "images")).sort()) {
-    const bytes = new Uint8Array(readFileSync(join(dir, "images", name)));
+  const info = productInfo(productsCsv);
+  const renamed = new Map<string, string>();
+  for (const original of readdirSync(join(dir, "images")).sort()) {
+    let name = original;
+    let bytes: Uint8Array = new Uint8Array(readFileSync(join(dir, "images", original)));
+    const m = original.match(/^(.+?)_([A-Z0-9]+)_(\d+)_([a-z_]+)\.[a-z]+$/);
+    if (art.product && m) {
+      const p = info.get(m[1]);
+      const shot = await art.product(original, { style: m[1], color: m[2], view: m[4], item_type: p?.item_type ?? "", name: p?.name ?? "" });
+      if (shot) {
+        bytes = shot;
+        name = original.replace(/\.[a-z]+$/, ".jpg");
+        renamed.set(original, name);
+      }
+    }
     const type = sniffType(bytes);
     const dims = type && imageSize(bytes, type);
     if (!dims) continue;
@@ -61,6 +108,24 @@ export async function buildSeed(dir: string, render: Renderer): Promise<Uint8Arr
       entry.renditions![r] = { sha256: await sha256Hex(jpg), path: rpath };
     }
     manifest.images.push(entry);
+  }
+  if (assetsCsv !== null) {
+    for (const [from, to] of renamed) assetsCsv = assetsCsv.split(from).join(to);
+    files.push({ name: "assets.csv", data: new TextEncoder().encode(assetsCsv) });
+    manifest.assets_csv = "assets.csv";
+  }
+  if (art.showroom) {
+    const images: NonNullable<DemoSeedManifest["branding"]>["images"] = [];
+    for (const [key, id] of Object.entries(SHOWROOM_IMAGES) as [keyof typeof SHOWROOM_IMAGES, string][]) {
+      const bytes = await art.showroom(key);
+      const type = sniffType(bytes);
+      const dims = type && imageSize(bytes, type);
+      if (!type || !dims) throw new Error(`showroom image ${key} is not an image`);
+      const path = `showroom/${key}.${type.split("/")[1]}`;
+      files.push({ name: path, data: bytes });
+      images.push({ id, path, sha256: await sha256Hex(bytes), content_type: type, width: dims.width, height: dims.height, bytes: bytes.length });
+    }
+    manifest.branding = { ...showroomBranding(), images };
   }
   files.unshift({ name: "manifest.json", data: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) });
   return zipBytes(files, crc32);
@@ -98,10 +163,29 @@ export function commandRenderer(): Renderer {
   };
 }
 
+/** The drawn art (scripts/demo-art.ts): product shots per item type, colour and view, and the showroom images. */
+export async function drawnArt(): Promise<SeedArt> {
+  const a = await import("./demo-art");
+  const kind = (p: ProductInfo) => (/messenger/i.test(p.name) ? "messenger" : /rain|shell/i.test(p.name) ? "rain_jacket" : p.item_type);
+  const views = ["front", "back", "side", "inside", "detail", "model"];
+  let seed = 1;
+  return {
+    product: async (_file, p) => a.renderJpeg(a.productSvg(kind(p), p.color, (views.includes(p.view) ? p.view : "front") as never), { width: 1200, height: 1500, grain: 0.1, seed: seed++ }),
+    showroom: async (key) => {
+      if (key === "hero") return a.renderJpeg(a.heroSvg(), { width: 2400, height: 1200, seed: 11 });
+      if (key === "login") return a.renderJpeg(a.loginSvg(), { width: 1600, height: 2000, seed: 12 });
+      if (key === "materials") return a.renderJpeg(a.materialSvg(), { width: 1600, height: 1200, seed: 13 });
+      return a.renderJpeg(a.tileSvg(key), { width: 1200, height: 1500, seed: 14 });
+    },
+  };
+}
+
 if (import.meta.main) {
   const out = process.argv[2] ?? "demo-seed.zip";
   const dir = process.argv[3] ?? join(import.meta.dir, "..", "test", "fixtures", "kestrel");
-  const zip = await buildSeed(dir, commandRenderer());
+  const { hasArtTools } = await import("./demo-art");
+  if (!hasArtTools()) console.warn("rsvg-convert and ImageMagick not found: the seed keeps the fixture images and has no showroom.");
+  const zip = await buildSeed(dir, commandRenderer(), hasArtTools() ? await drawnArt() : {});
   writeFileSync(out, zip);
   console.log(`demo seed written to ${out} (${(zip.length / 1048576).toFixed(1)} MB)`);
 }

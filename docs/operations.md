@@ -88,7 +88,7 @@ Useful alerts: `/readyz` not 200 for 5 minutes; `obx_jobs{status="failed"}` incr
 
 - Migrations are SQL files in `migrations/`, **forward-only**: a released file never changes, a change
   is a new file. They are applied automatically when the portal starts (Bun) or at the first request
-  of a Worker; on Cloudflare `npm run deploy` also applies them with `wrangler d1 migrations apply`.
+  of a Worker; on Cloudflare `bun run deploy` also applies them with `wrangler d1 migrations apply`.
   Both record what ran in the table `d1_migrations`, so nothing runs twice.
 - A database that was migrated by a **newer** release is refused: the Bun process exits with
   "The database was upgraded by a newer version…", the Worker answers `503` with the same text and
