@@ -7,6 +7,9 @@ always forward-only and applied automatically.
 
 ## [Unreleased]
 
+### Fixed
+- Demo: the company is "MAISON NOOR Group" (the spec's name, in capitals) instead of "Maison Noor".
+
 ## [0.3.1] - 2026-11-21
 
 Implements Open Brand Exchange spec 0.3.1: portal appearance (Node Admin API: theme, login page, start page,

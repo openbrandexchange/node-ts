@@ -211,7 +211,7 @@ export async function resetDemo(ctx: Ctx): Promise<DemoState> {
   // 3. Accounts, retailers, the public API key, an open access request.
   const s = defaultSettings();
   // The showroom brand of the demo (the catalogue underneath is the spec's MAISON NOOR fixtures).
-  s.company = { name: "Maison Noor", website: "https://maison-noor.example", contact_email: "trade@maison-noor.example", country: "NL" };
+  s.company = { name: "MAISON NOOR Group", website: "https://maison-noor.example", contact_email: "trade@maison-noor.example", country: "NL" };
   s.branding.display_name = "MAISON NOOR";
   s.branding.accent_color = "#1B1A19";
   s.branding.welcome_text = {
