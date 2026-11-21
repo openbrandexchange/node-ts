@@ -1,7 +1,7 @@
 import type { Config } from "../../platform";
 
 export const SOFTWARE = "obx-node-ts";
-export const VERSION = "0.3.0";
+export const VERSION = "0.3.1";
 
 export type EnvLike = Record<string, string | undefined>;
 

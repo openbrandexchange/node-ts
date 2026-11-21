@@ -165,9 +165,9 @@ npm needed.
 | `obx-portal-<version>-windows-x64.zip` | Windows |
 
 ```sh
-curl -LO https://github.com/openbrandexchange/node-ts/releases/download/v0.3.0/obx-portal-0.3.0-linux-x64.tar.gz
+curl -LO https://github.com/openbrandexchange/node-ts/releases/download/v0.3.1/obx-portal-0.3.1-linux-x64.tar.gz
 shasum -a 256 -c SHA256SUMS --ignore-missing      # after downloading SHA256SUMS from the same release
-tar -xzf obx-portal-0.3.0-linux-x64.tar.gz && cd obx-portal-0.3.0-linux-x64
+tar -xzf obx-portal-0.3.1-linux-x64.tar.gz && cd obx-portal-0.3.1-linux-x64
 ./obx-portal                                       # http://localhost:8080, setup code in the output
 ```
 
@@ -203,7 +203,7 @@ WantedBy=multi-user.target
 
 ```sh
 sudo useradd --system --home /var/lib/obx-portal --create-home obx
-sudo mkdir -p /opt/obx-portal /etc/obx-portal && sudo cp -r obx-portal-0.3.0-linux-x64/. /opt/obx-portal/
+sudo mkdir -p /opt/obx-portal /etc/obx-portal && sudo cp -r obx-portal-0.3.1-linux-x64/. /opt/obx-portal/
 echo "OBX_PUBLIC_URL=https://portal.yourbrand.com" | sudo tee /etc/obx-portal/obx-portal.env
 sudo systemctl daemon-reload && sudo systemctl enable --now obx-portal
 sudo journalctl -u obx-portal -f      # the first start prints the setup code

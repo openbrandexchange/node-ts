@@ -10,7 +10,7 @@ import qualifiersVocab from "../vocabularies/qualifiers.json";
 
 /** The OBX protocol version (OBX-Version header, discovery, export manifests) and the spec version. */
 export const OBX_VERSION = "0.3";
-export const SPEC_VERSION = "0.3.0";
+export const SPEC_VERSION = "0.3.1";
 
 const KEY_RE = /^[a-z][a-z0-9_]{0,63}$/;
 

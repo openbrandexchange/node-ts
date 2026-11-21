@@ -97,7 +97,7 @@ describe("article data in the protocol (P-CAT-5, P-CAT-6)", () => {
       { scheme: "oeko_tex_standard_100", licence_number: "26.MNR.20003", scope: "product" },
     ]);
     const disc = await node.request("GET", "/.well-known/obx");
-    expect(disc.json).toMatchObject({  obx_version: "0.3", spec_version: "0.3.0" });
+    expect(disc.json).toMatchObject({  obx_version: "0.3", spec_version: "0.3.1" });
   });
 });
 
