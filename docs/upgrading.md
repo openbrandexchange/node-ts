@@ -41,7 +41,7 @@ sudo journalctl -u obx-portal -f                       # migrations and "listeni
 curl -fs https://portal.yourbrand.com/readyz
 ```
 
-It keeps the settings and data and restarts the service. Add `--version 0.3.0` to install a specific
+It keeps the settings and data and restarts the service. Add `--version 0.3.1` to install a specific
 release instead of the latest (also to go back to an earlier version after restoring its backup).
 Installed by hand (manual install)? Stop the service, replace the contents of `/opt/obx-portal` with
 the new release and start it again.

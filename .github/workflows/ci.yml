@@ -72,8 +72,8 @@ jobs:
         if: env.OBX_ACCESS == 'yes'
         with:
           repository: openbrandexchange/obx-go
-          # The suite of the spec this node implements (0.3.1, spec 7a4c9ef: the MAISON NOOR fixtures).
-          ref: 281193b3a987e1c1962e6642c3e909ce49e4038a
+          # The suite of the spec version this node implements (0.3.1).
+          ref: v0.3.1
           token: ${{ secrets.OBX_READ_TOKEN || github.token }}
           path: obx-go
       - uses: actions/setup-go@v5

@@ -7,8 +7,14 @@ always forward-only and applied automatically.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-21
+
+Implements Open Brand Exchange spec 0.3.1: portal appearance (Node Admin API: theme, login page, start page,
+branding images, favicon) and the MAISON NOOR test data. Also fewer D1 round trips per request, and self-hosting with
+the one-line installer. The web interface is admin-ui 0.3.1. Nothing changes under `/obx/v1`.
+
 ### Added
-- The web interface is admin-ui e78ccf2 (its mock on MAISON NOOR): the showroom redesign (theme engine, Appearance editor, start page, quick
+- The web interface is admin-ui 0.3.1 (its mock on MAISON NOOR): the showroom redesign (theme engine, Appearance editor, start page, quick
   view), so the demo opens on the MAISON NOOR start page.
 - **Portal appearance** (spec node-admin.yaml, docs/node-admin.md "Portal appearance"): `branding.theme`
   (colour scheme, five colours, fonts, radius, grid density, card style, image fit and background),
@@ -26,7 +32,7 @@ always forward-only and applied automatically.
 - Demo and test data follow spec 0.3.1 (spec 7a4c9ef): the fixtures' fictional brand is now MAISON NOOR instead of
   Kestrel (brands `maison-noor` and `noor-atelier`, article numbers MN-/NA-, `test/fixtures/maison-noor`). The demo
   brand is `brd_demo_maison_noor` with external id `maison-noor`, its admin `brand@maison-noor.example`; `bun run dev`
-  logs in as `admin@maison-noor.example` with setup code `NOOR-LOCAL`. CI runs the conformance suite of obx-go 281193b.
+  logs in as `admin@maison-noor.example` with setup code `NOOR-LOCAL`. CI runs the conformance suite of obx-go v0.3.1.
 - Fewer database round trips per request (on D1 each one is a network call): the session, its user and retailer in
   one batch; settings, setup flag and demo state shared by the requests of an isolate for 5 seconds; facets,
   product list, viewer and signed renditions read in one or two batches; public reads skip the session. Portal
@@ -329,6 +335,8 @@ the Cloudflare Workers runtime.
 - Renewing the secret of an API key that was created on approval retires the secret still waiting
   for the requester's software, so that software gets "already collected" instead of a dead secret.
 
+[0.3.1]: https://github.com/openbrandexchange/node-ts/releases/tag/v0.3.1
+[0.3.0]: https://github.com/openbrandexchange/node-ts/releases/tag/v0.3.0
 [0.2.1]: https://github.com/openbrandexchange/node-ts/releases/tag/v0.2.1
 [0.2.0]: https://github.com/openbrandexchange/node-ts/releases/tag/v0.2.0
 [0.1.0]: https://github.com/openbrandexchange/node-ts/releases/tag/v0.1.0
