@@ -29,7 +29,7 @@
   "dependencies": {
     "aws4fetch": "^1.0.20",
     "bcryptjs": "^3.0.3",
-    "hono": "^4.13.18"
+    "hono": "^4.13.19"
   },
   "optionalDependencies": {
     "ssh2-sftp-client": "^12.1.1"
